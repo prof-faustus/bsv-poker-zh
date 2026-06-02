@@ -1,9 +1,8 @@
 /**
- * Conformance-bound in-memory FAKES for CT/BS/VA/OB (core §2.6, REQ-DEP-001/003). These are
- * used for ORCHESTRATION wiring in unit/integration tests only. They MUST pass the same
- * conformance suite as the real adapters (./conformance.ts) so a green run against a fake
- * cannot certify a wrong engine. Security-critical paths are NEVER tested against fakes
- * (REQ-DEP-004) — those use the real implementations (crypto-mentalpoker, the real repos).
+ * 受一致性约束、用于 CT/BS/VA/OB 的内存版 FAKE（core §2.6，REQ-DEP-001/003）。它们仅用于
+ * 单元/集成测试中的编排接线。它们必须通过与真实适配器相同的一致性测试套件（./conformance.ts），
+ * 从而保证针对 fake 的绿色测试不会误判一个错误的引擎为正确。安全关键路径绝不针对 fake 测试
+ * （REQ-DEP-004）—— 那些路径使用真实实现（crypto-mentalpoker，以及真实的各仓库）。
  */
 
 import { createHash } from 'node:crypto';
@@ -33,7 +32,7 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 }
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
 
-/** Fake CT: real hashing for commit/reveal (so it is genuinely conformant), trivial shuffle. */
+/** Fake CT：承诺/揭示使用真实哈希（因此确实满足一致性），洗牌则采用平凡实现。 */
 export function makeFakeCT(): CTContract {
   return {
     async entropyCommit(secret) {
@@ -80,7 +79,7 @@ export function makeFakeBS(): BSContract {
       /* in-memory no-op for orchestration */
     },
     reconcileQstar(microBalances, k) {
-      // Largest-remainder apportionment to whole satoshis (no fractional output, INV-BS-1).
+      // 按最大余额法分配到整聪（不产生带小数的输出，INV-BS-1）。
       const totalMicro = microBalances.reduce((s, x) => s + x, 0);
       const totalSat = Math.round(totalMicro / k);
       const exact = microBalances.map((m) => (m / k) * (totalSat / (totalMicro / k || 1)));
@@ -144,7 +143,7 @@ export function makeFakeVA(): VAContract {
 export function makeFakeOB(): OBContract {
   return {
     async wrap(keyHex, memberPubKey) {
-      // Authenticated wrap stand-in (never raw XOR): tag = H(key‖member).
+      // 带认证封装的替身实现（绝不使用裸 XOR）：tag = H(key‖member)。
       return sha256hex(enc(`${keyHex}|${memberPubKey}`)) + ':' + keyHex;
     },
     async unwrap(wrappedHex, memberPrivKey) {
@@ -154,8 +153,8 @@ export function makeFakeOB(): OBContract {
       return wrappedHex.slice(idx + 1);
     },
     async isRevoked(sessionId, height) {
-      // Revocation = unspent expiring output (INV-OB-2): revoked once height passes expiry.
-      // Fake expiry encoded in the sessionId suffix "@<height>".
+      // 撤销 = 未花费的过期输出（INV-OB-2）：一旦 height 超过到期高度即视为已撤销。
+      // 测试用的到期高度编码在 sessionId 的后缀 "@<height>" 中。
       const at = sessionId.lastIndexOf('@');
       if (at < 0) return false;
       const expiry = Number.parseInt(sessionId.slice(at + 1), 10);

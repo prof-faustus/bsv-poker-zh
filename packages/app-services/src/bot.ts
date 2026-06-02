@@ -1,8 +1,8 @@
 /**
- * Trivial opponent policy for hot-seat-vs-bot local play. Reads the engine's legal-action
- * descriptor and picks a safe, never-aggressive move: check if possible, else call, else fold.
- * This is a placeholder local policy — NOT an AI and NOT a networked opponent. Multi-client
- * play over the relay is a later phase (§A2.3).
+ * 用于本地“同屏对战 bot”的简单对手策略。读取引擎的合法行动（legal-action）
+ * 描述符，选择一个安全、绝不激进的动作：能 check 则 check，否则 call，再否则 fold。
+ * 这是一个占位用的本地策略——不是 AI，也不是网络对手。通过中继进行的多
+ * 客户端对战是后续阶段（§A2.3）。
  */
 
 import type { Action, LegalActions } from '@bsv-poker/protocol-types';

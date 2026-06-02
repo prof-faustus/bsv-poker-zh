@@ -1,18 +1,9 @@
-# ADR 0002 — Portable pure-TypeScript SHA-256 in protocol-types
+# ADR 0002 — protocol-types 中的可移植纯 TypeScript SHA-256
 
-**Status:** Accepted
+**状态：** 已接受
 
-**Context.** `protocol-types` (canonical serialization, `rulesetHash`, state hashing) is imported
-by the engine, hand-eval, and the game modules, all of which must run **in the browser** (core
-§3.2/§11.1, one core two shells). `node:crypto` is unavailable in a browser bundle, and Web
-Crypto's SHA-256 is async — but the serializer's hashing is synchronous and deterministic.
+**背景。** `protocol-types`（规范化序列化、`rulesetHash`、状态哈希）被引擎、hand-eval 以及游戏模块所导入，而这些模块都必须**在浏览器中**运行（核心 §3.2/§11.1，一个核心两个外壳）。`node:crypto` 在浏览器打包产物中不可用，而 Web Crypto 的 SHA-256 是异步的——但序列化器的哈希是同步且确定性的。
 
-**Decision.** Implement SHA-256 as pure TypeScript in `protocol-types/src/sha256.ts` and use it for
-`sha256`/`hash256`. It produces byte-identical output to `node:crypto` (verified: `reproduce`
-vectors are unchanged). `node:crypto` remains for Node-only code: the Script interpreter (ECDSA)
-and the custody backend.
+**决策。** 在 `protocol-types/src/sha256.ts` 中以纯 TypeScript 实现 SHA-256，并将其用于 `sha256`/`hash256`。它产出与 `node:crypto` 逐字节相同的输出（已验证：`reproduce` 向量未发生变化）。`node:crypto` 仍保留给仅限 Node 的代码：Script 解释器（ECDSA）和托管后端。
 
-**Consequences.** The deterministic core is environment-agnostic and the web client imports it
-directly. The pure-TS hash is slower than native, but it is not on a tight hot path (state hashing
-is per-transition, not per-card); a Web Crypto fast path can be added later behind the same
-function if profiling justifies it (Power-of-Ten: correct first, fast second).
+**后果。** 确定性核心与运行环境无关，Web 客户端可直接导入它。纯 TS 哈希比原生实现慢，但它并不处于紧凑的热路径上（状态哈希是按状态转移计算的，而非按牌计算）；如果性能分析证明有必要，可以日后在同一函数背后加入 Web Crypto 快速路径（Power-of-Ten：先正确，后快速）。

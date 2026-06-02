@@ -1,9 +1,8 @@
 /**
- * Binds the REAL `overlay-broadcast` custody implementation (REQ-DEP-004, core §16/§19) — the
- * source of Mode B threshold group keys and the revocation registry. We drive its prebuilt CLI by
- * subprocess (same pattern as the BSV node): `custody keygen --threshold t --shares n` produces a
- * genuine t-of-n threshold group public key (no single party holds the whole private key — Mode B),
- * and `custody revoke` exercises the real revocation path. Not a conformant fake.
+ * 绑定真实的 `overlay-broadcast` 托管实现（REQ-DEP-004，core §16/§19）—— 它是 Mode B 门限组密钥
+ * 与撤销注册表的来源。我们通过子进程驱动其预构建的 CLI（与 BSV 节点采用相同的模式）：
+ * `custody keygen --threshold t --shares n` 生成一个真正的 t-of-n 门限组公钥（任何单一玩家都不持有
+ * 完整私钥 —— Mode B），而 `custody revoke` 则演练真实的撤销路径。这不是满足一致性的 fake。
  */
 
 import { execFileSync } from 'node:child_process';
@@ -29,7 +28,7 @@ function modpow(b: bigint, e: bigint, m: bigint): bigint {
   return r;
 }
 
-/** True if a 33-byte SEC-1 compressed key decodes to a real point on secp256k1 (y² = x³ + 7). */
+/** 若一个 33 字节 SEC-1 压缩公钥能解码为 secp256k1 上的真实点（y² = x³ + 7）则为 true。 */
 export function isOnCurveCompressed(pub: Uint8Array): boolean {
   if (pub.length !== 33 || (pub[0] !== 0x02 && pub[0] !== 0x03)) return false;
   let x = 0n;
@@ -41,22 +40,21 @@ export function isOnCurveCompressed(pub: Uint8Array): boolean {
 }
 
 export class RealOb {
-  /** A real t-of-n threshold group public key (Mode B custody key), 33-byte compressed. */
+  /** 一个真实的 t-of-n 门限组公钥（Mode B 托管密钥），33 字节压缩格式。 */
   thresholdGroupKey(threshold: number, shares: number): Uint8Array {
     const hex = ob(['custody', 'keygen', '--threshold', String(threshold), '--shares', String(shares)]);
     if (!/^[0-9a-f]{66}$/.test(hex)) throw new Error(`unexpected OB keygen output: ${hex}`);
     return Uint8Array.from(Buffer.from(hex, 'hex'));
   }
 
-  /** Exercise the real revocation path; returns whether the key is revoked. */
+  /** 演练真实的撤销路径；返回该密钥是否已被撤销。 */
   revoke(): boolean {
     return ob(['custody', 'revoke']).includes('revoked=true');
   }
 
   /**
-   * Mode B online threshold signing: a t-of-n quorum produces a standard ECDSA (DER, low-S)
-   * signature over `prehash` (a 32-byte digest) under the group key — the group private key is
-   * never reconstructed (GG20). Returns the group public key + the signature.
+   * Mode B 在线门限签名：一个 t-of-n 法定人数在组密钥下对 `prehash`（一个 32 字节摘要）产生一个
+   * 标准的 ECDSA（DER、low-S）签名 —— 组私钥绝不会被重构（GG20）。返回组公钥 + 签名。
    */
   thresholdSign(threshold: number, shares: number, prehash: Uint8Array): { groupKey: Uint8Array; sig: Uint8Array } {
     if (prehash.length !== 32) throw new Error('prehash must be 32 bytes');

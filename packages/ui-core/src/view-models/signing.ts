@@ -1,23 +1,22 @@
 /**
- * Signing-prompt view-model (REQ-UI-006 / §A6.7; core §11.6).
+ * 签名提示 view-model（REQ-UI-006 / §A6.7；core §11.6）。
  *
- * No silent signing: every emitted action must state exactly what is being authorised —
- * the action kind, amounts, and the affected pot/state. In Phase-1 hot-seat play there is no
- * real key/tx (the on-chain crypto + tx-builder is a later phase, §A2.3); this view-model
- * still produces the honest human-readable intent so the modal is wired end-to-end and the
- * "no silent signing" contract is exercised. The exact-bytes field is intentionally absent
- * here and labelled as such.
+ * 不进行静默签名：每个发出的动作都必须准确说明被授权的内容——动作类型、金额，
+ * 以及受影响的底池/状态。在 Phase-1 的同机轮流（hot-seat）对局中没有真正的
+ * 密钥/tx（链上 crypto + tx-builder 属于后续阶段，§A2.3）；此 view-model
+ * 仍会生成诚实的、人类可读的意图，以便该 modal 端到端打通，并验证“不静默签名”
+ * 的约定。此处有意不包含精确字节（exact-bytes）字段，并据此加以标注。
  */
 
 import type { Action, LegalActions } from '@bsv-poker/protocol-types';
 
 export interface SigningPromptVM {
   readonly title: string;
-  /** One human-readable line per fact being authorised (action, amount, pot effect). */
+  /** 每条被授权事实对应一行人类可读文本（动作、金额、对底池的影响）。 */
   readonly lines: readonly string[];
-  /** The concrete action that will be applied on confirm. */
+  /** 确认后将被应用的具体动作。 */
   readonly action: Action;
-  /** Honest note about what is and is NOT signed in this phase. */
+  /** 关于本阶段“签了什么、没签什么”的诚实说明。 */
   readonly disclosure: string;
 }
 
@@ -59,7 +58,7 @@ export function signingPromptVM(
   };
 }
 
-/** Build the concrete Action a chosen UI control maps to, from the engine legal descriptor. */
+/** 根据引擎的合法动作描述符，构建所选 UI 控件映射到的具体 Action。 */
 export function actionFromChoice(
   choice: 'fold' | 'check' | 'call' | 'bet' | 'raise',
   seat: number,

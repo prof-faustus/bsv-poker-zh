@@ -1,7 +1,7 @@
 /**
- * Error taxonomy (REQ-APP-110; codes per Appendix III). Every surfaced error carries a stable code,
- * a category, and a recoverable flag, so the UI can react consistently and logs/metrics can be keyed
- * by code. An unknown code degrades to a non-recoverable internal error (fail-closed).
+ * 错误分类体系（REQ-APP-110；错误码见 Appendix III）。每个对外暴露的错误都带有一个稳定的 code、
+ * 一个类别（category）以及一个可恢复（recoverable）标志，使 UI 能够一致地作出反应，且日志/指标可以
+ * 按 code 进行索引。未知的 code 会降级为不可恢复的内部错误（fail-closed）。
  */
 
 export type ErrorCategory = 'network' | 'protocol' | 'custody' | 'persistence' | 'user' | 'internal';

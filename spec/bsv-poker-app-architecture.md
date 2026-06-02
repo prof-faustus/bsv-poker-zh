@@ -1,1425 +1,1424 @@
-# BSV Poker — Application-Layer Engineering Specification
-## The running Windows desktop program and the web client
-### Mission-critical build specification for Claude Code
+# BSV Poker — 应用层工程规范
+## 运行中的 Windows 桌面端程序与 web 客户端
+### 面向 Claude Code 的关键任务构建规范
 
 ---
 
-## Document control
+## 文档控制
 
 | Field | Value |
 |---|---|
 | Document ID | `BSV-POKER-APP-SPEC` |
-| Type | Build specification (design artifact). **No application code. Runs nothing.** |
-| Companion | `bsv-poker-spec.md` — the protocol/crypto/transaction core (consumed, not restated) |
-| Engineering bar | NASA NPR 7150.2 software-assurance practice + Microsoft SDL security practice + a **documented** JPL "Power-of-Ten" adaptation for a garbage-collected TypeScript/Go runtime (mapping in §A17). Mission-critical: every requirement traces to design, to a test obligation, and to an acceptance gate. |
-| Author role | Writes the **how-to**. Specifies what is built, the contracts, the acceptance criteria, the test obligations. |
-| Builder role | **Claude Code** builds and **runs** everything — code, vectors, byte measurements, the real Script interpreter, the test suites, the installers, the CI. The author runs nothing (§A19). |
-| Status | Living document, built to the ≥10,000-line target across **dense, non-padded passes** (this is Pass A1 of the application spec; §A20 tracks remaining passes). Completeness is never claimed beyond what is written. |
-| Hard rules | BSV-only, post-Genesis (no BTC; `OP_CHECKLOCKTIMEVERIFY`/`OP_CHECKSEQUENCEVERIFY` are no-ops — timing is transaction-level per core §6.2). **OP_RETURN banned everywhere** (core P11/§6.5). Zero fabrication (no computed value asserted here; computation is a Claude Code task). No hidden assumptions (every choice declared, overridable). No overclaim. No apologies. No padding. |
+| Type | 构建规范（设计制品）。**不含应用代码。不运行任何东西。** |
+| Companion | `bsv-poker-spec.md` —— 协议/密码学/交易核心（被消费，而非在此重述） |
+| Engineering bar | NASA NPR 7150.2 软件保证实践 + Microsoft SDL 安全实践 + 一份**有文档记录的** JPL "Power-of-Ten" 改编，适配于带垃圾回收的 TypeScript/Go 运行时（映射见 §A17）。关键任务：每条需求都可追溯到设计、到一项测试义务、再到一个验收闸门。 |
+| Author role | 编写**操作指南**。规定构建什么、各项契约、验收标准、测试义务。 |
+| Builder role | **Claude Code** 构建并**运行**一切 —— 代码、向量、字节度量、真实的 Script 解释器、测试套件、安装程序、CI。作者不运行任何东西（§A19）。 |
+| Status | 活文档，跨**密集、无填充的多轮次**构建至 ≥10,000 行目标（本轮为应用规范的 Pass A1；§A20 跟踪剩余轮次）。完整性绝不超出已写内容而宣称。 |
+| Hard rules | 仅 BSV、后 Genesis（无 BTC；`OP_CHECKLOCKTIMEVERIFY`/`OP_CHECKSEQUENCEVERIFY` 为空操作 —— 计时在交易级别，依核心 §6.2）。**OP_RETURN 处处禁用**（核心 P11/§6.5）。零捏造（此处不断言任何计算值；计算是 Claude Code 的任务）。无隐藏假设（每个选择均声明、可覆盖）。不夸大。不致歉。不填充。 |
 
-### Provenance and the no-fabrication rule for this document
-This document asserts **no measured or computed value**. Every quantity that a mission-
-critical spec would normally carry — latency budgets, byte sizes, throughput, memory ceilings,
-coverage percentages — appears here either as a **design target** explicitly marked
-`TRACKED ASSUMPTION` (a target the build must meet and **measure**, not a claim that it is met)
-or as a `DECISION REQUIRED`. Where a value must be produced (hand-evaluation vectors, script
-byte schedules, performance numbers), this document states the **task, method, and acceptance**
-and assigns it to Claude Code (§A19). The author does not run code for any reason.
+### 本文档的出处与不捏造规则
+本文档**不断言任何测量值或计算值**。一份关键任务规范通常会携带的每一个数量 ——
+延迟预算、字节大小、吞吐量、内存上限、覆盖率百分比 —— 在此要么作为一个明确标记为
+`TRACKED ASSUMPTION` 的**设计目标**出现（一个构建必须达到并**测量**的目标，而非已达成的宣称），
+要么作为 `DECISION REQUIRED` 出现。凡必须产出某个值之处（手牌评估向量、脚本
+字节计划表、性能数字），本文档陈述其**任务、方法与验收**，
+并将其指派给 Claude Code（§A19）。作者出于任何理由都不运行代码。
 
-### Conformance language
-The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**, **SHOULD**,
-**SHOULD NOT**, **MAY** are used as in RFC 2119/8174. A **defect** is any deviation from a
-**MUST**/**SHALL**. A **blocker** is a defect that makes a phase un-shippable. Requirement IDs
-in this document use the prefix `REQ-APP-*` and are registered in §A18; each maps to an owning
-module (§A2–§A8), a verification method (§A16), and an acceptance gate (§A18.3). This register
-is kept in lock-step with the core spec's register (core §13.2/§19.F) — the two never
-double-define a requirement; an application requirement that refines a core requirement cites it.
-
----
-
-## Table of contents
-
-- **§A0** Scope, deliverables, declared decisions, and the relationship to the core
-- **§A1** Application overview — what "running" means, and the two programs
-- **§A2** System architecture — layers, the deterministic boundary, data flow
-- **§A3** Desktop runtime & supervision (Tauri + Rust supervisor + embedded services)
-- **§A4** Web runtime
-- **§A5** Shared UI core (one core, two shells)
-- **§A6** Screen specifications (state, actions, consequence text, signing, edge states, a11y)
-- **§A7** Discovery, lobby, matchmaking, connection
-- **§A8** The seam to the protocol core (SDK consumption + custody boundary)
-- **§A9** Non-functional requirements (performance, reliability, resource, capacity)
-- **§A10** Security architecture (Microsoft SDL-aligned)
-- **§A11** Error handling, failure modes, degraded operation, recovery
-- **§A12** Observability (logging, metrics, tracing, audit, redaction)
-- **§A13** Client persistence & data model
-- **§A14** Packaging, build, CI/CD, reproducibility, release
-- **§A15** Documentation standard (what the build must produce and maintain)
-- **§A16** Verification & validation — test architecture and full test specification
-- **§A17** Engineering-standard mapping (NPR 7150.2 + Power-of-Ten adaptation + Microsoft SDL)
-- **§A18** Requirements register, traceability, acceptance gates
-- **§A19** Division of labour — author (how-to) vs Claude Code (build/run)
-- **§A20** Open decisions and the remaining-passes plan to ≥10,000 lines
-- **Appendix I** IPC command/event catalog
-- **Appendix II** Screen × action × SDK-call matrix
-- **Appendix III** Error-code catalog
-- **Appendix IV** Test-case catalog (specifications)
-- **Appendix V** Configuration catalog
-- **Appendix VI** Glossary (application layer)
+### 一致性语言
+关键词 **MUST**、**MUST NOT**、**REQUIRED**、**SHALL**、**SHALL NOT**、**SHOULD**、
+**SHOULD NOT**、**MAY** 按 RFC 2119/8174 使用。**缺陷（defect）**指任何对
+**MUST**/**SHALL** 的偏离。**阻塞项（blocker）**是使某阶段无法发布的缺陷。本文档中的需求 ID
+使用前缀 `REQ-APP-*`，并在 §A18 中登记；每条映射到一个所属
+模块（§A2–§A8）、一种验证方法（§A16）和一个验收闸门（§A18.3）。本登记册
+与核心规范的登记册（核心 §13.2/§19.F）保持同步 —— 二者绝不
+重复定义同一需求；细化核心需求的应用需求会引用之。
 
 ---
 
-# §A0 Scope, deliverables, declared decisions, and relationship to the core
+## 目录
 
-## §A0.1 Scope (in / out)
+- **§A0** 范围、交付物、已声明的决策，以及与核心的关系
+- **§A1** 应用概述 —— "运行"意味着什么，以及两个程序
+- **§A2** 系统架构 —— 各层、确定性边界、数据流
+- **§A3** 桌面端运行时与监督（Tauri + Rust 监督进程 + 内嵌服务）
+- **§A4** Web 运行时
+- **§A5** 共享 UI 核心（一个核心，两个外壳）
+- **§A6** 屏幕规范（状态、动作、后果文案、签名、边缘状态、无障碍）
+- **§A7** 发现、大厅、匹配、连接
+- **§A8** 通向协议核心的接缝（SDK 消费 + 托管边界）
+- **§A9** 非功能性需求（性能、可靠性、资源、容量）
+- **§A10** 安全架构（对齐 Microsoft SDL）
+- **§A11** 错误处理、故障模式、降级运行、恢复
+- **§A12** 可观测性（日志、指标、追踪、审计、脱敏）
+- **§A13** 客户端持久化与数据模型
+- **§A14** 打包、构建、CI/CD、可复现性、发布
+- **§A15** 文档标准（构建必须产出并维护什么）
+- **§A16** 验证与确认 —— 测试架构与完整测试规范
+- **§A17** 工程标准映射（NPR 7150.2 + Power-of-Ten 改编 + Microsoft SDL）
+- **§A18** 需求登记册、可追溯性、验收闸门
+- **§A19** 分工 —— 作者（操作指南）vs Claude Code（构建/运行）
+- **§A20** 未决决策，以及通往 ≥10,000 行的剩余轮次计划
+- **Appendix I** IPC 命令/事件目录
+- **Appendix II** 屏幕 × 动作 × SDK 调用矩阵
+- **Appendix III** 错误码目录
+- **Appendix IV** 测试用例目录（规范）
+- **Appendix V** 配置目录
+- **Appendix VI** 术语表（应用层）
 
-**In scope (this document).** The complete application layer for the two shipped programs and
-the runtime that hosts them:
-- the **Windows desktop program** (native window, supervised local services, install/update);
-- the **web client** (browser-hosted, remote or bundled-local services);
-- the **shared UI core** both shells run;
-- the **client-side runtime**: process supervision (desktop), connection management, persistence,
-  custody-boundary integration, observability;
-- **discovery, lobby, matchmaking, and connection** behaviour at the client (consuming the core's
-  networking contracts, core §8);
-- the **multi-game platform** — all poker variants (Texas Hold'em, Omaha PL/NL, Seven-Card Stud,
-  Five-Card Draw, Razz) plus Blackjack — as game modules behind one interface (§A21), and the
-  **NFT/revocation** (§A22) and **micro-payment** (§A23) integration seams;
-- **non-functional requirements, security, error/failure handling, observability** for the app;
-- **packaging, build, CI/CD, reproducibility** for the two programs and the self-contained image;
-- the **documentation** the build must produce and the **test specification** the build must run.
+---
 
-**Out of scope (lives in the core spec `bsv-poker-spec.md`, cited not restated).** The
-mental-poker cryptography (core §4), the BSV transaction/Script templates and their byte
-schedules (core §6, §19.C), the engine's game logic and hand evaluation (core §5, §7, §19.D),
-the SDK's internal implementation (core §15), the dependency contracts' internals (`CT/BS/VA/OB`,
-core §2), and the protocol-level `DECISION REQUIRED` items (reveal-token core §4.6; Mode-B
-signing core §6.7). The application **consumes** these; it does not re-specify them, and it must
-not contradict them.
+# §A0 范围、交付物、已声明的决策，以及与核心的关系
 
-**Explicitly excluded from the product (per core §0.3, D7, D8).** Real-money operation, KYC/AML,
-regulated gambling, NFT marketplace, native mobile, Blackjack — all later tracks; the core is
-regtest-by-default with play-money semantics, mainnet behind an explicit research flag.
+## §A0.1 范围（纳入 / 排除）
 
-## §A0.2 Deliverables of the application layer
-1. `client-desktop` — the Tauri Windows program (signed installer; §A3, §A14).
-2. `client-web` — the Vite web bundle + its deployment (§A4, §A14).
-3. `ui-core` — the shared UI core package (§A5).
-4. The **self-contained image** ("VM", core D5/§10) — container (and optional VM image) bundling
-   node + relay + client + bootstrap (§A14).
-5. The **documentation set** (§A15) and the **test suites** (§A16) — specified here, built and run
-   by Claude Code.
+**纳入范围（本文档）。** 两个已发布程序的完整应用层，以及托管它们的
+运行时：
+- **Windows 桌面端程序**（原生窗口、受监督的本地服务、安装/更新）；
+- **web 客户端**（浏览器托管，远端服务或捆绑本地服务）；
+- 两个外壳共同运行的**共享 UI 核心**；
+- **客户端侧运行时**：进程监督（桌面端）、连接管理、持久化、
+  托管边界集成、可观测性；
+- 客户端处的**发现、大厅、匹配与连接**行为（消费核心的
+  网络契约，核心 §8）；
+- **多游戏平台** —— 所有扑克变体（Texas Hold'em、Omaha PL/NL、Seven-Card Stud、
+  Five-Card Draw、Razz）外加 Blackjack —— 作为同一接口背后的游戏模块（§A21），以及
+  **NFT/撤销**（§A22）与**微支付**（§A23）集成接缝；
+- 应用的**非功能性需求、安全、错误/故障处理、可观测性**；
+- 两个程序与自包含镜像的**打包、构建、CI/CD、可复现性**；
+- 构建必须产出的**文档**，以及构建必须运行的**测试规范**。
 
-## §A0.3 Declared decisions (each overridable in exactly one place)
+**排除范围（位于核心规范 `bsv-poker-spec.md`，引用而非重述）。**
+心智扑克密码学（核心 §4）、BSV 交易/Script 模板及其字节
+计划表（核心 §6、§19.C）、引擎的游戏逻辑与手牌评估（核心 §5、§7、§19.D）、
+SDK 的内部实现（核心 §15）、依赖契约的内部细节（`CT/BS/VA/OB`，
+核心 §2），以及协议级别的 `DECISION REQUIRED` 项（揭示令牌核心 §4.6；Mode-B
+签名核心 §6.7）。应用**消费**这些；它不重新规定它们，且
+不得与之矛盾。
 
-| ID | Decision | Default | Override key | Rationale (recorded, not assumed) |
+**明确排除于产品之外（依核心 §0.3、D7、D8）。** 真实货币运营、KYC/AML、
+受监管赌博、NFT 市场、原生移动端、Blackjack —— 全部为后续轨道；核心默认
+regtest，采用游戏币语义，主网置于一个明确的研究标志之后。
+
+## §A0.2 应用层的交付物
+1. `client-desktop` —— Tauri Windows 程序（已签名安装程序；§A3、§A14）。
+2. `client-web` —— Vite web 打包件及其部署（§A4、§A14）。
+3. `ui-core` —— 共享 UI 核心包（§A5）。
+4. **自包含镜像**（"VM"，核心 D5/§10）—— 捆绑
+   node + relay + client + 引导程序的容器（及可选 VM 镜像）（§A14）。
+5. **文档集**（§A15）与**测试套件**（§A16）—— 在此规定，由 Claude Code
+   构建并运行。
+
+## §A0.3 已声明的决策（每条恰在一处可覆盖）
+
+| ID | Decision | Default | Override key | Rationale（已记录，非假定） |
 |---|---|---|---|---|
-| AD1 | Placement of this spec | Standalone document | — | Keeps the protocol core intact; gives Claude Code a focused app build doc. |
-| AD2 | Windows shell | **Tauri** (WebView2 + Rust supervisor) | `desktop.shell` | Small native binary, system webview, clean local-process supervision (core §11.1). Electron only on a recorded Tauri limitation. |
-| AD3 | Web shell | React + TypeScript + Vite | `web.stack` | Shared core with desktop; matches the lineage (core §3.2, §11.1). |
-| AD4 | Local chain backend | `bonded-subsat-channel` embedded node, regtest | `chain.backend` | Reuse the existing self-contained node (core §10.2, D6). |
-| AD5 | "VM" | Reproducible self-contained image (container + optional VM image) | `vm.targets` | No external services to play (core §10.1, D5). |
-| AD6 | First runnable | Phase 1: heads-up NL Hold'em, regtest, Windows + web, with discovery | `phase1.game` | Core D1, D4, §17. |
-| AD7 | Custody default | Software custody behind the pluggable `Custody` interface; TEE optional | `custody.backend` | No phase requires a TEE (core §9.3, §0.3). |
-| AD8 | Languages | UI core + engine consumption in TypeScript; local services (relay, indexer, supervisor glue) in Go/Rust | `lang.*` | Matches core §3.2; Tauri main is Rust. |
-| AD9 | State store (desktop) | SQLite | `desktop.store` | Core §11.2, §12.1. |
-| AD10 | State store (web) | IndexedDB; **never** `localStorage`/`sessionStorage` for load-bearing state | `web.store` | Core §11.2, REQ-UI-002. |
+| AD1 | 本规范的安置 | 独立文档 | — | 保持协议核心完整；给 Claude Code 一份聚焦的应用构建文档。 |
+| AD2 | Windows 外壳 | **Tauri**（WebView2 + Rust 监督进程） | `desktop.shell` | 小型原生二进制、系统 webview、干净的本地进程监督（核心 §11.1）。仅在有记录的 Tauri 局限下才用 Electron。 |
+| AD3 | Web 外壳 | React + TypeScript + Vite | `web.stack` | 与桌面端共享核心；契合渊源（核心 §3.2、§11.1）。 |
+| AD4 | 本地链后端 | `bonded-subsat-channel` 内嵌节点，regtest | `chain.backend` | 复用既有的自包含节点（核心 §10.2、D6）。 |
+| AD5 | "VM" | 可复现的自包含镜像（容器 + 可选 VM 镜像） | `vm.targets` | 无需外部服务即可游玩（核心 §10.1、D5）。 |
+| AD6 | 首个可运行项 | Phase 1：单挑 NL Hold'em、regtest、Windows + web，带发现 | `phase1.game` | 核心 D1、D4、§17。 |
+| AD7 | 托管默认值 | 可插拔 `Custody` 接口背后的软件托管；TEE 可选 | `custody.backend` | 没有任何阶段要求 TEE（核心 §9.3、§0.3）。 |
+| AD8 | 语言 | UI 核心 + 引擎消费用 TypeScript；本地服务（relay、indexer、监督进程胶水）用 Go/Rust | `lang.*` | 契合核心 §3.2；Tauri main 为 Rust。 |
+| AD9 | 状态存储（桌面端） | SQLite | `desktop.store` | 核心 §11.2、§12.1。 |
+| AD10 | 状态存储（web） | IndexedDB；承重状态**绝不**用 `localStorage`/`sessionStorage` | `web.store` | 核心 §11.2、REQ-UI-002。 |
 
-## §A0.4 Relationship to the core, and the precedence rule
-The application is a **viewer/agent** over the core's transaction-defined truth. The engine
-derives `tableState = f(orderedValidTxSet, ruleset)` (core §3.3, P2); the shells render it and
-emit signed actions. **Precedence:** on any conflict, the protocol core governs the protocol and
-this document governs the application. If this document appears to require a protocol change, that
-is a defect in this document — raise it against the core, do not silently diverge.
+## §A0.4 与核心的关系，以及优先级规则
+应用是核心交易定义之真相之上的**查看器/代理**。引擎
+推导 `tableState = f(orderedValidTxSet, ruleset)`（核心 §3.3，P2）；外壳渲染它并
+发出已签名的动作。**优先级：** 任何冲突时，协议核心管辖协议，
+本文档管辖应用。若本文档看似要求一处协议变更，那
+是本文档中的缺陷 —— 应针对核心提出，不要静默地分歧。
 
-## §A0.5 Required-capability capture & coverage (every requirement → where it is handled)
+## §A0.5 所需能力的捕获与覆盖（每条需求 → 在何处处理）
 
-This table captures **every capability the principal has stated** for this build and maps each to the
-section(s) that handle it. It is the checkable answer to "make it so, nothing missed": a capability
-with no covering section is a defect. The table is regenerated and re-verified each pass; if the
-principal has stated a requirement not listed here, that is a miss to be added immediately.
+本表捕获**委托人为本次构建陈述的每一项能力**，并将每项映射到处理它的
+章节。这是对"实现它，无所遗漏"可核查的回答：一项能力
+若无覆盖章节即为缺陷。本表每轮重新生成并重新验证；若
+委托人陈述了此处未列出的需求，那即是必须立即补上的遗漏。
 
-| # | Required capability (as stated) | Where handled | Status |
+| # | 所需能力（如所陈述） | 在何处处理 | 状态 |
 |---|---|---|---|
-| R1 | Runs as a **Windows graphical program** | §A1, §A3, §A14 | Specified |
-| R2 | Runs as a **web client** | §A1, §A4, §A14 | Specified |
-| R3 | One shared core, two thin shells | §A2, §A5 | Specified |
-| R4 | **Find / connect to other players** | §A6.3, §A7 | Specified |
-| R5 | **Multiple games** — Texas Hold'em, Omaha (PL/NL), Seven-Card Stud, Five-Card Draw, Razz | §A21 (consuming core §7.2/§7.3) | Specified |
-| R6 | **Blackjack** (distinct dealerless model) | §A21.7 (planned module; core D7) | Specified; protocol model DECISION REQUIRED |
-| R7 | **Dealerless / non-custodial** (no server holds the deck or decides outcomes) | §A2.2, §A8; core §3/§4 | Specified |
-| R8 | **Fold without revealing cards** | §A6.5; core P5/§4.6 | Specified |
-| R9 | **Micro-payments** (sub-satoshi in-game value) | §A23 (consuming core §2.2/§9.4) | Specified (flag-gated early) |
-| R10 | **Transferable + revocable NFTs** (Bob owns → Alice loses access) | §A22 (consuming core §2.4/§15.7) | Specified (later track; seam exposed) |
-| R11 | **FULL VM** / self-contained launch, no external services | §A14; core §10/D5 | Specified |
-| R12 | **Mission-critical robustness** (NASA NPR 7150.2 + Microsoft SDL) | §A10, §A17, §A18 | Specified |
-| R13 | **Documentation** deliverable | §A15 | Specified |
-| R14 | **Test** deliverable (comprehensive) | §A16; Appendix IV | Specified |
-| R15 | **BSV-only, post-Genesis**; no BTC; no CLTV/CSV for timing | throughout; core §6.2 | Enforced |
-| R16 | **OP_RETURN banned** everywhere | throughout; core P11/§6.5 | Enforced |
-| R17 | **Zero fabrication** — no computed value asserted by the author | §A0 provenance, §A19 | Enforced |
-| R18 | **Author designs; Claude Code builds and runs** (author runs no code) | §A19 | Enforced |
-| R19 | **TEE optional** (custody pluggable) | §A8.2, AD7 | Specified |
-| R20 | **≥10,000-line, no-padding** mission-critical spec | §A20.2 (built across dense passes) | In progress; honest count reported each pass |
-| R21 | Timeouts / recovery so no participant can freeze the table | §A11; core P4/§6.4 | Specified |
-| R22 | Deterministic, transcript-replayable state | §A2.2, §A16.4; core §12.3 | Specified |
+| R1 | 作为 **Windows 图形程序**运行 | §A1、§A3、§A14 | 已规定 |
+| R2 | 作为 **web 客户端**运行 | §A1、§A4、§A14 | 已规定 |
+| R3 | 一个共享核心，两个薄外壳 | §A2、§A5 | 已规定 |
+| R4 | **查找 / 连接其他玩家** | §A6.3、§A7 | 已规定 |
+| R5 | **多种游戏** —— Texas Hold'em、Omaha（PL/NL）、Seven-Card Stud、Five-Card Draw、Razz | §A21（消费核心 §7.2/§7.3） | 已规定 |
+| R6 | **Blackjack**（独特的无荷官模型） | §A21.7（计划中的模块；核心 D7） | 已规定；协议模型 DECISION REQUIRED |
+| R7 | **无荷官 / 非托管**（无服务器持有牌堆或裁定结果） | §A2.2、§A8；核心 §3/§4 | 已规定 |
+| R8 | **弃牌而不亮牌** | §A6.5；核心 P5/§4.6 | 已规定 |
+| R9 | **微支付**（亚聪级别的游戏内价值） | §A23（消费核心 §2.2/§9.4） | 已规定（早期由标志门控） |
+| R10 | **可转让 + 可撤销的 NFT**（Bob 拥有 → Alice 失去访问权） | §A22（消费核心 §2.4/§15.7） | 已规定（后续轨道；接缝已暴露） |
+| R11 | **完整 VM** / 自包含启动，无外部服务 | §A14；核心 §10/D5 | 已规定 |
+| R12 | **关键任务级健壮性**（NASA NPR 7150.2 + Microsoft SDL） | §A10、§A17、§A18 | 已规定 |
+| R13 | **文档**交付物 | §A15 | 已规定 |
+| R14 | **测试**交付物（全面） | §A16；Appendix IV | 已规定 |
+| R15 | **仅 BSV、后 Genesis**；无 BTC；计时不用 CLTV/CSV | 贯穿全文；核心 §6.2 | 已强制 |
+| R16 | **OP_RETURN 处处禁用** | 贯穿全文；核心 P11/§6.5 | 已强制 |
+| R17 | **零捏造** —— 作者不断言任何计算值 | §A0 出处、§A19 | 已强制 |
+| R18 | **作者设计；Claude Code 构建并运行**（作者不运行代码） | §A19 | 已强制 |
+| R19 | **TEE 可选**（托管可插拔） | §A8.2、AD7 | 已规定 |
+| R20 | **≥10,000 行、无填充**的关键任务规范 | §A20.2（跨密集轮次构建） | 进行中；每轮报告诚实行数 |
+| R21 | 超时 / 恢复，使任何参与者都无法冻结牌桌 | §A11；核心 P4/§6.4 | 已规定 |
+| R22 | 确定性的、可由记录重放的状态 | §A2.2、§A16.4；核心 §12.3 | 已规定 |
 
 ---
 
-# §A1 Application overview
+# §A1 应用概述
 
-## §A1.1 What "running" means
-"Running" is a process that (REQ-APP-001) holds keys behind a custody boundary and derives table
-state only through the engine; (REQ-APP-002) sends every player action on **two paths
-simultaneously** — to the network as a real BSV transaction (canonical) and directly to table
-peers via the relay (speed) — per core §8.3; and (REQ-APP-003) renders the table and obtains
-explicit, informed signing consent for every transaction (no silent signing; core §11.6). The two
-programs differ only in how the services beneath them run and how they persist.
+## §A1.1 "运行"意味着什么
+"运行"是一个进程，它（REQ-APP-001）将密钥持有在托管边界之后，且仅通过引擎推导牌桌
+状态；（REQ-APP-002）将每个玩家动作在**两条路径上
+同时**发送 —— 作为一笔真实的 BSV 交易发往网络（规范路径），并通过 relay 直接发往牌桌
+对端（速度路径）—— 依核心 §8.3；并（REQ-APP-003）渲染牌桌，且为每笔交易获取
+明确、知情的签名同意（无静默签名；核心 §11.6）。两个
+程序仅在其下方服务如何运行、以及如何持久化方面有所不同。
 
-## §A1.2 The two programs, side by side
+## §A1.2 两个程序，并列对照
 
-| Concern | Windows desktop (Tauri) | Web client |
+| 关注点 | Windows 桌面端（Tauri） | Web 客户端 |
 |---|---|---|
-| Services (node, relay, indexer) | Embedded, **supervised by the app** (§A3) | Remote: bundled-local (dev/regtest) or hosted (internet) (§A4) |
-| Persistence | SQLite (AD9) | IndexedDB (AD10) |
-| Chain access | Local node (`BS.node`) + SPV where needed | SPV-edge verification + relay/indexer projections |
-| Custody isolation | Trusted process (Rust side or isolated worker) | Isolated worker; keys never reach the DOM |
-| "No external services to play" | Embedded node+relay (D5/D6) | Bundled-local mode, or a hosted relay+node |
-| Update | Signed installer; auto-update later (§A14) | Redeploy bundle |
+| 服务（node、relay、indexer） | 内嵌，**由应用监督**（§A3） | 远端：捆绑本地（开发/regtest）或托管（互联网）（§A4） |
+| 持久化 | SQLite（AD9） | IndexedDB（AD10） |
+| 链访问 | 本地节点（`BS.node`）+ 必要处用 SPV | SPV 边缘验证 + relay/indexer 投影 |
+| 托管隔离 | 受信进程（Rust 侧或隔离 worker） | 隔离 worker；密钥绝不到达 DOM |
+| "无需外部服务即可游玩" | 内嵌 node+relay（D5/D6） | 捆绑本地模式，或托管的 relay+node |
+| 更新 | 已签名安装程序；自动更新为后续项（§A14） | 重新部署打包件 |
 
-## §A1.3 The product promise this layer must keep (core §1, §17, D1)
-A user installs on Windows or opens the web app; creates or imports a wallet; finds other players;
-sits at a heads-up NL Hold'em table on regtest; plays a full hand — entropy commit/reveal,
-distributed shuffle, encrypted deal, betting streets, **fold without revealing cards**,
-minimum-reveal showdown, deterministic settlement — with decision and recovery timeouts
-throughout; and can export and deterministically replay the transcript. §A10's definition of done
-makes this checkable.
-
----
-
-# §A2 System architecture
-
-## §A2.1 Layered view (application emphasis)
-```
-+------------------------------------------------------------------+
-| Shells:  client-desktop (Tauri/Rust+WebView2)   client-web (Vite)|
-|          thin; no business logic (core §11.1, REQ-UI-001)        |
-+------------------------------------------------------------------+
-| ui-core (TS/React): state, view-models, components, error bounds |  §A5
-+------------------------------------------------------------------+
-| app-services (TS): connection mgr, sync, custody client,          |  §A2.3
-|                    timeout/observer, persistence gateway          |
-+------------------------------------------------------------------+
-| SDK (core §15): Session/Lobby · State engine · Ruleset · Crypto/  |
-|                 deck · Tx builder · Wallet/Custody · Chain         |
-+------------------------------------------------------------------+
-| adapters CT/BS/VA/OB (core §2, §15.8)                            |
-+------------------------------------------------------------------+
-| local services: embedded BSV node (regtest, BS.node) · relay-go · |  §A3
-|                 indexer-go    (desktop: supervised; web: remote)  |
-+------------------------------------------------------------------+
-| persistence: SQLite (desktop) / IndexedDB (web)                  |  §A13
-+------------------------------------------------------------------+
-```
-
-## §A2.2 The deterministic boundary (REQ-APP-010)
-The UI and app-services MUST treat the engine as a pure function (core §3.3, REQ-ARCH-001/002):
-no UI code computes legality, outcomes, pot splits, or hand rankings; it calls
-`getLegalActions`/`deriveState`/`validateTransition` (core §15.2) and renders the result. "Now"
-enters only as an explicit parameter derived from chain/relay-anchored height/time (core §3.3,
-§6.4), never from `Date.now()` for any consensus-affecting decision (REQ-APP-011). This boundary is
-what makes deterministic replay (§A16.4) and cross-client agreement testable.
-
-## §A2.3 app-services (the client-side service layer, TypeScript)
-A thin layer between `ui-core` and the SDK, identical across both shells:
-- **Connection manager** (§A7): owns the canonical path (to node/network) and the speed path (to
-  table peers via relay); exposes one send API that fans out to both (core §8.3); manages
-  presence, table-channel subscription, reconnect.
-- **Sync/state deriver** (§A2.2): assembles the ordered valid-tx view from the indexer projection +
-  the peer feed + locally held commit/reveal material; invokes the engine; emits state to
-  view-models.
-- **Custody client** (§A8): the in-process proxy to the `Custody` interface (core §9.3); requests
-  `derive`/`sign`/`decryptToViewer`/`combineSignShare`; never holds raw keys in UI memory.
-- **Timeout/observer** (§A11): computes timeout eligibility from anchored height/time; surfaces the
-  consequence state; never advances a default itself unless it is the acting client's role
-  (advancement is a transaction any peer may make, core §6.4).
-- **Persistence gateway** (§A13): the single typed door to SQLite/IndexedDB; all reads/writes go
-  through it; enforces the schema and redaction rules.
-
-## §A2.4 Module/package layout (matches core §16)
-`/packages/ui-core`, `/packages/app-services`, `/packages/protocol-types` (shared with core),
-`/packages/sdk` (core), `/apps/client-web`, `/apps/client-desktop`, `/apps/relay-go`,
-`/apps/indexer-go`, `/vm`. The application layer adds `ui-core` and `app-services`; it consumes the
-rest. (REQ-APP-012: no application package may import a dependency repo directly; it goes through
-the SDK/adapters, core §2.6.)
+## §A1.3 本层必须信守的产品承诺（核心 §1、§17、D1）
+用户在 Windows 上安装或打开 web 应用；创建或导入钱包；找到其他玩家；
+在 regtest 上落座于一张单挑 NL Hold'em 牌桌；打完一手完整的牌 —— 熵承诺/揭示、
+分布式洗牌、加密发牌、各下注街、**弃牌而不亮牌**、
+最小揭示摊牌、确定性结算 —— 全程伴随决策与恢复超时；
+并能导出记录并确定性地重放之。§A10 的完成定义
+使这一点可核查。
 
 ---
 
-# §A3 Desktop runtime & supervision (Tauri)
+# §A2 系统架构
 
-The desktop program is a Tauri application: a **Rust supervisor** (Tauri main) plus a **WebView2**
-running `ui-core`. The supervisor exists so a non-technical user double-clicks and plays.
-
-## §A3.1 Process model
+## §A2.1 分层视图（应用层视角）
 ```
-Tauri main (Rust supervisor)
-  ├─ spawn+supervise embedded BSV node (regtest, BS.node, D6)
-  ├─ spawn+supervise relay-go
-  ├─ spawn+supervise indexer-go
-  ├─ health checks · ordered start/stop · crash-restart
-  ├─ port allocation · data-dir management
-  ├─ custody-trusted operations (keys never leave this boundary)
-  └─ IPC bridge  ⇄  WebView2 (ui-core)
++------------------------------------------------------------------+
+| 外壳:  client-desktop (Tauri/Rust+WebView2)     client-web (Vite)|
+|        薄; 无业务逻辑 (core §11.1, REQ-UI-001)                    |
++------------------------------------------------------------------+
+| ui-core (TS/React): 状态、视图模型、组件、错误边界               |  §A5
++------------------------------------------------------------------+
+| app-services (TS): 连接管理器、同步、托管客户端、                 |  §A2.3
+|                    超时/观察器、持久化网关                        |
++------------------------------------------------------------------+
+| SDK (core §15): 对局/大厅 · 状态引擎 · 规则集 · 密码学/           |
+|                 牌堆 · 交易构建器 · 钱包/托管 · 链                 |
++------------------------------------------------------------------+
+| 适配器 CT/BS/VA/OB (core §2, §15.8)                              |
++------------------------------------------------------------------+
+| 本地服务: 内嵌 BSV 节点 (regtest, BS.node) · relay-go ·           |  §A3
+|           indexer-go    (桌面端: 受监督; web: 远端)              |
++------------------------------------------------------------------+
+| 持久化: SQLite (桌面端) / IndexedDB (web)                        |  §A13
++------------------------------------------------------------------+
+```
+
+## §A2.2 确定性边界（REQ-APP-010）
+UI 与 app-services MUST 将引擎视为一个纯函数（核心 §3.3，REQ-ARCH-001/002）：
+没有 UI 代码计算合法性、结果、底池分配或手牌排名；它调用
+`getLegalActions`/`deriveState`/`validateTransition`（核心 §15.2）并渲染结果。"现在（Now）"
+仅作为一个由链/relay 锚定的高度/时间推导出的显式参数进入（核心 §3.3、
+§6.4），对任何影响共识的决策绝不来自 `Date.now()`（REQ-APP-011）。正是这条边界
+使确定性重放（§A16.4）与跨客户端一致性可测试。
+
+## §A2.3 app-services（客户端侧服务层，TypeScript）
+位于 `ui-core` 与 SDK 之间的薄层，在两个外壳上完全一致：
+- **连接管理器**（§A7）：拥有规范路径（通向 node/网络）与速度路径（通过
+  relay 通向牌桌对端）；暴露一个向二者扇出的发送 API（核心 §8.3）；管理
+  在线状态、牌桌信道订阅、重连。
+- **同步/状态推导器**（§A2.2）：由 indexer 投影 +
+  对端流 + 本地持有的承诺/揭示材料组装出有序有效交易视图；调用引擎；将状态发射给
+  视图模型。
+- **托管客户端**（§A8）：通向 `Custody` 接口的进程内代理（核心 §9.3）；请求
+  `derive`/`sign`/`decryptToViewer`/`combineSignShare`；绝不在 UI 内存中持有原始密钥。
+- **超时/观察器**（§A11）：从锚定的高度/时间计算超时资格；呈现
+  后果状态；除非是当前行动客户端的角色，否则绝不自行推进默认动作
+  （推进是任何对端皆可发起的交易，核心 §6.4）。
+- **持久化网关**（§A13）：通向 SQLite/IndexedDB 的唯一类型化门户；所有读写都
+  经由它；强制实施模式（schema）与脱敏规则。
+
+## §A2.4 模块/包布局（契合核心 §16）
+`/packages/ui-core`、`/packages/app-services`、`/packages/protocol-types`（与核心共享）、
+`/packages/sdk`（核心）、`/apps/client-web`、`/apps/client-desktop`、`/apps/relay-go`、
+`/apps/indexer-go`、`/vm`。应用层新增 `ui-core` 与 `app-services`；它消费
+其余部分。（REQ-APP-012：任何应用包都不得直接导入某个依赖仓库；须经由
+SDK/适配器，核心 §2.6。）
+
+---
+
+# §A3 桌面端运行时与监督（Tauri）
+
+桌面端程序是一个 Tauri 应用：一个 **Rust 监督进程**（Tauri main）外加一个运行
+`ui-core` 的 **WebView2**。监督进程存在的意义是让非技术用户双击即可游玩。
+
+## §A3.1 进程模型
+```
+Tauri main (Rust 监督进程)
+  ├─ 启动+监督内嵌 BSV 节点 (regtest, BS.node, D6)
+  ├─ 启动+监督 relay-go
+  ├─ 启动+监督 indexer-go
+  ├─ 健康检查 · 有序启停 · 崩溃重启
+  ├─ 端口分配 · 数据目录管理
+  ├─ 托管受信操作 (密钥绝不离开此边界)
+  └─ IPC 桥  ⇄  WebView2 (ui-core)
 WebView2 (ui-core, TS/React)
-  ├─ all UI, engine state derivation, signing prompts
-  ├─ local card decryption via the custody boundary (rendered face only)
-  └─ relay/peer connections (Tier A discovery, Tier B table channel)
+  ├─ 全部 UI、引擎状态推导、签名提示
+  ├─ 经托管边界进行本地牌面解密 (仅渲染的牌面)
+  └─ relay/对端连接 (Tier A 发现, Tier B 牌桌信道)
 ```
 
-## §A3.2 Service lifecycle state machine (REQ-APP-020)
-The supervisor MUST implement this lifecycle and expose it to the UI as a status stream:
+## §A3.2 服务生命周期状态机（REQ-APP-020）
+监督进程 MUST 实现此生命周期，并将其作为状态流暴露给 UI：
 
-| State | Entry | Exit (success) | Exit (failure) |
+| State | Entry | Exit（成功） | Exit（失败） |
 |---|---|---|---|
-| `INIT` | app launch | config loaded → `START_NODE` | config invalid → `FATAL` |
-| `START_NODE` | from INIT | node health OK → `START_INDEXER` | node fails N retries → `DEGRADED(node)` |
-| `START_INDEXER` | node healthy | indexer health OK → `START_RELAY` | indexer fails → `DEGRADED(indexer)` |
-| `START_RELAY` | indexer healthy | relay health OK → `READY` | relay fails → `DEGRADED(relay)` |
-| `READY` | all healthy | (steady state) | any service dies → `RECOVER(service)` |
-| `RECOVER(svc)` | a service died | restart OK → `READY` | restart exceeds policy → `DEGRADED(svc)` |
-| `DEGRADED(svc)` | repeated failure | user/manual retry → `RECOVER(svc)` | — |
-| `SHUTDOWN` | quit | reverse-order stop → `EXIT` | forced kill after timeout → `EXIT` |
-| `FATAL` | unrecoverable | — | surfaces a diagnostic, no play |
+| `INIT` | 应用启动 | 配置已加载 → `START_NODE` | 配置无效 → `FATAL` |
+| `START_NODE` | 来自 INIT | 节点健康正常 → `START_INDEXER` | 节点失败 N 次重试 → `DEGRADED(node)` |
+| `START_INDEXER` | 节点健康 | indexer 健康正常 → `START_RELAY` | indexer 失败 → `DEGRADED(indexer)` |
+| `START_RELAY` | indexer 健康 | relay 健康正常 → `READY` | relay 失败 → `DEGRADED(relay)` |
+| `READY` | 全部健康 | （稳态） | 任一服务死亡 → `RECOVER(service)` |
+| `RECOVER(svc)` | 某服务已死 | 重启成功 → `READY` | 重启超出策略 → `DEGRADED(svc)` |
+| `DEGRADED(svc)` | 反复失败 | 用户/手动重试 → `RECOVER(svc)` | — |
+| `SHUTDOWN` | 退出 | 逆序停止 → `EXIT` | 超时后强制终止 → `EXIT` |
+| `FATAL` | 不可恢复 | — | 呈现诊断，无法游玩 |
 
-REQ-APP-021: ordered startup (node → indexer → relay); reverse-order shutdown. REQ-APP-022:
-restart policy is bounded (max attempts, backoff) — both `TRACKED ASSUMPTION` values the build sets
-and surfaces; never an unbounded restart loop (Power-of-Ten bounded-loop discipline, §A17).
-REQ-APP-023: `READY` is the only state in which the lobby permits creating/joining a table; other
-states show the launch/health screen (§A6.1).
+REQ-APP-021：有序启动（node → indexer → relay）；逆序关停。REQ-APP-022：
+重启策略有界（最大次数、退避）—— 二者均为构建设置并呈现的 `TRACKED ASSUMPTION`
+值；绝不无界重启循环（Power-of-Ten 有界循环纪律，§A17）。
+REQ-APP-023：`READY` 是大厅唯一允许创建/加入牌桌的状态；其他
+状态显示启动/健康屏幕（§A6.1）。
 
-## §A3.3 IPC contract (Tauri main ⇄ ui-core) — *seam, not code* (REQ-APP-024)
-Command/event families; exact signatures are Claude Code's, typed against core §15 and
-`protocol-types`. Full catalog in **Appendix I**.
-- `services.*` — `start`, `stop`, `status` (event stream of the §A3.2 lifecycle, per service).
-- `chain.*` — pass-through to `Chain` (core §15.9): `broadcast`, `outpointStatus`, `txStatus`,
-  `headers`, `conflicts` — so the UI uses one SDK surface whether the node is local or remote.
-- `custody.*` — `derive`, `sign`, `decryptToViewer`, `combineSignShare` (core §15.6, §9.3): results
-  only; raw key material MUST NOT cross the IPC boundary (REQ-APP-025).
-- `config.*` — `runtime` (ports, network, data dir, flags), `setNetwork` (guarded by the mainnet
-  flag, §A3.5).
-- `diag.*` — `logs`, `metrics`, `bundleDiagnostics` (redacted, §A12.5).
+## §A3.3 IPC 契约（Tauri main ⇄ ui-core）—— *接缝，非代码*（REQ-APP-024）
+命令/事件族；确切签名属 Claude Code，针对核心 §15 与
+`protocol-types` 进行类型化。完整目录见 **Appendix I**。
+- `services.*` —— `start`、`stop`、`status`（§A3.2 生命周期的事件流，逐服务）。
+- `chain.*` —— 直通至 `Chain`（核心 §15.9）：`broadcast`、`outpointStatus`、`txStatus`、
+  `headers`、`conflicts` —— 使 UI 无论节点是本地还是远端都使用同一 SDK 面。
+- `custody.*` —— `derive`、`sign`、`decryptToViewer`、`combineSignShare`（核心 §15.6、§9.3）：仅返回
+  结果；原始密钥材料 MUST NOT 跨越 IPC 边界（REQ-APP-025）。
+- `config.*` —— `runtime`（端口、网络、数据目录、标志）、`setNetwork`（受主网
+  标志守护，§A3.5）。
+- `diag.*` —— `logs`、`metrics`、`bundleDiagnostics`（已脱敏，§A12.5）。
 
-REQ-APP-026: every IPC message is validated on both sides against its schema; an unrecognised or
-malformed message is rejected and logged, never partially applied (fail-closed, §A11).
+REQ-APP-026：每条 IPC 消息都在两侧针对其模式进行验证；无法识别或
+畸形的消息会被拒绝并记录日志，绝不部分应用（fail-closed，§A11）。
 
-## §A3.4 Ports, data directory, regtest defaults
-REQ-APP-027: ports are allocated and written to a runtime config the UI reads; no hard-coded ports.
-REQ-APP-028: the SQLite store and the node's block/UTXO store live under a per-user data directory
-with documented paths (§A13, §A15 runbook). REQ-APP-029: the embedded node defaults to **regtest**;
-the network is part of the data-dir namespacing so regtest and (flagged) mainnet never share state.
+## §A3.4 端口、数据目录、regtest 默认值
+REQ-APP-027：端口被分配并写入 UI 读取的运行时配置；无硬编码端口。
+REQ-APP-028：SQLite 存储与节点的区块/UTXO 存储位于一个按用户划分的数据目录之下，
+路径有文档记录（§A13、§A15 运行手册）。REQ-APP-029：内嵌节点默认 **regtest**；
+网络是数据目录命名空间的一部分，故 regtest 与（带标志的）主网绝不共享状态。
 
-## §A3.5 Mainnet flag (REQ-APP-030; core §10.5, REQ-VM-007)
-Mainnet is reachable only behind an explicit, named research-code flag. The supervisor MUST refuse
-any non-regtest network unless the flag is set; the UI MUST show an unmissable banner whenever the
-flag is active; default everywhere is regtest. Real funds are never touched without the flag.
+## §A3.5 主网标志（REQ-APP-030；核心 §10.5、REQ-VM-007）
+主网仅在一个明确、命名的研究代码标志之后可达。监督进程 MUST 拒绝
+任何非 regtest 网络，除非该标志已设置；只要该标志处于活动状态，UI MUST 显示
+一个无法错过的横幅；处处默认为 regtest。没有该标志绝不触及真实资金。
 
-## §A3.6 Desktop failure modes (cross-ref §A11)
-- Node won't start (port conflict, corrupt store) → `DEGRADED(node)`, diagnostic, guided recovery
-  (re-init regtest store on explicit confirm).
-- Relay/indexer crash mid-hand → `RECOVER`; the UI keeps the table view, marks connectivity
-  degraded, and relies on the canonical path + reconnect (§A7.6); no table state is invented.
-- WebView crash → supervisor restarts the WebView and the UI re-derives state from persistence +
-  the transcript gap (§A7.6); no loss of truth (it lives in the tx graph).
-
----
-
-# §A4 Web runtime
-
-The web client is the same `ui-core` built by Vite and served as a static bundle.
-
-## §A4.1 Connection modes (REQ-APP-040; core §8, D4)
-- **Bundled-local** (developer/regtest): a local relay+node companion — the same node the desktop
-  embeds — reached over loopback.
-- **Hosted** (internet play): a deployed relay+node.
-The connection manager (§A7) abstracts which is in use; switching modes MUST change no UI code
-(REQ-APP-041). The default per environment is `AD-OPEN-1` (DECISION REQUIRED, §A20).
-
-## §A4.2 Persistence (REQ-APP-042; core §11.2)
-IndexedDB for keys (wrapped, §A10), table state, transcripts. `localStorage`/`sessionStorage` MUST
-NOT hold load-bearing state. Schema and migration in §A13.
-
-## §A4.3 Chain access (REQ-APP-043; core §8.4, §34)
-SPV-edge verification at the wallet: headers + Merkle proofs for finality-relevant checks; relay/
-indexer projections for table state; neither is trusted as the source of truth (core P3).
-
-## §A4.4 Browser custody (REQ-APP-044; core §9.3, §11.5)
-An isolated worker (Web Worker / WASM module) holds keys and performs sign/derive/decrypt; the
-rendered card face exists only in the controlled viewer path; keys never reach the DOM. Backends are
-pluggable (software default; threshold via `OB.custody`; TEE later).
-
-## §A4.5 Service worker / offline (AD-OPEN-2, DECISION REQUIRED, §A20)
-Whether a service worker caches the bundle for resilient reconnect is a declared open decision; if
-adopted it MUST NOT cache key material or table secrets.
-
-## §A4.6 Web failure modes (cross-ref §A11)
-- Lost connection to relay/node → reconnect with backoff; the UI shows degraded connectivity and
-  re-derives on reconnect (§A7.6).
-- IndexedDB quota/eviction → the transcript and keys are re-fetchable/re-derivable; the client warns
-  and resyncs; no silent data loss of load-bearing state (REQ-APP-045).
-- Tab close/refresh mid-hand → on return, rebuild from persistence + transcript gap (§A7.6).
+## §A3.6 桌面端故障模式（交叉引用 §A11）
+- 节点无法启动（端口冲突、存储损坏）→ `DEGRADED(node)`、诊断、引导式恢复
+  （在明确确认后重新初始化 regtest 存储）。
+- relay/indexer 在牌局中途崩溃 → `RECOVER`；UI 保留牌桌视图，将连通性标记为
+  降级，并依赖规范路径 + 重连（§A7.6）；不臆造任何牌桌状态。
+- WebView 崩溃 → 监督进程重启 WebView，UI 从持久化 +
+  记录缺口（§A7.6）重新推导状态；不丢失真相（真相存在于交易图中）。
 
 ---
 
-# §A5 Shared UI core (one core, two shells)
+# §A4 Web 运行时
 
-One TypeScript/React core (core §11.1, §3.2), package `/packages/ui-core`, consumed by both shells.
+web 客户端是由 Vite 构建、以静态打包件提供的同一份 `ui-core`。
 
-## §A5.1 State management (REQ-APP-050)
-A single unidirectional store. Inputs: engine-derived `tableState` (§A2.2), connection status,
-custody/signing status, persistence. The store holds **no** business logic; reducers only project
-SDK/engine outputs into render state. No direct mutation; no derived game truth computed in the UI.
+## §A4.1 连接模式（REQ-APP-040；核心 §8、D4）
+- **捆绑本地**（开发者/regtest）：一个本地的 relay+node 伴随件 —— 与桌面端
+  内嵌的同一节点 —— 经环回（loopback）访问。
+- **托管**（互联网游玩）：一个已部署的 relay+node。
+连接管理器（§A7）抽象掉正在使用哪一种；切换模式 MUST 不改动任何 UI 代码
+（REQ-APP-041）。每个环境的默认值为 `AD-OPEN-1`（DECISION REQUIRED，§A20）。
 
-## §A5.2 View-model contracts (REQ-APP-051)
-One view-model per screen (§A6), each a pure projection `(engineState, connStatus, custodyStatus,
-config) → ScreenProps`. View-models are unit-tested in isolation (§A16.2). Components are
-presentational and stateless beyond local UI ephemera.
+## §A4.2 持久化（REQ-APP-042；核心 §11.2）
+IndexedDB 用于密钥（已封装，§A10）、牌桌状态、记录。`localStorage`/`sessionStorage` MUST
+NOT 持有承重状态。模式与迁移见 §A13。
 
-## §A5.3 Component inventory (REQ-APP-052)
-Catalogued, each with props, states (loading/empty/error/ready), and a test obligation (Appendix
-IV): Lobby list, Table-create form, Seat ring, Board/up-card row, Pot/side-pot display, Action bar
-(check/bet/call/raise/fold/draw/stand), Bet sizer (NL/PL/FL aware via the betting interface, core
-§5.4), Timer + consequence banner, Hand viewer (custody-bound), Signing modal, Showdown panel,
-Settlement summary, Reconnect/recovery banner, Transcript/replay viewer, Mainnet banner.
+## §A4.3 链访问（REQ-APP-043；核心 §8.4、§34）
+钱包处的 SPV 边缘验证：用于与最终性相关检查的区块头 + Merkle 证明；relay/
+indexer 投影用于牌桌状态；二者皆不被信任为真相之源（核心 P3）。
 
-## §A5.4 Interaction & rendering rules (REQ-APP-053)
-Explicit handlers only (`onClick`/`onChange`); **no** HTML `<form>` submit (core §11.3,
-REQ-UI-003). Every screen defines its loading/empty/error states. React error boundaries wrap each
-screen so a render fault degrades one screen, not the app (§A11). No business decision is taken in
-an event handler; handlers call app-services/SDK and render the result.
+## §A4.4 浏览器托管（REQ-APP-044；核心 §9.3、§11.5）
+一个隔离 worker（Web Worker / WASM 模块）持有密钥并执行 sign/derive/decrypt；
+渲染的牌面仅存在于受控查看器路径中；密钥绝不到达 DOM。后端
+可插拔（软件为默认；阈值经 `OB.custody`；TEE 为后续项）。
 
-## §A5.5 Accessibility & internationalisation (REQ-APP-054; expanded in §A6 per screen)
-Keyboard-operable controls, ARIA roles/labels on all interactive elements, visible focus, sufficient
-contrast, no information conveyed by colour alone (suits also carry a glyph/letter — and never a
-suit-precedence implication, core §5.5.1), screen-reader announcements for turn/timer/consequence
-changes, and a string-externalisation layer for i18n (English first). Accessibility is a tested
-acceptance item (§A16.8), not a nicety.
+## §A4.5 Service worker / 离线（AD-OPEN-2，DECISION REQUIRED，§A20）
+service worker 是否缓存打包件以实现弹性重连，是一项已声明的未决决策；若
+采用，则 MUST NOT 缓存密钥材料或牌桌机密。
 
----
-
-# §A6 Screen specifications
-
-For each screen: **purpose**; **state read** (from the engine/app-services); **actions emitted**
-(each a signed transaction built via the SDK, core §15.5/§6); **consequence text** (core §11.4 — the
-UI hides complexity, never consequences); **signing prompt** (core §11.6 — action, amounts, affected
-pot/state, exact bytes/intent; no silent signing); **edge states** (loading/empty/error/degraded);
-**accessibility**. The Screen × action × SDK matrix is Appendix II.
-
-## §A6.1 Launch / Health
-- Purpose: show the stack coming up (desktop: §A3.2 lifecycle per service; web: connection to
-  relay+node), gate play until `READY`.
-- State read: `services.status` (desktop) / connection status (web).
-- Actions: none on-chain; control only (retry, view diagnostics).
-- Consequence text: "Starting local node…", "Reconnecting (attempt n)…", "A service is degraded —
-  play is paused until it recovers."
-- Edge states: degraded/fatal show a guided-recovery affordance and `diag.bundleDiagnostics`.
-- A11y: status announced via an ARIA live region.
-
-## §A6.2 Wallet (create / import)
-- Purpose: establish identity and custody backend (core §9).
-- State read: custody backend + key presence (no raw keys in UI).
-- Actions: none on-chain; key operations are custody-trusted (§A8); import/create flow.
-- Consequence text: seed-handling warning; "your keys never leave this device's secure boundary"
-  (bounded by §A10's stated trust surface — software custody trusts the device; say so).
-- Edge states: import validation errors fail closed.
-- A11y: secret entry is keyboard-only, never logged, never announced.
-
-## §A6.3 Lobby
-- Purpose: find players; list/create/join tables; presence (core §8, §15.1).
-- State read: presence + table list from the relay (transport/index only, core P3) — treated as a
-  hint, not truth.
-- Actions: `createTable`, `joinTable` (core §15.1); join/funding is a signed transaction (core §6.1
-  Funding / Table-mgmt). Signing prompt states the stake locked and the refund-on-abort path.
-- Consequence text: "Joining locks your stake; if the table aborts before play, it refunds via the
-  pre-signed path."
-- Edge states: empty lobby; relay unreachable (offer LAN mode / retry); stale presence is reconciled
-  on refresh.
-- A11y: table list is a navigable list with labelled join controls.
-
-## §A6.4 Table create / config
-- Purpose: choose variant, betting structure (NL/PL/FL), seats, blind/ante schedule, timeout profile;
-  display the hashed config.
-- State read: ruleset validation (core §15.3); the **computed `rulesetHash`** (core §5.2,
-  REQ-POKER-002) — produced by the engine/SDK, displayed to all players, never computed by the UI.
-- Actions: `TABLE_CREATE` bound to `gid`+`rulesetHash` (core §6.3).
-- Consequence text: "This configuration is hashed and bound into every transaction; it cannot change
-  mid-hand."
-- Edge states: invalid ruleset blocks creation with a specific message.
-- A11y: form controls labelled; the displayed hash is selectable text.
-
-## §A6.5 Table view (the core gameplay screen)
-- Purpose: play the hand.
-- State read: seats, whose turn, community/up cards, pot(s) and side pots, balances, timers, and the
-  **default-on-timeout** text for the acting state (core §11.4, §19.E). Multi-way side pots come from
-  the engine (core §5.5, §19.B); the UI never computes them.
-- Actions (each a signed transaction; core §5.4, §6.1 Action): `check`/`bet`/`call`/`raise`;
-  **fold without reveal** (core P5, §4.6, §6.6 Fold); `draw`/`stand` where the variant has it (core
-  §7.3). Bet sizing respects the active betting structure via the interface (core §5.4).
-- Consequence text (must be exact, core §11.4): e.g. "If you do nothing, you check in 30s"; "If you
-  do nothing while facing a bet, you fold in 30s — you are never forced to wager"; "Revealing the
-  flop needs every player; if someone withholds, the hand goes to recovery."
-- Board reveals: shown as **N-of-N cooperative transitions with a timeout-default** (core §4.6 M2);
-  the UI shows the cooperative-release progress and the recovery default — it does not present a
-  board reveal as a unilateral "publish."
-- Edge states: not-your-turn (controls disabled, clearly); opponent timing out (countdown to
-  default); connectivity degraded (banner; canonical path still authoritative).
-- Signing: every emitted action raises the signing modal (§A6.7).
-- A11y: turn changes, timers, and consequences announced; action controls keyboard-operable with
-  clear enabled/disabled semantics.
-
-## §A6.6 Hand inspection (private)
-- Purpose: the player sees their own concealed cards.
-- State read: local decryption **through the custody boundary** (core §11.5, §A8) — the rendered
-  face exists only in the controlled viewer path; keys never reach the UI process beyond it.
-- Actions: none.
-- Edge states: decryption unavailable (custody backend not ready) → explicit, no fake card.
-- A11y: card faces have text equivalents (rank+suit) for screen readers, in the viewer path only.
-
-## §A6.7 Signing prompt (modal, cross-screen) (REQ-APP-060; core §11.6)
-- Purpose: explicit, informed consent for every transaction.
-- Shows: the action; amounts; the pot/state affected; and the exact intent/bytes being signed.
-- No silent signing anywhere; no "remember my choice" that would auto-sign value-moving actions.
-- Edge states: user declines → action not emitted, state unchanged; signing fails (custody error) →
-  explicit failure, fail-closed.
-- A11y: modal is focus-trapped, fully keyboard-operable, content announced.
-
-## §A6.8 Showdown / settlement
-- Purpose: minimum-reveal showdown and deterministic settlement.
-- State read: who must reveal what (core §5.6); the settlement result and final balances (core §5.7,
-  §19.B) — from the engine.
-- Actions: Reveal transactions (core §4.6, §6.6), then the close-out/settlement spend (core §6.6).
-- Consequence text: "Only contenders reveal, and only what's needed to decide the pot."
-- Edge states: a contender withholds reveal → recovery timeout path shown (core §6.4).
-- A11y: revealed hands and the award are announced.
-
-## §A6.9 Reconnect / recovery
-- Purpose: rejoin a live table; show recovery state.
-- State read: transcript gap from a peer/relay; engine rebuild (core §8.6, REQ-NET-007); any
-  recovery/timeout in progress (core §6.4).
-- Actions: request gap; resume.
-- Consequence text: "Rebuilding the table from the transaction record — your view is being restored;
-  the table's truth never depended on this device."
-- A11y: progress announced.
-
-## §A6.10 Transcript / replay viewer
-- Purpose: export and offline deterministic replay (core §12.2/§12.3).
-- State read: the transcript (ordered valid tx set + commit/reveal material).
-- Actions: export; step/replay.
-- Note: replay is the **engine** reconstructing the hand byte-identically (core §12.3,
-  REQ-DATA-003); the viewer renders the reconstruction. Verifying byte-identity is a build-run check
-  (§A16.4), not a UI computation.
-- A11y: replay controls keyboard-operable; each step's state announced.
+## §A4.6 Web 故障模式（交叉引用 §A11）
+- 与 relay/node 失去连接 → 带退避重连；UI 显示连通性降级，并
+  在重连时重新推导（§A7.6）。
+- IndexedDB 配额/驱逐 → 记录与密钥可重新获取/重新推导；客户端发出警告
+  并重新同步；承重状态绝不静默丢失数据（REQ-APP-045）。
+- 牌局中途关闭/刷新标签页 → 返回时，从持久化 + 记录缺口重建（§A7.6）。
 
 ---
 
-# §A7 Discovery, lobby, matchmaking, connection
+# §A5 共享 UI 核心（一个核心，两个外壳）
 
-Per core §8 and decision D4. The application consumes the networking contracts; it does not redefine
-the protocol.
+一个 TypeScript/React 核心（核心 §11.1、§3.2），包 `/packages/ui-core`，由两个外壳消费。
 
-## §A7.1 Roles & trust (REQ-APP-070; core §8.1, P3)
-The relay is **transport + indexing only and never the source of truth**. The client derives state
-independently and detects a lying/faulty relay by reconstructing from the valid transaction set. The
-indexer provides projections for convenience; the client treats them as hints to be confirmed.
+## §A5.1 状态管理（REQ-APP-050）
+单一的单向 store。输入：引擎推导的 `tableState`（§A2.2）、连接状态、
+托管/签名状态、持久化。store **不**持有业务逻辑；reducer 仅把
+SDK/引擎输出投影为渲染状态。无直接变更；UI 中不计算任何推导出的游戏真相。
 
-## §A7.2 Discovery (Phase 1) (REQ-APP-071; core §8.2, D4)
-Two mechanisms: a hosted **relay** (presence, table discovery, direct-message fan-out) and **LAN
-auto-discovery** (zero-server same-network play). The lobby (§A6.3) consumes both. The client MUST
-function in LAN mode with no internet relay.
+## §A5.2 视图模型契约（REQ-APP-051）
+每个屏幕一个视图模型（§A6），每个都是纯投影 `(engineState, connStatus, custodyStatus,
+config) → ScreenProps`。视图模型被隔离地单元测试（§A16.2）。组件
+是展示性的，除局部 UI 瞬态外无状态。
 
-## §A7.3 Table-scoped channel (REQ-APP-072; core §8.2 Tier B)
-On join, the client subscribes to the table's inventory/object channel (inv/getdata/object,
-Bitmessage-style) for fast convergence; it publishes its actions there (speed path) in addition to
-broadcasting them (canonical path).
+## §A5.3 组件清单（REQ-APP-052）
+已编目，每个带 props、状态（loading/empty/error/ready）与一项测试义务（Appendix
+IV）：大厅列表、建桌表单、座位环、公共牌/明牌行、底池/边池显示、动作栏
+（看牌/下注/跟注/加注/弃牌/换牌/停牌）、下注尺度器（经下注接口感知 NL/PL/FL，核心
+§5.4）、计时器 + 后果横幅、手牌查看器（绑定托管）、签名模态框、摊牌面板、
+结算摘要、重连/恢复横幅、记录/重放查看器、主网横幅。
 
-## §A7.4 Dual-path send (REQ-APP-073; core §8.3, REQ-NET-003)
-Every action is sent **simultaneously** to the network as a real transaction and to table peers via
-the relay/channel. The speed path never overrides the canonical path; conflicts resolve by the
-deterministic rules (core §8.5). The connection manager implements both and reconciles.
+## §A5.4 交互与渲染规则（REQ-APP-053）
+仅显式处理器（`onClick`/`onChange`）；**不**用 HTML `<form>` 提交（核心 §11.3、
+REQ-UI-003）。每个屏幕都定义其 loading/empty/error 状态。React 错误边界包裹每个
+屏幕，使渲染故障只降级一个屏幕，而非整个应用（§A11）。事件处理器中不做
+任何业务决策；处理器调用 app-services/SDK 并渲染结果。
 
-## §A7.5 Conflict surfacing (REQ-APP-074; core §8.5)
-For each actionable phase there is exactly one spendable phase-right; conflicting attempts cannot
-both be valid. The client follows the accepted successor (the one referenced by the next accepted
-state transition) and surfaces a transient "resolving" state if a conflict is observed before phase
-close; a double-spend attempt is made strategically useless by the timeout-default (core §8.5,
-§6.4). The UI never guesses a winner; it shows what the engine accepts.
-
-## §A7.6 Reconnect / resume (REQ-APP-075; core §8.6)
-On connect/reconnect the client requests the transcript gap from a peer/relay and rebuilds current
-state deterministically from the valid tx set; resuming changes nothing about the truth, only this
-client's view. Backoff and retry bounds are `TRACKED ASSUMPTION` values the build sets.
-
-## §A7.7 Phase-5 abstraction (REQ-APP-076; core §8.7)
-Internet P2P + NAT traversal (version/verack/getaddr/addr peer layer) is a later track; the
-connection manager MUST be built so relay-discovery can be replaced by the peer layer **without UI
-change**. Declared now so Phase 1 does not bake the relay in as permanent truth.
+## §A5.5 无障碍与国际化（REQ-APP-054；在 §A6 中逐屏幕展开）
+键盘可操作控件、所有交互元素上的 ARIA 角色/标签、可见焦点、足够的
+对比度、不以颜色单独传达信息（花色还携带一个字形/字母 —— 且绝不暗示
+花色优先级，核心 §5.5.1）、对轮次/计时器/后果变化的屏幕阅读器播报，
+以及用于 i18n 的字符串外置层（英文优先）。无障碍是一项受测的
+验收项（§A16.8），而非可有可无的修饰。
 
 ---
 
-# §A8 The seam to the protocol core (SDK consumption + custody boundary)
+# §A6 屏幕规范
 
-The client implements **no** cryptography, transaction construction, or game logic; it consumes the
-SDK (core §15.1–§15.9), backed by the core and the adapters `CT/BS/VA/OB` (core §2, §15.8).
+对每个屏幕：**目的**；**读取的状态**（来自引擎/app-services）；**发出的动作**
+（每个都是经 SDK 构建的已签名交易，核心 §15.5/§6）；**后果文案**（核心 §11.4 ——
+UI 隐藏复杂性，绝不隐藏后果）；**签名提示**（核心 §11.6 —— 动作、金额、受影响的
+底池/状态、确切的字节/意图；无静默签名）；**边缘状态**（loading/empty/error/degraded）；
+**无障碍**。屏幕 × 动作 × SDK 矩阵见 Appendix II。
 
-## §A8.1 Action → SDK mapping (REQ-APP-080; full matrix Appendix II)
-Illustrative; the complete mapping is the build's, against core §15:
-- Bet: `getLegalActions` (§15.2) → `buildAction` (§15.5) → `custody.sign` (§15.6) → dual-path send
-  (§A7.4).
-- Fold: `buildFold` (§15.5) → sign → send.
-- Board reveal: an N-of-N cooperative transition (core §4.6); the UI shows cooperative-release +
-  recovery default; the SDK/engine handle the crypto.
-- Settlement: Reveal txs (§4.6, §6.6) then the close-out spend (§6.6); the engine computes the award.
+## §A6.1 启动 / 健康
+- 目的：展示技术栈正在拉起（桌面端：§A3.2 逐服务生命周期；web：到
+  relay+node 的连接），在 `READY` 之前门控游玩。
+- 读取的状态：`services.status`（桌面端）/ 连接状态（web）。
+- 动作：无链上动作；仅控制（重试、查看诊断）。
+- 后果文案："正在启动本地节点……"、"正在重连（第 n 次尝试）……"、"某服务已降级 ——
+  游玩已暂停，直至其恢复。"
+- 边缘状态：降级/致命态显示引导式恢复的可供性以及 `diag.bundleDiagnostics`。
+- 无障碍：状态经一个 ARIA live 区域播报。
 
-## §A8.2 Custody boundary (REQ-APP-081; core §9.3, §11.5)
-Card decryption and signing happen behind the `Custody` interface (`derive`, `sign`,
-`decryptToViewer`, `combineSignShare`). Desktop: trusted custody on the Rust side or an isolated
-worker (§A3.1). Web: an isolated worker. The UI receives a rendered face via the viewer path only;
-raw keys never cross to the DOM. Backends pluggable (software default AD7; threshold `OB.custody`
-FROST/GG20; TEE optional, later).
+## §A6.2 钱包（创建 / 导入）
+- 目的：建立身份与托管后端（核心 §9）。
+- 读取的状态：托管后端 + 密钥存在性（UI 中无原始密钥）。
+- 动作：无链上动作；密钥操作受托管信任（§A8）；导入/创建流程。
+- 后果文案：种子处理警告；"你的密钥绝不离开本设备的安全边界"
+  （受 §A10 所陈述的信任面所限 —— 软件托管信任设备；明确说出来）。
+- 边缘状态：导入校验错误 fail-closed。
+- 无障碍：机密录入仅键盘、绝不记录、绝不播报。
 
-## §A8.3 Signing-mode surfacing (REQ-APP-082; core §4.3, D9)
-The active signing mode (A: reconstruct-at-reveal, Phase-1 default; B: threshold/no-reconstruction)
-is recorded in the ruleset; the UI surfaces the **actual** key-handling guarantee wherever it is
-shown (core REQ-CRYPTO-008, P8). The UI MUST NOT claim Mode B's "no whole key" property while Mode A
-is active.
+## §A6.3 大厅
+- 目的：寻找玩家；列出/创建/加入牌桌；在线状态（核心 §8、§15.1）。
+- 读取的状态：来自 relay 的在线状态 + 牌桌列表（仅传输/索引，核心 P3）—— 视作
+  提示，而非真相。
+- 动作：`createTable`、`joinTable`（核心 §15.1）；加入/注资是一笔已签名交易（核心 §6.1
+  Funding / Table-mgmt）。签名提示陈述被锁定的赌注与中止退款路径。
+- 后果文案："加入会锁定你的赌注；若牌桌在游玩前中止，则经
+  预签名路径退款。"
+- 边缘状态：空大厅；relay 不可达（提供 LAN 模式 / 重试）；过期的在线状态在
+  刷新时被对账。
+- 无障碍：牌桌列表是一个可导航列表，带有标注的加入控件。
 
-## §A8.4 Audit-output boundary (REQ-APP-083; core §2.3 INV-VA-2)
-Where the client shows `VA`-backed audit/selective-disclosure output, it surfaces the stated
-boundary — inclusion/integrity/selective-disclosure/arithmetic only, **not** truth-at-origin — and
-must not overstate it (P8).
+## §A6.4 建桌 / 配置
+- 目的：选择变体、下注结构（NL/PL/FL）、座位、盲注/底注计划表、超时档案；
+  显示哈希后的配置。
+- 读取的状态：规则集校验（核心 §15.3）；**计算出的 `rulesetHash`**（核心 §5.2、
+  REQ-POKER-002）—— 由引擎/SDK 产出，向所有玩家显示，绝不由 UI 计算。
+- 动作：`TABLE_CREATE` 绑定到 `gid`+`rulesetHash`（核心 §6.3）。
+- 后果文案："此配置被哈希并绑定进每一笔交易；它不能在牌局
+  中途更改。"
+- 边缘状态：无效规则集以一条具体消息阻止创建。
+- 无障碍：表单控件已标注；显示的哈希为可选中文本。
 
----
+## §A6.5 牌桌视图（核心玩法屏幕）
+- 目的：打这手牌。
+- 读取的状态：座位、轮到谁、公共牌/明牌、底池与边池、余额、计时器，以及
+  当前行动状态的**超时默认**文案（核心 §11.4、§19.E）。多人边池来自
+  引擎（核心 §5.5、§19.B）；UI 绝不计算它们。
+- 动作（每个都是已签名交易；核心 §5.4、§6.1 Action）：`check`/`bet`/`call`/`raise`；
+  **弃牌而不揭示**（核心 P5、§4.6、§6.6 Fold）；变体具备时的 `draw`/`stand`（核心
+  §7.3）。下注尺度经接口遵循当前下注结构（核心 §5.4）。
+- 后果文案（必须确切，核心 §11.4）：例如"若你什么都不做，30 秒后你将看牌"；"若你
+  在面对下注时什么都不做，30 秒后你将弃牌 —— 你绝不被迫下注"；"揭示
+  翻牌需要每位玩家；若有人扣留，这手牌进入恢复。"
+- 公共牌揭示：呈现为**带超时默认的 N-of-N 协作转换**（核心 §4.6 M2）；
+  UI 显示协作释放进度与恢复默认 —— 它不把
+  公共牌揭示呈现为单方面的"公布"。
+- 边缘状态：未轮到你（控件被清晰禁用）；对手正在超时（倒计时至
+  默认）；连通性降级（横幅；规范路径仍然权威）。
+- 签名：每个发出的动作都升起签名模态框（§A6.7）。
+- 无障碍：轮次变化、计时器与后果均被播报；动作控件键盘可操作，带
+  清晰的启用/禁用语义。
 
-# §A9 Non-functional requirements
+## §A6.6 手牌查看（私有）
+- 目的：玩家查看自己的暗牌。
+- 读取的状态：**经托管边界**的本地解密（核心 §11.5、§A8）—— 渲染的
+  牌面仅存在于受控查看器路径中；密钥绝不越过此路径进入 UI 进程。
+- 动作：无。
+- 边缘状态：解密不可用（托管后端未就绪）→ 明确告知，无假牌。
+- 无障碍：牌面具备文本等价物（点数+花色）供屏幕阅读器，仅在查看器路径中。
 
-All numeric targets here are **design targets** marked `TRACKED ASSUMPTION`: Claude Code MUST meet
-**and measure** them (§A16.7); this document asserts no achieved value.
+## §A6.7 签名提示（模态框，跨屏幕）（REQ-APP-060；核心 §11.6）
+- 目的：为每笔交易获取明确、知情的同意。
+- 显示：动作；金额；受影响的底池/状态；以及正在签名的确切意图/字节。
+- 处处无静默签名；无任何会自动签名移动价值动作的"记住我的选择"。
+- 边缘状态：用户拒绝 → 动作不发出，状态不变；签名失败（托管错误）→
+  明确失败，fail-closed。
+- 无障碍：模态框焦点受困、完全键盘可操作、内容被播报。
 
-## §A9.1 Performance / latency (REQ-APP-090)
-- Local action round-trip (UI action → signed → on speed path to peers): target `TRACKED
-  ASSUMPTION` (e.g. ≤150 ms on the reference desktop) — measured by the build.
-- UI frame budget for table render: target `TRACKED ASSUMPTION` (e.g. 60 fps / ≤16 ms) under a
-  full 9-seat table.
-- State derivation from a transcript of N transactions: target `TRACKED ASSUMPTION`, bounded and
-  linear in N (no quadratic blow-up) — a property the build profiles.
+## §A6.8 摊牌 / 结算
+- 目的：最小揭示摊牌与确定性结算。
+- 读取的状态：谁必须揭示什么（核心 §5.6）；结算结果与最终余额（核心 §5.7、
+  §19.B）—— 来自引擎。
+- 动作：揭示交易（核心 §4.6、§6.6），随后是收尾/结算花费（核心 §6.6）。
+- 后果文案："只有争夺者揭示，且只揭示裁定底池所需的内容。"
+- 边缘状态：某争夺者扣留揭示 → 显示恢复超时路径（核心 §6.4）。
+- 无障碍：被揭示的手牌与彩金归属被播报。
 
-## §A9.2 Reliability / availability (REQ-APP-091)
-- No table can be frozen by one absent/malicious participant (core P4); the timeout-default path
-  guarantees progress. The client surfaces this, never blocks on a peer indefinitely.
-- Service supervision (desktop) maintains availability with bounded restart (§A3.2); degraded states
-  are explicit, not silent.
+## §A6.9 重连 / 恢复
+- 目的：重新加入一张进行中的牌桌；显示恢复状态。
+- 读取的状态：来自对端/relay 的记录缺口；引擎重建（核心 §8.6、REQ-NET-007）；任何
+  进行中的恢复/超时（核心 §6.4）。
+- 动作：请求缺口；恢复。
+- 后果文案："正在从交易记录重建牌桌 —— 你的视图正在恢复；
+  牌桌的真相从不依赖于本设备。"
+- 无障碍：进度被播报。
 
-## §A9.3 Resource limits (REQ-APP-092)
-- Bounded working memory in the state-derivation hot path (Power-of-Ten adaptation, §A17): pre-sized
-  structures, no unbounded allocation per action. Target ceilings `TRACKED ASSUMPTION`.
-- Persistence growth (transcripts) bounded with retention policy (§A13).
-
-## §A9.4 Capacity (REQ-APP-093)
-- Seats 2–9 (core D2); Phase 1 fixed at 2; the UI and state model MUST handle the full envelope
-  without redesign (multi-way side pots, ordering).
-- Concurrent tables per client: `TRACKED ASSUMPTION`; the connection manager multiplexes channels.
-
-## §A9.5 Portability (REQ-APP-094)
-- Desktop: Windows (primary; the installer target). The shared core is OS-agnostic; macOS/Linux
-  desktop are out of scope for Phase 1 but the Tauri choice does not preclude them.
-- Web: current evergreen browsers; no reliance on non-standard storage (AD10).
-
----
-
-# §A10 Security architecture (Microsoft SDL-aligned)
-
-Security is designed in, not bolted on. The application layer's trust surface is a refinement of the
-core's enumerated trust surface (core §18.6); it adds nothing the user must trust beyond it, and
-states plainly what it does.
-
-## §A10.1 The application trust surface (REQ-APP-100; refines core §18.6)
-A correct user on an uncompromised client trusts, at the application layer, exactly:
-1. the device/OS and the local secure storage the custody backend uses (software custody = device
-   trust; stated plainly, not hidden);
-2. the integrity of the signed installer / served bundle (supply-chain, §A10.6);
-3. the isolation of the custody boundary (keys never reach the DOM; §A8.2);
-all on top of the core's cryptographic and consensus trust surface (core §18.6). "Trustless" is used
-nowhere unconditionally (P8); prose says the specific property meant.
-
-## §A10.2 Key & secret handling (REQ-APP-101)
-Keys live only inside the custody boundary (Rust side / isolated worker). At rest they are wrapped
-(AEAD; never plaintext on disk; never `localStorage`). They never appear in logs, metrics, IPC
-payloads, or the DOM (§A12.5 redaction). Per-game/per-card scalars are single-game in Mode A (core
-§9.2, §4.3) and the UI surfaces that.
-
-## §A10.3 The viewer/decryption boundary (REQ-APP-102; core §11.5)
-Decryption goes through `decryptToViewer`; the rendered face exists only in the controlled viewer
-path. Screen-capture hardening/watermarking is an **optional later track** claimed only as partial
-mitigation (core §11.5, P8) — never claimed as protection against a compromised client.
-
-## §A10.4 Input validation & fail-closed (REQ-APP-103)
-Every input crossing a trust boundary — IPC messages, relay/peer messages, persisted records,
-SDK results — is validated against its schema; invalid input is rejected and logged, never partially
-applied. The default on any ambiguity is to **not** act (fail-closed). Negative paths are tested
-(§A16.6).
-
-## §A10.5 Threat-informed design (REQ-APP-104; cross-ref core §18)
-The application layer inherits the core threat model (core §18) and adds app-specific entries (each
-with a bounding mechanism and an honest residual): malicious relay (bounded by P3 + canonical path,
-residual = liveness degradation), key extraction from a compromised device (bounded by custody
-boundary/threshold/TEE, residual = device-trust in software mode — stated), hand-view leakage on a
-compromised client (residual = unpreventable by protocol, partial mitigation only), tampered
-installer/bundle (bounded by signing + reproducible build, §A10.6), and malicious input on any
-boundary (bounded by §A10.4). These are catalogued in Appendix III/§A18 alongside the core's `THR-*`.
-
-## §A10.6 Supply chain & integrity (REQ-APP-105)
-The installer is signed; the build is reproducible with pinned toolchains, locked lockfiles, and
-recorded artifact hashes (core §10.4, §16; §A14). Dependencies are pinned; a dependency change is an
-explicit, reviewed event. The build runs supply-chain checks (§A16.9) — Claude Code's task.
-
-## §A10.7 Network exposure (REQ-APP-106)
-The desktop binds local services to loopback by default; any non-loopback exposure is explicit and
-flagged. The relay client authenticates table membership per the core's protocol; presence does not
-leak hand information.
+## §A6.10 记录 / 重放查看器
+- 目的：导出与离线确定性重放（核心 §12.2/§12.3）。
+- 读取的状态：记录（有序有效交易集 + 承诺/揭示材料）。
+- 动作：导出；单步/重放。
+- 注意：重放是**引擎**逐字节相同地重建这手牌（核心 §12.3、
+  REQ-DATA-003）；查看器渲染该重建。验证字节相同性是一项构建运行检查
+  （§A16.4），而非 UI 计算。
+- 无障碍：重放控件键盘可操作；每一步的状态被播报。
 
 ---
 
-# §A11 Error handling, failure modes, degraded operation, recovery
+# §A7 发现、大厅、匹配、连接
 
-## §A11.1 Error taxonomy (REQ-APP-110; codes in Appendix III)
-Errors are typed and carry a stable code, a user-facing message, a remediation, and a severity
-(`FATAL`/`DEGRADED`/`RECOVERABLE`/`USER`). Categories: configuration, service-lifecycle (desktop),
-connectivity, custody/signing, protocol/validation (a rejected/invalid transaction or state),
-persistence, and UI/render. No error is swallowed; every error path has a defined UI state.
+依核心 §8 与决策 D4。应用消费网络契约；它不重新定义
+协议。
 
-## §A11.2 Fail-closed principle (REQ-APP-111)
-On any ambiguity affecting value or state, the client does **not** act: it does not emit a
-transaction, does not advance state, and surfaces the condition. Silent best-effort guessing is a
-defect.
+## §A7.1 角色与信任（REQ-APP-070；核心 §8.1、P3）
+relay **仅为传输 + 索引，且绝非真相之源**。客户端独立推导状态，
+并通过从有效交易集重建来检测撒谎/有故障的 relay。
+indexer 提供投影以求便利；客户端将其视作有待确认的提示。
 
-## §A11.3 Degraded operation (REQ-APP-112)
-The app distinguishes "playable", "degraded" (e.g. relay down but canonical path alive — play
-continues with a banner; reconnect runs), and "paused" (e.g. node down on desktop — play gated until
-recovery). Each is explicit and announced (§A12, §A5.5).
+## §A7.2 发现（Phase 1）（REQ-APP-071；核心 §8.2、D4）
+两种机制：一个托管 **relay**（在线状态、牌桌发现、直接消息扇出）与 **LAN
+自动发现**（零服务器的同网络游玩）。大厅（§A6.3）消费二者。客户端 MUST
+在无互联网 relay 的 LAN 模式下正常运作。
 
-## §A11.4 Recovery paths (REQ-APP-113; core §6.4)
-Every stall has a path: decision timeout (default check-or-fold, never a forced wager), recovery
-timeout (withheld reveal / stalled settlement), and reconnect-by-transcript (§A7.6). The client
-surfaces the consequence and the countdown; advancement of a timeout-default is a transaction any
-peer may submit (core §6.4) — the client does so when it is its role.
+## §A7.3 牌桌作用域信道（REQ-APP-072；核心 §8.2 Tier B）
+加入时，客户端订阅牌桌的库存/对象信道（inv/getdata/object，
+Bitmessage 风格）以求快速收敛；它在那里发布自己的动作（速度路径），同时还
+广播它们（规范路径）。
 
-## §A11.5 No-stranded-value invariant (REQ-APP-114; core P4)
-The UI never presents a state in which value can be stranded outside the legal exits (cooperative
-advance, action, fold, reveal, timeout, refund, win-claim, close). If the engine reports such a
-state it is a defect surfaced as `FATAL`, not hidden.
+## §A7.4 双路径发送（REQ-APP-073；核心 §8.3、REQ-NET-003）
+每个动作都被**同时**作为真实交易发往网络，并经
+relay/信道发往牌桌对端。速度路径绝不覆盖规范路径；冲突按
+确定性规则解决（核心 §8.5）。连接管理器实现二者并对账。
 
----
+## §A7.5 冲突呈现（REQ-APP-074；核心 §8.5）
+对每个可行动阶段恰有一个可花费的阶段权；冲突的尝试不可能
+同时有效。客户端跟随被接受的后继（即被下一个被接受的
+状态转换所引用者），并在阶段关闭前观察到冲突时呈现一个瞬态的"解决中"
+状态；双花尝试被超时默认弄得在策略上毫无用处（核心 §8.5、
+§6.4）。UI 绝不猜测赢家；它显示引擎所接受的内容。
 
-# §A12 Observability
+## §A7.6 重连 / 恢复（REQ-APP-075；核心 §8.6）
+在连接/重连时，客户端从对端/relay 请求记录缺口，并从有效交易集
+确定性地重建当前状态；恢复对真相毫无改变，只改变此
+客户端的视图。退避与重试上界是构建设置的 `TRACKED ASSUMPTION` 值。
 
-## §A12.1 Logging (REQ-APP-120)
-Structured, levelled logs (debug/info/warn/error), per component, with correlation IDs (table/round/
-action). Logs are local by default; export is explicit and redacted (§A12.5).
-
-## §A12.2 Metrics (REQ-APP-121)
-Counters/gauges/histograms for: service health and restarts (desktop), connection state and
-reconnects, action round-trip latency, derivation time, signing latency, error counts by code. These
-feed the NFR measurements (§A9, §A16.7) — Claude Code runs the measurement.
-
-## §A12.3 Tracing (REQ-APP-122)
-A trace per player action across app-services → SDK → send (both paths) → acceptance, for diagnosing
-convergence and timeout behaviour.
-
-## §A12.4 Audit / transcript (REQ-APP-123; core §12)
-The transcript (ordered valid tx set + commit/reveal material) is the authoritative audit record;
-the observability above is operational and never a substitute for it.
-
-## §A12.5 Redaction (REQ-APP-124)
-Logs, metrics, traces, and diagnostic bundles MUST NOT contain key material, decrypted card faces, or
-seed/reveal secrets. A redaction layer enforces this; its correctness is tested (§A16.6). Diagnostic
-export is opt-in and redacted.
+## §A7.7 Phase-5 抽象（REQ-APP-076；核心 §8.7）
+互联网 P2P + NAT 穿透（version/verack/getaddr/addr 对端层）是后续轨道；
+连接管理器 MUST 被构建为可让 relay 发现被对端层替换而**无需 UI
+改动**。现在声明，使 Phase 1 不把 relay 烘焙成永久真相。
 
 ---
 
-# §A13 Client persistence & data model
+# §A8 通向协议核心的接缝（SDK 消费 + 托管边界）
 
-## §A13.1 Stores (REQ-APP-130; core §11.2, §12.1)
-Desktop: SQLite. Web: IndexedDB. One typed persistence gateway (§A2.3) is the only access path.
+客户端**不**实现任何密码学、交易构建或游戏逻辑；它消费
+SDK（核心 §15.1–§15.9），背后是核心与适配器 `CT/BS/VA/OB`（核心 §2、§15.8）。
 
-## §A13.2 Entities (REQ-APP-131)
-Tables, players, transactions (the transcript), card lineage (minted→drawn→revealed|folded→
-discarded, core §4.3), timeouts, proofs/commit-reveal material, and local **wrapped** key/custody
-state. Schemas are defined byte/field-precisely in the build against `protocol-types` and core §19.A
-canonical serialization (the canonical serialization itself is owed in the core spec, core §19.A).
+## §A8.1 动作 → SDK 映射（REQ-APP-080；完整矩阵见 Appendix II）
+示意性；完整映射属构建，针对核心 §15：
+- 下注：`getLegalActions`（§15.2）→ `buildAction`（§15.5）→ `custody.sign`（§15.6）→ 双路径发送
+  （§A7.4）。
+- 弃牌：`buildFold`（§15.5）→ sign → send。
+- 公共牌揭示：一次 N-of-N 协作转换（核心 §4.6）；UI 显示协作释放 +
+  恢复默认；SDK/引擎处理密码学。
+- 结算：揭示交易（§4.6、§6.6）随后是收尾花费（§6.6）；引擎计算彩金归属。
 
-## §A13.3 Integrity & migration (REQ-APP-132)
-Persisted records are validated on read (§A10.4); a corrupt record is quarantined, not trusted.
-Schema versions are explicit; migrations are forward-only with a recorded version and a test
-(§A16.6). Load-bearing state (transcript, keys) is never silently lost; it is re-derivable/re-
-fetchable (§A4.6).
+## §A8.2 托管边界（REQ-APP-081；核心 §9.3、§11.5）
+牌的解密与签名发生在 `Custody` 接口之后（`derive`、`sign`、
+`decryptToViewer`、`combineSignShare`）。桌面端：在 Rust 侧或一个隔离
+worker 上的受信托管（§A3.1）。Web：一个隔离 worker。UI 仅经查看器路径接收渲染后的牌面；
+原始密钥绝不越界到 DOM。后端可插拔（软件为默认 AD7；阈值 `OB.custody`
+FROST/GG20；TEE 可选，后续）。
 
-## §A13.4 Retention (REQ-APP-133)
-Transcript retention policy is a `TRACKED ASSUMPTION` (e.g. keep N hands / configurable); export
-before prune is offered. Keys persist until explicitly removed.
+## §A8.3 签名模式呈现（REQ-APP-082；核心 §4.3、D9）
+活动签名模式（A：揭示时重构，Phase-1 默认；B：阈值/无重构）
+被记录在规则集中；UI 在任何展示之处呈现**实际**的密钥处理保证
+（核心 REQ-CRYPTO-008，P8）。当 Mode A 处于活动状态时，UI MUST NOT 宣称 Mode B
+的"无完整密钥"属性。
 
----
-
-# §A14 Packaging, build, CI/CD, reproducibility, release
-
-## §A14.1 Targets (REQ-APP-140; core §10.3, §16)
-- Desktop: a **signed Windows installer** (Tauri) embedding/supervising node+relay (core
-  REQ-VM-004).
-- Web: the static Vite bundle + a hosted relay+node deployment (or bundled-local dev).
-- The **self-contained image** (D5): a reproducible container bundling node(regtest)+relay+client +
-  a one-command bootstrap that brings the stack up, runs self-tests, and prints a transcript
-  (core §10.2/§10.3). Optional literal OVA/qcow2 (AD-OPEN-4).
-
-## §A14.2 CI/CD stages (REQ-APP-141; core §16, run by Claude Code)
-Typecheck (`tsc --strict`, Go `vet`/`-Werror`-equivalent) → lint (Power-of-Ten ruleset) →
-unit+property (§A16.2/§A16.3) → **interpreter-level script tests, Genesis rules** (§A16.5) →
-integration (§A16.3) → build the self-contained image → **E2E inside the image** (§A16.4) →
-`reproduce` (§A16.7) → accessibility & security checks (§A16.8/§A16.9) → traceability check
-(§A18.2). A red stage blocks merge. **Claude Code runs all stages; the author specifies them.**
-
-## §A14.3 Reproducibility (REQ-APP-142; core §10.4)
-Pinned toolchains, locked lockfiles, recorded artifact hashes; the image build and `reproduce` run
-in CI. Reproducibility is an acceptance item (§A18.3).
-
-## §A14.4 Release & update (REQ-APP-143)
-Releases (Windows installer signed, web bundle, image) come from the **same commit** with recorded
-hashes. Desktop auto-update is a later track (AD-OPEN-5).
+## §A8.4 审计输出边界（REQ-APP-083；核心 §2.3 INV-VA-2）
+凡客户端展示 `VA` 支撑的审计/选择性披露输出之处，它呈现所陈述的
+边界 —— 仅包含性/完整性/选择性披露/算术，**而非**源头真相 —— 且
+不得夸大它（P8）。
 
 ---
 
-# §A15 Documentation standard (what the build must produce and maintain)
+# §A9 非功能性需求
 
-Mission-critical means the documentation is a deliverable with its own obligations. Claude Code MUST
-produce and keep current (REQ-APP-150):
-- **API documentation** for `ui-core`, `app-services`, and the IPC contract (Appendix I), generated
-  from typed sources, never hand-drifted.
-- **Architecture Decision Records (ADRs)** for each AD/AD-OPEN here and any made during build; an ADR
-  states context, decision, status, consequences. (This satisfies the "no hidden assumptions" rule
-  in the build, mirroring this spec's declared-decision tables.)
-- **Runbooks** for the desktop supervisor (start/stop, data-dir, recovery, log/diagnostic export) and
-  the hosted web deployment.
-- **User documentation** for install, wallet create/import, finding players, playing a hand, reading
-  consequence/timeout text, and transcript export/replay.
-- **Test documentation** — the test plan, the test-case catalog (Appendix IV realised), and the
-  traceability matrix (§A18) — kept in lock-step with the suites.
-- **Security documentation** — the trust surface (§A10.1), the threat entries (§A10.5), and the
-  redaction rules (§A12.5).
-REQ-APP-151: documentation is versioned with the code, reviewed in the same pass, and CI fails if
-generated docs are stale relative to their sources.
+此处所有数值目标都是标记为 `TRACKED ASSUMPTION` 的**设计目标**：Claude Code MUST 达到
+**并测量**它们（§A16.7）；本文档不断言任何已达成的值。
 
----
+## §A9.1 性能 / 延迟（REQ-APP-090）
+- 本地动作往返（UI 动作 → 已签名 → 经速度路径到对端）：目标 `TRACKED
+  ASSUMPTION`（例如在参考桌面机上 ≤150 ms）—— 由构建测量。
+- 牌桌渲染的 UI 帧预算：目标 `TRACKED ASSUMPTION`（例如 60 fps / ≤16 ms），在
+  满 9 座牌桌之下。
+- 从一份含 N 笔交易的记录进行状态推导：目标 `TRACKED ASSUMPTION`，有界且
+  关于 N 线性（无二次方爆炸）—— 一项由构建剖析的属性。
 
-# §A16 Verification & validation — test architecture and full test specification
+## §A9.2 可靠性 / 可用性（REQ-APP-091）
+- 任何牌桌都不能被一个缺席/恶意参与者冻结（核心 P4）；超时默认路径
+  保证推进。客户端呈现这一点，绝不无限期阻塞于某个对端。
+- 服务监督（桌面端）以有界重启维持可用性（§A3.2）；降级状态
+  是明确的，而非静默的。
 
-This is the **test design**: what must be tested, how, and the acceptance. **Claude Code builds and
-runs every test; the author runs none.** Negative tests where a transaction/script is involved MUST
-fail **inside the real BSV Script interpreter** with Genesis rules — never in a wrapper guard, never
-a signature spot-check (core §14.3, P9).
+## §A9.3 资源限制（REQ-APP-092）
+- 状态推导热路径中的有界工作内存（Power-of-Ten 改编，§A17）：预设大小的
+  结构，每个动作无无界分配。目标上限为 `TRACKED ASSUMPTION`。
+- 持久化增长（记录）以保留策略有界（§A13）。
 
-## §A16.1 Test levels (REQ-APP-160)
-Unit → property-based → integration → **interpreter-level script** → end-to-end (E2E) → adversarial/
-fault-injection → performance → security → accessibility. Every level maps to CI stages (§A14.2) and
-to acceptance gates (§A18.3). Coverage targets are `TRACKED ASSUMPTION` the build measures and
-reports; coverage is necessary, not sufficient (a passing suite that doesn't exercise the behaviour
-is rejected, P9 spirit).
+## §A9.4 容量（REQ-APP-093）
+- 座位 2–9（核心 D2）；Phase 1 固定为 2；UI 与状态模型 MUST 处理整个范围
+  而无需重新设计（多人边池、排序）。
+- 每客户端并发牌桌数：`TRACKED ASSUMPTION`；连接管理器多路复用信道。
 
-## §A16.2 Unit tests (REQ-APP-161)
-Pure units: view-models (§A5.2) as `(state…) → props` projections; reducers; the persistence
-gateway's encode/decode; the redaction layer; consequence-text selection per acting state. Each
-component (§A5.3) has loading/empty/error/ready render tests. Specs catalogued in Appendix IV.
-
-## §A16.3 Property-based & integration tests (REQ-APP-162)
-- Property: determinism — the same ordered valid-tx set + ruleset yields byte-identical derived state
-  across runs and across the two shells (core §14.2, REQ-TEST-002); reconnect-from-gap yields the
-  same state as continuous play; the UI never enables an illegal action for a given engine state.
-- Integration: `ui-core` + `app-services` + SDK with **conformance-bound** fakes for CT/BS/VA/OB —
-  i.e. a single contract-conformance suite both the fake and the **real** adapter pass (core §2.6
-  REQ-DEP-003/004), so a green run against the fake cannot certify a wrong engine. Security-critical
-  paths (shuffle, reveal single-use, fair-play, signing) are tested against the **real**
-  implementations, never fakes (core REQ-DEP-004).
-
-## §A16.4 Determinism & replay tests (REQ-APP-163; core §12.3, §14.2)
-A transcript replays to byte-identical state offline; any divergence is a defect. Cross-client
-agreement: two engines (desktop and web builds) given the same valid tx set + ruleset agree exactly.
-Claude Code runs these; the author specifies the equivalence and the corpus.
-
-## §A16.5 Interpreter-level script tests (REQ-APP-164; core §14.3, P9)
-For every script template the app causes to be spent (funding, action, fold, reveal-or-timeout,
-settlement, fair-play, optional TTP — core §6.6), positive spends are accepted and a battery of
-negative spends fails **inside** the real interpreter with Genesis rules. The app layer's obligation
-is to ensure its flows only ever construct spends that the interpreter accepts on the happy path and
-that every UI-reachable malformed attempt is caught by the interpreter, not by UI guards. **Claude
-Code runs the interpreter; the author specifies the cases.**
-
-## §A16.6 Robustness / negative / fault-injection tests (REQ-APP-165; core §14.6)
-Disconnect at every phase; stale/duplicate action; timeout races; withheld reveal (player and
-board); conflicting spends; mempool eviction + resubmission; corrupt persisted record; malformed IPC/
-relay/peer message; custody/signing failure; WebView/tab crash mid-hand; node/relay/indexer crash on
-desktop. Each maps to a `REQ-*` and a deterministic expected UI+state outcome (fail-closed, recover,
-or default). Redaction is fault-tested (no secret ever appears in logs/metrics/traces/exports).
-
-## §A16.7 Performance tests (REQ-APP-166; §A9)
-The build **measures** the §A9 targets (action round-trip, frame budget, derivation time vs N,
-memory ceilings) on a reference machine and records them as reproducible numbers via `reproduce`
-(core §14.5, P10). The author does not produce these numbers; the build does.
-
-## §A16.8 Accessibility tests (REQ-APP-167; §A5.5)
-Automated a11y checks (roles/labels/contrast/focus) plus scripted keyboard-only and screen-reader
-walkthroughs of every screen; turn/timer/consequence announcements verified. Accessibility is a gate
-(§A18.3), not optional.
-
-## §A16.9 Security tests (REQ-APP-168; §A10)
-Custody-boundary tests (no key crosses IPC/DOM/logs); fail-closed input-validation tests on every
-boundary; supply-chain checks (pinned deps, reproducible build, artifact-hash verification);
-installer-signature verification. Run by Claude Code.
-
-## §A16.10 End-to-end / acceptance (REQ-APP-169; core §14.4, §14.7)
-A scripted full heads-up Hold'em hand runs through the self-contained image on regtest: setup →
-shuffle → deal → betting streets → showdown/settlement, plus the §A16.6 fault injections, all
-producing reproducible transcripts — on both the desktop build and the web build. This is the
-Phase-1 acceptance E2E (§A10/§A18.3).
+## §A9.5 可移植性（REQ-APP-094）
+- 桌面端：Windows（主要；安装程序目标）。共享核心与操作系统无关；macOS/Linux
+  桌面端不在 Phase 1 范围内，但 Tauri 的选择并不排除它们。
+- Web：当前常青浏览器；不依赖非标准存储（AD10）。
 
 ---
 
-# §A17 Engineering-standard mapping
+# §A10 安全架构（对齐 Microsoft SDL）
 
-Mission-critical practice, **honestly mapped** to a GC TypeScript/Go application (no overclaim).
+安全是设计进去的，而非事后加上的。应用层的信任面是
+核心所枚举信任面（核心 §18.6）的细化；它不在其之上添加任何用户必须信任的东西，并
+明白地陈述它所做的事。
 
-## §A17.1 NASA NPR 7150.2 (REQ-APP-170)
-Adopted as software-assurance **practice**: requirements with traceability (§A18), design before
-build (this document), reviews (red-team each pass, §A20), verification obligations (§A16),
-configuration management and reproducible builds (§A14). Claimed as "NPR 7150.2 assurance practice,"
-not certification.
+## §A10.1 应用信任面（REQ-APP-100；细化核心 §18.6）
+一个在未受损客户端上的正确用户，在应用层恰好信任：
+1. 设备/操作系统，以及托管后端使用的本地安全存储（软件托管 = 设备
+   信任；明白陈述，不隐藏）；
+2. 已签名安装程序 / 所提供打包件的完整性（供应链，§A10.6）；
+3. 托管边界的隔离（密钥绝不到达 DOM；§A8.2）；
+全部位于核心的密码学与共识信任面（核心 §18.6）之上。"无需信任（Trustless）"
+处处都不无条件使用（P8）；行文说出所指的具体属性。
 
-## §A17.2 JPL Power-of-Ten — adopted / adapted / N-A (REQ-APP-171; mirrors core §13.1)
-- **Adopted:** simple control flow, no recursion in consensus/state-derivation paths; every loop in
-  those paths bounded with a provable upper bound; runtime assertions on module boundaries; check
-  every return/error; small single-purpose functions; warnings-as-errors (`tsc --strict`, Go
-  `vet`).
-- **Adapted:** "limit data scope" → no untyped `any` in the core; exhaustive `switch` with
-  compile-time exhaustiveness; strict null checks. "Limit the preprocessor" → restrict
-  metaprogramming/codegen; document any that remains.
-- **N-A in a GC runtime (stated, not dropped):** rule 3 (no dynamic allocation after init) and the
-  raw-pointer/aliasing rules have no literal meaning under garbage collection; in their place the
-  state-derivation hot path uses bounded, pre-sized working structures and avoids unbounded
-  allocation. Claimed as "a Power-of-Ten **adaptation**," never literal compliance.
+## §A10.2 密钥与机密处理（REQ-APP-101）
+密钥仅存活于托管边界内（Rust 侧 / 隔离 worker）。静态时它们被封装
+（AEAD；绝不以明文存盘；绝不进 `localStorage`）。它们绝不出现在日志、指标、IPC
+载荷或 DOM 中（§A12.5 脱敏）。每局/每张牌的标量在 Mode A 下为单局（核心
+§9.2、§4.3），且 UI 呈现这一点。
 
-## §A17.3 Microsoft SDL (REQ-APP-172)
-Adopted as security practice: threat-informed design (§A10.5), secure defaults (regtest, loopback,
-fail-closed), least privilege (custody boundary, key isolation), input validation on every boundary,
-supply-chain integrity (signed installer, reproducible build), and security testing in CI (§A16.9).
+## §A10.3 查看器/解密边界（REQ-APP-102；核心 §11.5）
+解密经由 `decryptToViewer`；渲染的牌面仅存在于受控查看器
+路径中。屏幕截取加固/水印是一项**可选的后续轨道**，仅作为部分
+缓解而宣称（核心 §11.5、P8）—— 绝不宣称为针对已受损客户端的保护。
 
-## §A17.4 Boundary-in-source (REQ-APP-173; core §13.4)
-Every stated boundary/limit here (the trust surface §A10.1, the audit boundary §A8.4, fail-closed
-§A11.2, redaction §A12.5, regtest-default §A3.5) is asserted in the build's source so no future
-change silently papers over it.
+## §A10.4 输入校验与 fail-closed（REQ-APP-103）
+每个跨越信任边界的输入 —— IPC 消息、relay/对端消息、持久化记录、
+SDK 结果 —— 都针对其模式进行校验；无效输入被拒绝并记录，绝不部分
+应用。任何含糊处的默认是**不**行动（fail-closed）。负向路径被测试
+（§A16.6）。
 
----
+## §A10.5 威胁知情设计（REQ-APP-104；交叉引用核心 §18）
+应用层继承核心威胁模型（核心 §18）并新增应用特有条目（每条
+带一个限界机制与一个诚实的残余风险）：恶意 relay（受 P3 + 规范路径限界，
+残余 = 活性降级）、从受损设备提取密钥（受托管
+边界/阈值/TEE 限界，残余 = 软件模式下的设备信任 —— 已陈述）、受损客户端上的
+手牌视图泄露（残余 = 协议无法防止，仅部分缓解）、被篡改的
+安装程序/打包件（受签名 + 可复现构建限界，§A10.6），以及任何
+边界上的恶意输入（受 §A10.4 限界）。这些与核心的 `THR-*` 一并编目于 Appendix III/§A18。
 
-# §A18 Requirements register, traceability, acceptance gates
+## §A10.6 供应链与完整性（REQ-APP-105）
+安装程序经签名；构建以钉定工具链、锁定的 lockfile 以及
+记录的制品哈希实现可复现（核心 §10.4、§16；§A14）。依赖被钉定；依赖变更是一个
+明确、经评审的事件。构建运行供应链检查（§A16.9）—— Claude Code 的任务。
 
-## §A18.1 Register (REQ-APP-180)
-Every `REQ-APP-*` in this document is an entry in a machine-readable register
-(`/spec/app-requirements.yaml`) with: id, text, owning module (§A2–§A8), verification method (the
-§A16 level), and status. The register is generated/validated in CI and kept in lock-step with the
-unique `REQ-APP-*` count (a mismatch is a defect). It never double-defines a core requirement; an
-app requirement that refines a core one cites it (e.g. REQ-APP-030 refines core REQ-VM-007).
-
-## §A18.2 Traceability matrix (REQ-APP-181)
-Every requirement → owning module → test(s) → acceptance gate. CI fails if any requirement has no
-verifying test or any application source file in a consensus/security path is untraced
-(mirrors core §13.3).
-
-## §A18.3 Acceptance gates (REQ-APP-182)
-A phase is accepted only when: every requirement for that phase traces to passing tests; `reproduce`
-is green inside the image; the phase's adversarial, accessibility, and security tests pass; the phase
-E2E (§A16.10) runs clean on both desktop and web builds; and the documentation set (§A15) for that
-phase is current. No phase advances on a green-looking test that does not exercise the behaviour
-(P9 spirit).
-
-## §A18.4 The practical definition of done (REQ-APP-183)
-The application spec is complete when Claude Code can build Phase 0 and Phase 1 **without asking a
-further application design question**, every `REQ-APP-*` is registered and traced, every NFR/
-performance/security/accessibility obligation is measured by the build (or carries a justified
-`TRACKED ASSUMPTION` pending the build's run), and the documentation set is produced and current.
+## §A10.7 网络暴露（REQ-APP-106）
+桌面端默认将本地服务绑定到环回；任何非环回暴露都是明确且
+带标志的。relay 客户端按核心协议对牌桌成员资格进行鉴权；在线状态不
+泄露手牌信息。
 
 ---
 
-# §A19 Division of labour — author (how-to) vs Claude Code (build/run)
+# §A11 错误处理、故障模式、降级运行、恢复
 
-The rule, made concrete and binding. **The author writes the how-to and runs nothing.** Claude Code
-builds and runs everything.
+## §A11.1 错误分类法（REQ-APP-110；错误码见 Appendix III）
+错误是类型化的，携带一个稳定的码、一条面向用户的消息、一项补救措施，以及一个严重度
+（`FATAL`/`DEGRADED`/`RECOVERABLE`/`USER`）。类别：configuration、service-lifecycle（桌面端）、
+connectivity、custody/signing、protocol/validation（一笔被拒绝/无效的交易或状态）、
+persistence，以及 UI/render。没有错误被吞没；每条错误路径都有一个已定义的 UI 状态。
 
-| Task | Author (this document) | Claude Code |
+## §A11.2 Fail-closed 原则（REQ-APP-111）
+在任何影响价值或状态的含糊处，客户端**不**行动：它不发出
+交易，不推进状态，并呈现该状况。静默的尽力而为猜测是一个
+缺陷。
+
+## §A11.3 降级运行（REQ-APP-112）
+应用区分"可游玩"、"降级"（例如 relay 宕机但规范路径存活 —— 游玩
+带横幅继续；重连运行中），以及"暂停"（例如桌面端节点宕机 —— 游玩门控直至
+恢复）。每一种都是明确且被播报的（§A12、§A5.5）。
+
+## §A11.4 恢复路径（REQ-APP-113；核心 §6.4）
+每次停滞都有一条路径：决策超时（默认看牌或弃牌，绝不强制下注）、恢复
+超时（被扣留的揭示 / 停滞的结算），以及按记录重连（§A7.6）。客户端
+呈现后果与倒计时；推进一个超时默认是任何
+对端皆可提交的交易（核心 §6.4）—— 客户端在轮到其角色时这样做。
+
+## §A11.5 无搁浅价值不变量（REQ-APP-114；核心 P4）
+UI 绝不呈现一种价值可被搁浅于合法出口（协作
+推进、动作、弃牌、揭示、超时、退款、胜出认领、关闭）之外的状态。若引擎报告这样一种
+状态，那是一个以 `FATAL` 呈现的缺陷，而非被隐藏。
+
+---
+
+# §A12 可观测性
+
+## §A12.1 日志（REQ-APP-120）
+结构化、分级日志（debug/info/warn/error），逐组件，带关联 ID（牌桌/轮/
+动作）。日志默认本地；导出是明确且脱敏的（§A12.5）。
+
+## §A12.2 指标（REQ-APP-121）
+针对以下项的计数器/量规/直方图：服务健康与重启（桌面端）、连接状态与
+重连、动作往返延迟、推导时间、签名延迟、按码统计的错误数。这些
+喂入 NFR 测量（§A9、§A16.7）—— 由 Claude Code 运行测量。
+
+## §A12.3 追踪（REQ-APP-122）
+每个玩家动作跨 app-services → SDK → 发送（两条路径）→ 接受 的一条追踪，用于诊断
+收敛与超时行为。
+
+## §A12.4 审计 / 记录（REQ-APP-123；核心 §12）
+记录（有序有效交易集 + 承诺/揭示材料）是权威审计记录；
+上述可观测性是运营性的，绝不替代它。
+
+## §A12.5 脱敏（REQ-APP-124）
+日志、指标、追踪与诊断包 MUST NOT 包含密钥材料、已解密的牌面，或
+种子/揭示机密。一个脱敏层强制实施此点；其正确性被测试（§A16.6）。诊断
+导出为选择性加入且脱敏。
+
+---
+
+# §A13 客户端持久化与数据模型
+
+## §A13.1 存储（REQ-APP-130；核心 §11.2、§12.1）
+桌面端：SQLite。Web：IndexedDB。一个类型化的持久化网关（§A2.3）是唯一的访问路径。
+
+## §A13.2 实体（REQ-APP-131）
+牌桌、玩家、交易（记录）、牌的谱系（铸造→抽取→揭示|弃牌→
+弃置，核心 §4.3）、超时、证明/承诺-揭示材料，以及本地的**已封装**密钥/托管
+状态。模式在构建中针对 `protocol-types` 与核心 §19.A
+规范序列化按字节/字段精确定义（规范序列化本身欠在核心规范中，核心 §19.A）。
+
+## §A13.3 完整性与迁移（REQ-APP-132）
+持久化记录在读取时被校验（§A10.4）；损坏的记录被隔离，不被信任。
+模式版本是明确的；迁移仅向前，带一个记录的版本与一项测试
+（§A16.6）。承重状态（记录、密钥）绝不静默丢失；它可重新推导/重新
+获取（§A4.6）。
+
+## §A13.4 保留（REQ-APP-133）
+记录保留策略是一个 `TRACKED ASSUMPTION`（例如保留 N 手 / 可配置）；提供
+修剪前导出。密钥持久存在直至被显式移除。
+
+---
+
+# §A14 打包、构建、CI/CD、可复现性、发布
+
+## §A14.1 目标产物（REQ-APP-140；核心 §10.3、§16）
+- 桌面端：一个内嵌/监督 node+relay 的**已签名 Windows 安装程序**（Tauri）（核心
+  REQ-VM-004）。
+- Web：静态 Vite 打包件 + 一个托管的 relay+node 部署（或捆绑本地开发）。
+- **自包含镜像**（D5）：一个可复现的容器，捆绑 node(regtest)+relay+client +
+  一个单命令引导程序，将技术栈拉起、运行自检并打印一份记录
+  （核心 §10.2/§10.3）。可选的字面 OVA/qcow2（AD-OPEN-4）。
+
+## §A14.2 CI/CD 阶段（REQ-APP-141；核心 §16，由 Claude Code 运行）
+类型检查（`tsc --strict`、Go `vet`/`-Werror` 等价物）→ lint（Power-of-Ten 规则集）→
+unit+property（§A16.2/§A16.3）→ **解释器级脚本测试，Genesis 规则**（§A16.5）→
+integration（§A16.3）→ 构建自包含镜像 → **镜像内 E2E**（§A16.4）→
+`reproduce`（§A16.7）→ 无障碍与安全检查（§A16.8/§A16.9）→ 可追溯性检查
+（§A18.2）。任一阶段变红即阻断合并。**Claude Code 运行所有阶段；作者规定它们。**
+
+## §A14.3 可复现性（REQ-APP-142；核心 §10.4）
+钉定工具链、锁定的 lockfile、记录的制品哈希；镜像构建与 `reproduce` 在
+CI 中运行。可复现性是一项验收项（§A18.3）。
+
+## §A14.4 发布与更新（REQ-APP-143）
+发布（已签名 Windows 安装程序、web 打包件、镜像）来自**同一提交**，带记录的
+哈希。桌面端自动更新是后续轨道（AD-OPEN-5）。
+
+---
+
+# §A15 文档标准（构建必须产出并维护什么）
+
+关键任务意味着文档是一项带有自身义务的交付物。Claude Code MUST
+产出并保持最新（REQ-APP-150）：
+- 面向 `ui-core`、`app-services` 与 IPC 契约（Appendix I）的 **API 文档**，由
+  类型化源生成，绝不手工漂移。
+- 针对此处每条 AD/AD-OPEN 以及构建期间作出的任何决策的**架构决策记录（ADR）**；一条 ADR
+  陈述背景、决策、状态、后果。（这满足构建中的"无隐藏假设"规则，
+  镜像本规范的已声明决策表。）
+- 面向桌面端监督进程（启停、数据目录、恢复、日志/诊断导出）与
+  托管 web 部署的**运行手册（Runbook）**。
+- 面向安装、钱包创建/导入、查找玩家、打一手牌、阅读
+  后果/超时文案，以及记录导出/重放的**用户文档**。
+- **测试文档** —— 测试计划、测试用例目录（Appendix IV 实现），以及
+  可追溯性矩阵（§A18）—— 与套件保持同步。
+- **安全文档** —— 信任面（§A10.1）、威胁条目（§A10.5），以及
+  脱敏规则（§A12.5）。
+REQ-APP-151：文档随代码一同版本化、在同一轮次评审，且若
+生成的文档相对其源已陈旧，则 CI 失败。
+
+---
+
+# §A16 验证与确认 —— 测试架构与完整测试规范
+
+这是**测试设计**：必须测试什么、如何测试，以及验收。**Claude Code 构建并
+运行每一项测试；作者一项都不运行。** 涉及交易/脚本的负向测试 MUST
+以 Genesis 规则在**真实 BSV Script 解释器内**失败 —— 绝不在某个包装守卫中，绝不
+用签名抽检（核心 §14.3，P9）。
+
+## §A16.1 测试层级（REQ-APP-160）
+单元 → 基于属性 → 集成 → **解释器级脚本** → 端到端（E2E）→ 对抗性/
+故障注入 → 性能 → 安全 → 无障碍。每个层级映射到 CI 阶段（§A14.2）与
+验收闸门（§A18.3）。覆盖率目标是构建测量并报告的 `TRACKED ASSUMPTION`；
+覆盖率是必要而非充分的（一个未演练该行为的通过套件
+会被拒绝，P9 精神）。
+
+## §A16.2 单元测试（REQ-APP-161）
+纯单元：作为 `(state…) → props` 投影的视图模型（§A5.2）；reducer；持久化
+网关的编码/解码；脱敏层；逐行动状态的后果文案选择。每个
+组件（§A5.3）都有 loading/empty/error/ready 渲染测试。规范编目于 Appendix IV。
+
+## §A16.3 基于属性 & 集成测试（REQ-APP-162）
+- 属性：确定性 —— 同一有序有效交易集 + 规则集跨多次运行、跨两个外壳
+  产出逐字节相同的推导状态（核心 §14.2、REQ-TEST-002）；从缺口重连产出与
+  连续游玩相同的状态；UI 绝不为给定引擎状态启用一个非法动作。
+- 集成：`ui-core` + `app-services` + SDK，配以针对 CT/BS/VA/OB 的**契约绑定**伪件 ——
+  即一个伪件与**真实**适配器都通过的单一契约一致性套件（核心 §2.6
+  REQ-DEP-003/004），使得针对伪件的绿色运行无法认证一个错误引擎。安全关键
+  路径（洗牌、揭示单次使用、公平游玩、签名）针对**真实**
+  实现测试，绝不用伪件（核心 REQ-DEP-004）。
+
+## §A16.4 确定性 & 重放测试（REQ-APP-163；核心 §12.3、§14.2）
+一份记录离线重放至逐字节相同的状态；任何分歧都是缺陷。跨客户端
+一致性：两个引擎（桌面端与 web 构建）在给定同一有效交易集 + 规则集时完全一致。
+Claude Code 运行这些；作者规定等价性与语料库。
+
+## §A16.5 解释器级脚本测试（REQ-APP-164；核心 §14.3、P9）
+对应用导致被花费的每个脚本模板（funding、action、fold、reveal-or-timeout、
+settlement、fair-play、可选 TTP —— 核心 §6.6），正向花费被接受，而一组
+负向花费以 Genesis 规则在真实解释器**内**失败。应用层的义务
+是确保其流程只在顺利路径上构造解释器接受的花费，
+且每个 UI 可达的畸形尝试都由解释器捕获，而非由 UI 守卫捕获。**Claude
+Code 运行解释器；作者规定用例。**
+
+## §A16.6 健壮性 / 负向 / 故障注入测试（REQ-APP-165；核心 §14.6）
+在每个阶段断连；陈旧/重复动作；超时竞态；被扣留的揭示（玩家与
+公共牌）；冲突的花费；mempool 驱逐 + 重新提交；损坏的持久化记录；畸形的 IPC/
+relay/对端消息；托管/签名失败；牌局中途 WebView/标签页崩溃；桌面端上 node/relay/indexer 崩溃。
+每条都映射到一个 `REQ-*` 与一个确定性的预期 UI+状态结果（fail-closed、恢复
+或默认）。脱敏被故障测试（机密绝不出现在日志/指标/追踪/导出中）。
+
+## §A16.7 性能测试（REQ-APP-166；§A9）
+构建在一台参考机上**测量** §A9 目标（动作往返、帧预算、推导时间对 N、
+内存上限），并经 `reproduce` 将它们记录为可复现的数字
+（核心 §14.5、P10）。作者不产出这些数字；构建产出。
+
+## §A16.8 无障碍测试（REQ-APP-167；§A5.5）
+自动化无障碍检查（角色/标签/对比度/焦点），外加对每个屏幕的脚本化仅键盘与屏幕阅读器
+走查；轮次/计时器/后果播报被验证。无障碍是一个闸门
+（§A18.3），并非可选。
+
+## §A16.9 安全测试（REQ-APP-168；§A10）
+托管边界测试（无密钥跨越 IPC/DOM/日志）；每个边界上的 fail-closed 输入校验测试；
+供应链检查（钉定依赖、可复现构建、制品哈希验证）；
+安装程序签名验证。由 Claude Code 运行。
+
+## §A16.10 端到端 / 验收（REQ-APP-169；核心 §14.4、§14.7）
+一手脚本化的完整单挑 Hold'em 在 regtest 上贯穿自包含镜像运行：设置 →
+洗牌 → 发牌 → 各下注街 → 摊牌/结算，外加 §A16.6 故障注入，全部
+产出可复现的记录 —— 在桌面端构建与 web 构建两者上。这是
+Phase-1 验收 E2E（§A10/§A18.3）。
+
+---
+
+# §A17 工程标准映射
+
+关键任务实践，**诚实地映射**到一个 GC TypeScript/Go 应用（不夸大）。
+
+## §A17.1 NASA NPR 7150.2（REQ-APP-170）
+作为软件保证**实践**采纳：带可追溯性的需求（§A18）、先于
+构建的设计（本文档）、评审（每轮红队，§A20）、验证义务（§A16）、
+配置管理与可复现构建（§A14）。宣称为"NPR 7150.2 保证实践"，
+而非认证。
+
+## §A17.2 JPL Power-of-Ten —— 采纳 / 改编 / 不适用（REQ-APP-171；镜像核心 §13.1）
+- **已采纳：** 简单控制流，共识/状态推导路径中无递归；这些路径中的每个循环
+  以可证明的上界限界；模块边界上的运行时断言；检查
+  每个返回/错误；小型单一用途函数；告警即错误（`tsc --strict`、Go
+  `vet`）。
+- **已改编：** "限制数据作用域" → 核心中无无类型的 `any`；带
+  编译期穷尽性的穷尽 `switch`；严格空值检查。"限制预处理器" → 限制
+  元编程/代码生成；记录任何残留者。
+- **GC 运行时中不适用（已陈述，未弃用）：** 规则 3（init 后无动态分配）与
+  原始指针/别名规则在垃圾回收下无字面含义；取而代之，
+  状态推导热路径使用有界、预设大小的工作结构，并避免无界
+  分配。宣称为"一项 Power-of-Ten **改编**"，绝非字面合规。
+
+## §A17.3 Microsoft SDL（REQ-APP-172）
+作为安全实践采纳：威胁知情设计（§A10.5）、安全默认值（regtest、环回、
+fail-closed）、最小权限（托管边界、密钥隔离）、每个边界上的输入校验、
+供应链完整性（已签名安装程序、可复现构建），以及 CI 中的安全测试（§A16.9）。
+
+## §A17.4 边界写入源码（REQ-APP-173；核心 §13.4）
+此处每条陈述的边界/限制（信任面 §A10.1、审计边界 §A8.4、fail-closed
+§A11.2、脱敏 §A12.5、regtest 默认 §A3.5）都在构建的源码中断言，使得未来
+没有任何变更能静默地把它掩盖过去。
+
+---
+
+# §A18 需求登记册、可追溯性、验收闸门
+
+## §A18.1 登记册（REQ-APP-180）
+本文档中的每条 `REQ-APP-*` 都是一份机器可读登记册
+（`/spec/app-requirements.yaml`）中的一个条目，带：id、文本、所属模块（§A2–§A8）、验证方法（
+§A16 层级），以及状态。该登记册在 CI 中生成/校验，并与
+唯一的 `REQ-APP-*` 计数保持同步（不匹配即为缺陷）。它绝不重复定义某条核心需求；
+细化核心需求的应用需求会引用之（例如 REQ-APP-030 细化核心 REQ-VM-007）。
+
+## §A18.2 可追溯性矩阵（REQ-APP-181）
+每条需求 → 所属模块 → 测试 → 验收闸门。若任何需求没有
+验证它的测试，或共识/安全路径中任何应用源文件未被追溯，则 CI 失败
+（镜像核心 §13.3）。
+
+## §A18.3 验收闸门（REQ-APP-182）
+仅当满足以下条件时阶段才被验收：该阶段的每条需求都可追溯到通过的测试；`reproduce`
+在镜像内为绿；该阶段的对抗性、无障碍与安全测试通过；该阶段
+E2E（§A16.10）在桌面端与 web 构建两者上干净运行；且该
+阶段的文档集（§A15）为最新。任何阶段都不凭一个未演练行为而看似为绿的测试推进
+（P9 精神）。
+
+## §A18.4 完成的实务定义（REQ-APP-183）
+当 Claude Code 能够**无需再提出进一步的应用设计问题**就构建 Phase 0 与 Phase 1，
+每条 `REQ-APP-*` 都已登记并追溯，每项 NFR/
+性能/安全/无障碍义务都由构建测量（或携带一个有据的、待构建运行的
+`TRACKED ASSUMPTION`），且文档集已产出并最新时，应用规范即告完成。
+
+---
+
+# §A19 分工 —— 作者（操作指南）vs Claude Code（构建/运行）
+
+此规则被具体化并具约束力。**作者编写操作指南，且不运行任何东西。** Claude Code
+构建并运行一切。
+
+| Task | 作者（本文档） | Claude Code |
 |---|---|---|
-| Architecture, contracts, screen/IPC specs | Writes | Implements |
-| Hand-eval vectors (core §19.D) | States cases + properties | **Runs** the oracle; embeds verified output |
-| Script byte schedules + fair-play size (core §19.C) | States the templates + scaling question + fallback rule | **Constructs scripts, measures** through the interpreter |
-| Interpreter-level tests (§A16.5) | States which spends + negatives | **Runs** the real interpreter (Genesis) |
-| Canonical-serialization example (core §19.A) | States layout + the worked-example requirement | **Runs** the serializer; shows bytes + hash |
-| Performance numbers (§A9/§A16.7) | States targets as `TRACKED ASSUMPTION` | **Measures** on the reference machine |
-| Installer / web bundle / image (§A14) | States targets + acceptance | **Builds**; records hashes |
-| E2E + adversarial + a11y + security (§A16) | States scenarios + gates | **Runs** all of them |
-| `reproduce` (§A16.7) | States what must be regenerable | **Runs** it; non-zero on mismatch |
-| Documentation (§A15) | States the doc set + standard | **Generates/maintains** it |
+| 架构、契约、屏幕/IPC 规范 | 编写 | 实现 |
+| 手牌评估向量（核心 §19.D） | 陈述用例 + 属性 | **运行**预言机；嵌入经验证的输出 |
+| 脚本字节计划表 + 公平游玩尺寸（核心 §19.C） | 陈述模板 + 缩放问题 + 回退规则 | **构造脚本，经解释器测量** |
+| 解释器级测试（§A16.5） | 陈述哪些花费 + 负向 | **运行**真实解释器（Genesis） |
+| 规范序列化示例（核心 §19.A） | 陈述布局 + 演练示例要求 | **运行**序列化器；展示字节 + 哈希 |
+| 性能数字（§A9/§A16.7） | 将目标陈述为 `TRACKED ASSUMPTION` | 在参考机上**测量** |
+| 安装程序 / web 打包件 / 镜像（§A14） | 陈述目标 + 验收 | **构建**；记录哈希 |
+| E2E + 对抗性 + 无障碍 + 安全（§A16） | 陈述场景 + 闸门 | **运行**全部 |
+| `reproduce`（§A16.7） | 陈述何者必须可重新生成 | **运行**它；不匹配时返回非零 |
+| 文档（§A15） | 陈述文档集 + 标准 | **生成/维护**它 |
 
-If a step requires running code, it is in the right-hand column. The author does not enter it.
-
----
-
-# §A20 Open decisions and the remaining-passes plan to ≥10,000 lines
-
-## §A20.1 Open application-layer decisions (declared, not hidden)
-- **AD-OPEN-1** Web connection default per environment (bundled-local vs hosted). DECISION REQUIRED.
-- **AD-OPEN-2** Service worker / offline shell for the web client. DECISION REQUIRED.
-- **AD-OPEN-3** Desktop custody process boundary (Rust side vs isolated worker); both keep keys off
-  the DOM. DECISION REQUIRED; default leans Rust-side.
-- **AD-OPEN-4** Literal VM image (OVA/qcow2) in addition to the container. DECISION REQUIRED; does
-  not change the architecture.
-- **AD-OPEN-5** Desktop auto-update. Later track.
-The protocol-layer `DECISION REQUIRED` items (reveal-token core §4.6; Mode-B signing core §6.7) stay
-in the core spec and do not block Phase 1 (Mode A).
-
-## §A20.2 Honest status and the path to ≥10,000 lines (no padding)
-This pass establishes the full structure (§A0–§A19 + §A21–§A23 + Appendices), fills it to
-mission-critical depth at the section level, and adds the **multi-game platform architecture**
-(§A21: all poker variants + Blackjack as game modules), the **NFT/revocation** (§A22) and
-**micro-payment** (§A23) integration seams, and the **required-capability coverage matrix** (§A0.5)
-mapping every stated requirement to where it is handled. Remaining depth is filled across the
-passes below — dense, no padding. The ≥10,000-line target is
-reached across the following **dense, non-padded** passes — each adds real content, each red-teams
-its own additions (BLOCKER/MAJOR/MINOR + fix + verdict), each logged here:
-
-- **Pass A2 — Appendices realised (DONE this pass).** Appendix I (IPC command/event catalog with
-  message schemas, trust-boundary rules, and error sets), Appendix II (the Screen × action × SDK-call
-  matrix across screens and variants), Appendix III (the error-code catalog with message/remediation/
-  severity/test), Appendix V (the configuration catalog), Appendix VI (glossary). Appendix IV realised
-  to its **core set** (resolving every TC-* referenced in Appendix III); per-case expansion completes
-  in Pass A5.
-- **Pass A3 — Screen specs to component-and-state-machine depth.** Each screen (§A6) expanded to a
-  full state machine (states, transitions, guards, events, edge/empty/error/loading), wireframe-level
-  layout description, the exact view-model prop contract, and the per-screen test specifications
-  (Appendix IV) — for all nine seats and all five variants' table views.
-- **Pass A4 — app-services to interface-contract depth.** The connection manager, sync/deriver,
-  custody client, timeout/observer, and persistence gateway each given a full interface contract
-  (operations, inputs/outputs, error semantics, invariants) and a behavioural state machine.
-- **Pass A5 — Test specification to per-case depth (Appendix IV realised).** Every test case from
-  §A16 written as a spec (id, level, preconditions, steps, expected, the requirement it verifies),
-  including the full adversarial/fault-injection matrix and the determinism/replay corpus definition.
-- **Pass A6 — Desktop supervisor and web runtime to implementation-contract depth.** The IPC contract
-  fully enumerated; the lifecycle, health, restart-policy, and recovery flows specified to the level
-  Claude Code builds without a further question; the web connection/persistence/worker-custody flows
-  likewise.
-- **Pass A7 — Security and observability to control-and-event depth.** The redaction rules per data
-  type, the metric/log/trace event catalog, the supply-chain control list, and the per-threat
-  mitigation+residual entries (§A10.5) fully enumerated and cross-referenced to the core's `THR-*`.
-- **Pass A8 — Red-Team Review (application).** Adversarial review of the whole application spec
-  against these requirements (severity-rated, fixes applied in place, verdict), mirroring the core's
-  Red-Team Review 01 method.
-
-Each pass updates this section's changelog with the honest line count and the requirements added.
-Completeness is never claimed beyond what is written.
+若某步骤要求运行代码，它就在右栏。作者不进入它。
 
 ---
 
-# §A21 Multi-game platform architecture
+# §A20 未决决策，以及通往 ≥10,000 行的剩余轮次计划
 
-The platform is a **multi-game** dealerless card-game application — all poker variants plus Blackjack,
-behind one game-module interface. This section specifies the **application layer** of that design; it
-consumes the core game model (core §5, §7) and the `GameModule` interface (core §7.1), and adds the
-variant-aware UI, the lobby/registry integration, and per-game test and rollout obligations. No game
-logic is implemented in the UI (§A2.2); the UI is variant-agnostic where it can be and variant-
-specialised only where a variant's surface genuinely differs.
+## §A20.1 未决的应用层决策（已声明，未隐藏）
+- **AD-OPEN-1** 每个环境的 Web 连接默认值（捆绑本地 vs 托管）。DECISION REQUIRED。
+- **AD-OPEN-2** 面向 web 客户端的 service worker / 离线外壳。DECISION REQUIRED。
+- **AD-OPEN-3** 桌面端托管进程边界（Rust 侧 vs 隔离 worker）；两者都将密钥
+  保持在 DOM 之外。DECISION REQUIRED；默认倾向 Rust 侧。
+- **AD-OPEN-4** 在容器之外另加字面 VM 镜像（OVA/qcow2）。DECISION REQUIRED；
+  不改变架构。
+- **AD-OPEN-5** 桌面端自动更新。后续轨道。
+协议层的 `DECISION REQUIRED` 项（揭示令牌核心 §4.6；Mode-B 签名核心 §6.7）留
+在核心规范中，且不阻塞 Phase 1（Mode A）。
 
-## §A21.1 The game-module abstraction at the app layer (REQ-APP-210)
-Each game is a module implementing the core `GameModule` contract (core §7.1:
-`init`/`getLegalActions`/`apply`/`isTimeoutEligible`/`isHandComplete`/`settle` + serialization),
-packaged per core §16 (`/packages/game-holdem`, `/packages/game-omaha`, `/packages/game-stud`,
-`/packages/game-draw`, `/packages/game-razz`, and the planned `/packages/game-blackjack`). The app
-consumes modules **only** through the SDK/engine (core §15.2); `ui-core` never imports a game module
-directly (REQ-APP-211). The UI renders whatever `getLegalActions`/`deriveState` return; the set of
-legal actions and the table shape are the module's, surfaced generically.
+## §A20.2 诚实状态，以及通往 ≥10,000 行之路（无填充）
+本轮确立完整结构（§A0–§A19 + §A21–§A23 + 各 Appendix），在章节层面将其填充至
+关键任务深度，并新增**多游戏平台架构**
+（§A21：所有扑克变体 + 作为游戏模块的 Blackjack）、**NFT/撤销**（§A22）与
+**微支付**（§A23）集成接缝，以及将每条陈述需求映射到其处理之处的
+**所需能力覆盖矩阵**（§A0.5）。剩余深度跨下列
+轮次填充 —— 密集、无填充。≥10,000 行目标
+跨以下**密集、无填充**轮次达成 —— 每轮新增真实内容，每轮对
+其自身新增进行红队（BLOCKER/MAJOR/MINOR + 修复 + 裁决），每轮记录于此：
 
-## §A21.2 Game registry & lobby integration (REQ-APP-212)
-A **game registry** lists available games with, per game: display name, supported seat range (core
-D2: 2–9), supported betting structures (core §5.4: NL/PL/FL), the forced-bet model (blinds vs
-ante+bring-in), and the table-view variant profile (§A21.3). The lobby (§A6.3) and table-create
-(§A6.4) screens are driven by this registry: a player picks a game, then the registry constrains the
-rest of configuration (seats, structure, blinds/antes). The registry is **data**, not UI branching;
-adding a game is adding a registry entry + a module, not editing screens (REQ-APP-213).
+- **Pass A2 —— 各 Appendix 实现（本轮完成）。** Appendix I（带
+  消息模式、信任边界规则与错误集的 IPC 命令/事件目录）、Appendix II（跨屏幕与变体的
+  屏幕 × 动作 × SDK 调用矩阵）、Appendix III（带消息/补救/
+  严重度/测试的错误码目录）、Appendix V（配置目录）、Appendix VI（术语表）。Appendix IV 实现
+  至其**核心集**（解决 Appendix III 中引用的每个 TC-*）；逐用例展开
+  在 Pass A5 完成。
+- **Pass A3 —— 屏幕规范至组件与状态机深度。** 每个屏幕（§A6）展开为一个
+  完整状态机（状态、转换、守卫、事件、边缘/空/错误/加载）、线框级
+  布局描述、确切的视图模型 prop 契约，以及逐屏幕测试规范
+  （Appendix IV）—— 面向全部九个座位与全部五种变体的牌桌视图。
+- **Pass A4 —— app-services 至接口契约深度。** 连接管理器、同步/推导器、
+  托管客户端、超时/观察器与持久化网关各被赋予一份完整接口契约
+  （操作、输入/输出、错误语义、不变量）与一个行为状态机。
+- **Pass A5 —— 测试规范至逐用例深度（Appendix IV 实现）。** §A16 中的每个测试用例
+  都写成一份规范（id、层级、前置条件、步骤、预期、它验证的需求），
+  包括完整的对抗性/故障注入矩阵以及确定性/重放语料库定义。
+- **Pass A6 —— 桌面端监督进程与 web 运行时至实现契约深度。** IPC 契约
+  被完整枚举；生命周期、健康、重启策略与恢复流程被规定至
+  Claude Code 无需再提问即可构建的层级；web 连接/持久化/worker 托管流程
+  亦然。
+- **Pass A7 —— 安全与可观测性至控制与事件深度。** 逐数据类型的
+  脱敏规则、指标/日志/追踪事件目录、供应链控制清单，以及逐威胁的
+  缓解+残余条目（§A10.5）被完整枚举并交叉引用到核心的 `THR-*`。
+- **Pass A8 —— 红队评审（应用）。** 针对这些需求对整份应用规范进行
+  对抗性评审（按严重度评级、就地应用修复、给出裁决），镜像核心的
+  红队评审 01 方法。
 
-## §A21.3 Per-variant table-view profiles (REQ-APP-214)
-The table view (§A6.5) is **one** screen parameterised by a variant profile from the registry:
+每轮都以诚实的行数与新增的需求更新本节的变更日志。
+完整性绝不超出已写内容而宣称。
 
-| Game | Hole cards | Board | Reveals | Acting order | Special UI |
+---
+
+# §A21 多游戏平台架构
+
+该平台是一个**多游戏**无荷官纸牌游戏应用 —— 所有扑克变体外加 Blackjack，
+都置于同一个游戏模块接口之后。本节规定该设计的**应用层**；它
+消费核心游戏模型（核心 §5、§7）与 `GameModule` 接口（核心 §7.1），并新增
+变体感知的 UI、大厅/注册表集成，以及逐游戏的测试与推出义务。UI 中不实现任何
+游戏逻辑（§A2.2）；UI 在可能之处对变体无感知，仅在
+某变体的界面确有不同之处才为该变体专门化。
+
+## §A21.1 应用层的游戏模块抽象（REQ-APP-210）
+每个游戏是一个实现核心 `GameModule` 契约的模块（核心 §7.1：
+`init`/`getLegalActions`/`apply`/`isTimeoutEligible`/`isHandComplete`/`settle` + 序列化），
+按核心 §16 打包（`/packages/game-holdem`、`/packages/game-omaha`、`/packages/game-stud`、
+`/packages/game-draw`、`/packages/game-razz`，以及计划中的 `/packages/game-blackjack`）。应用
+**仅**通过 SDK/引擎消费模块（核心 §15.2）；`ui-core` 绝不直接导入某个游戏模块
+（REQ-APP-211）。UI 渲染 `getLegalActions`/`deriveState` 返回的任何内容；合法
+动作集与牌桌形状属模块，被通用地呈现。
+
+## §A21.2 游戏注册表与大厅集成（REQ-APP-212）
+一个**游戏注册表**列出可用游戏，逐游戏带：显示名、支持的座位范围（核心
+D2：2–9）、支持的下注结构（核心 §5.4：NL/PL/FL）、强制下注模型（盲注 vs
+底注+bring-in），以及牌桌视图变体档案（§A21.3）。大厅（§A6.3）与建桌
+（§A6.4）屏幕由此注册表驱动：玩家挑选一个游戏，然后注册表约束
+其余配置（座位、结构、盲注/底注）。注册表是**数据**，而非 UI 分支；
+新增一个游戏是新增一个注册表条目 + 一个模块，而非编辑屏幕（REQ-APP-213）。
+
+## §A21.3 逐变体牌桌视图档案（REQ-APP-214）
+牌桌视图（§A6.5）是**一个**由注册表中的变体档案参数化的屏幕：
+
+| Game | 暗牌（hole cards） | 公共牌（Board） | 揭示 | 行动顺序 | 特殊 UI |
 |---|---|---|---|---|---|
-| Texas Hold'em | 2 concealed | 5 community (3-1-1) | board = N-of-N cooperative + timeout-default (core §4.6) | button-relative (HU: button=SB acts first preflop) | — |
-| Omaha (PL/NL) | **4** concealed | 5 community (3-1-1) | as Hold'em | as Hold'em | reminder "exactly 2 hole + 3 board" (engine enforces, core §5.3.2) |
-| Seven-Card Stud | 2 down + up cards | none | **up-cards** public N-of-N; down-cards private | **board-driven** (highest board acts; bring-in = lowest up-card, core §7.3.2) | per-seat up/down layout; bring-in indicator; 8-handed deck-exhaustion shared community up-card |
-| Five-Card Draw | 5 concealed | none | showdown only | button-relative | **draw control**: discard 0–5 no-reveal + redraw (count public, identities private, core §7.3.3); stand-pat |
-| Razz | 2 down + up | none | up-cards N-of-N | board-driven, **reversed** (lowest acts; bring-in = **highest** up-card, core §7.3.4) | low-hand indicator; reversed-order cues |
-| Blackjack | distinct model | — | distinct model | — | see §A21.7 |
+| Texas Hold'em | 2 张暗牌 | 5 张公共牌（3-1-1） | 公共牌 = N-of-N 协作 + 超时默认（核心 §4.6） | 庄家位相对（单挑：庄家=SB 翻牌前先行动） | — |
+| Omaha (PL/NL) | **4** 张暗牌 | 5 张公共牌（3-1-1） | 同 Hold'em | 同 Hold'em | 提示"恰好 2 张暗牌 + 3 张公共牌"（引擎强制，核心 §5.3.2） |
+| Seven-Card Stud | 2 张暗牌 + 明牌 | 无 | **明牌**公开 N-of-N；暗牌私有 | **牌面驱动**（最高牌面先行动；bring-in = 最低明牌，核心 §7.3.2） | 逐座位明/暗布局；bring-in 指示器；8 人时牌堆耗尽的共享公共明牌 |
+| Five-Card Draw | 5 张暗牌 | 无 | 仅摊牌 | 庄家位相对 | **换牌控件**：弃 0–5 张不亮牌 + 重抽（数目公开，身份私有，核心 §7.3.3）；停牌 |
+| Razz | 2 张暗牌 + 明牌 | 无 | 明牌 N-of-N | 牌面驱动，**反向**（最低先行动；bring-in = **最高**明牌，核心 §7.3.4） | 低牌指示器；反向顺序提示 |
+| Blackjack | 独特模型 | — | 独特模型 | — | 见 §A21.7 |
 
-The UI consumes the profile + the engine's per-state output; it does not encode rules. Profiles cover
-the full 2–9 seat envelope (§A21.6).
+UI 消费该档案 + 引擎的逐状态输出；它不编码规则。各档案覆盖
+完整的 2–9 座范围（§A21.6）。
 
-## §A21.4 The three card UI primitives (REQ-APP-215; core REQ-FSM-003/004/005)
-- **Down-card** — dealt by `draw(position)` then **privately revealed to its holder** via the custody
-  boundary (§A8.2); others see a concealed card, the holder sees a viewer-path face.
-- **Up-card** — dealt by `draw(position)` then **immediately publicly revealed by an N-of-N
-  cooperative transition** (core §4.6) with a timeout-default; the UI shows cooperative-release
-  progress, not a unilateral publish.
-- **Draw** (five-card draw) — the player surrenders chosen concealed cards to a dead-hand **without
-  reveal** (a partial fold) and is dealt the same number of fresh concealed cards (private-revealed to
-  the drawer); the **count is public, the identities are not**. The UI exposes a multi-select discard
-  + "stand pat" (draw 0), each producing the appropriate signed transaction(s) via the SDK.
-Each primitive is one or more signed transactions (core §6.1); the UI obtains signing consent (§A6.7)
-and never reveals what the rules keep concealed.
+## §A21.4 三个牌的 UI 基元（REQ-APP-215；核心 REQ-FSM-003/004/005）
+- **暗牌** —— 由 `draw(position)` 发出，然后经托管边界**私下揭示给其持有者**
+  （§A8.2）；其他人看到一张暗牌，持有者看到一张查看器路径牌面。
+- **明牌** —— 由 `draw(position)` 发出，然后**立即由一次带超时默认的 N-of-N
+  协作转换公开揭示**（核心 §4.6）；UI 显示协作释放
+  进度，而非单方面公布。
+- **换牌（draw）**（five-card draw）—— 玩家将所选暗牌**不亮牌**地交予一个死手牌
+  （一种部分弃牌），并被发予相同数量的新暗牌（私下揭示给
+  换牌者）；**数目公开，身份不公开**。UI 暴露一个多选弃牌
+  + "停牌（stand pat）"（换 0 张），每个都经 SDK 产出相应的已签名交易。
+每个基元都是一笔或多笔已签名交易（核心 §6.1）；UI 获取签名同意（§A6.7）
+且绝不揭示规则保持暗藏的内容。
 
-## §A21.5 Betting-structure UI (REQ-APP-216; core §5.4)
-The bet sizer is structure-aware via the `BettingStructure` interface (core §5.4): No-Limit
-(max = stack), Pot-Limit (max = pot + call), Fixed-Limit (fixed small/big bet, capped raises). The UI
-reads `legalBets` and renders only legal sizings; it never computes the range. Stud/Razz small-/
-big-bet streets and the Fixed-Limit open-pair rule are surfaced from the engine.
+## §A21.5 下注结构 UI（REQ-APP-216；核心 §5.4）
+下注尺度器经 `BettingStructure` 接口感知结构（核心 §5.4）：No-Limit
+（最大 = 筹码量）、Pot-Limit（最大 = 底池 + 跟注）、Fixed-Limit（固定小/大注，加注有上限）。UI
+读取 `legalBets` 并仅渲染合法尺度；它绝不计算该范围。Stud/Razz 的小注/
+大注街以及 Fixed-Limit 的明对规则由引擎呈现。
 
-## §A21.6 Multi-way (3–9 seat) UI (REQ-APP-217; core D2, §5.5, §19.B)
-The seat ring, acting-order indicator, and **side-pot display** handle 2–9 seats. Side pots (main +
-ordered side pots, core §5.5/§19.B) are computed by the engine and rendered; the UI shows each pot,
-its eligible seats, and the award. Acting order is per-game (button-relative vs board-driven,
-§A21.3). Phase 1 is fixed at 2 seats (core D1/D2); the UI and state model handle the full envelope
-without redesign (REQ-APP-218).
+## §A21.6 多人（3–9 座）UI（REQ-APP-217；核心 D2、§5.5、§19.B）
+座位环、行动顺序指示器与**边池显示**处理 2–9 座。边池（主池 +
+有序边池，核心 §5.5/§19.B）由引擎计算并渲染；UI 显示每个底池、
+其有资格座位与彩金归属。行动顺序逐游戏而定（庄家位相对 vs 牌面驱动，
+§A21.3）。Phase 1 固定为 2 座（核心 D1/D2）；UI 与状态模型处理整个范围
+而无需重新设计（REQ-APP-218）。
 
-## §A21.7 Blackjack — required game, distinct dealerless model (REQ-APP-219; core D7)
-Blackjack **is a required game** (R6) and is captured here as a first-class **planned** module — it is
-not dropped. But dealerless blackjack is **not** the symmetric mental-poker shuffle: it is
-player-vs-dealer, and a dealerless construction needs its **own** concealment and settlement model
-(core D7 forbids smuggling that difference into the poker pipeline). Therefore Blackjack is a
-`GameModule` with its own deal/settlement design, and its protocol model is **DECISION REQUIRED** — a
-dedicated design track (parallel to the poker §7.3 work) covering how the "dealer" role is realised
-with no trusted dealer, how the shoe is concealed and dealt, and how outcomes settle. The app layer
-reserves now: its registry entry; its variant profile (hit/stand/double/split/insurance controls, a
-dealer area, no inter-player pot); and its test obligations. The module ships **after** its protocol
-model is fixed. This captures the requirement and the seam without overclaiming a model the project
-has not yet specified (P7/P8).
+## §A21.7 Blackjack —— 必备游戏，独特的无荷官模型（REQ-APP-219；核心 D7）
+Blackjack **是一项必备游戏**（R6），且在此被作为一等的**计划中**模块捕获 —— 它
+不被舍弃。但无荷官 blackjack **不是**对称的心智扑克洗牌：它是
+玩家对庄家，而一个无荷官构造需要其**自身**的隐藏与结算模型
+（核心 D7 禁止把该差异偷渡进扑克管线）。因此 Blackjack 是一个
+带自身发牌/结算设计的 `GameModule`，且其协议模型为 **DECISION REQUIRED** ——
+一条专门的设计轨道（与扑克 §7.3 工作并行），涵盖"庄家"角色如何
+在无受信庄家下实现、牌靴如何隐藏与发出，以及结果如何结算。应用层
+现在预留：其注册表条目；其变体档案（要牌/停牌/加倍/分牌/保险控件、一个
+庄家区域、无玩家间底池）；以及其测试义务。该模块在其协议
+模型确定**之后**才发布。这捕获了需求与接缝，而不夸大一个项目
+尚未规定的模型（P7/P8）。
 
-## §A21.8 Per-game test obligations (REQ-APP-220; Claude Code runs)
-For each game module: the variant state machine is exercised E2E on regtest (core §7.3, §19.E + the
-multi-way generalisations); the hand-evaluation paths are tested against the core's **generated**
-vectors (core §19.D — Omaha 2+3, ace-to-five low, etc.), which **Claude Code generates by running the
-oracle**; the variant table-view profile is tested (controls, reveals, order) at every supported seat
-count, on both desktop and web builds. The author specifies the cases; Claude Code runs them.
+## §A21.8 逐游戏测试义务（REQ-APP-220；Claude Code 运行）
+对每个游戏模块：变体状态机在 regtest 上被 E2E 演练（核心 §7.3、§19.E + 各
+多人泛化）；手牌评估路径针对核心的**已生成**
+向量测试（核心 §19.D —— Omaha 2+3、ace-to-five 低牌等），这些向量由 **Claude Code 通过运行
+预言机生成**；变体牌桌视图档案被测试（控件、揭示、顺序），在每个支持的座位
+数上，在桌面端与 web 构建两者上。作者规定用例；Claude Code 运行它们。
 
-## §A21.9 Multi-game phased rollout (REQ-APP-221; mirrors core §17)
-- **Phase 1** — Texas Hold'em (heads-up NL, regtest, with discovery): the full pipeline (core D1).
-- **Phase 2** — Hold'em robustness + multi-way (6-max) + fair-play (core §17 Phase 2).
-- **Phase 3** — Omaha, Seven-Card Stud, Five-Card Draw, Razz as modules (core §17 Phase 3), each with
-  its variant profile, betting structures (PL/FL), and generated hand-eval vectors.
-- **Later track** — Blackjack (after its §A21.7 model is fixed), and the NFT (§A22) and richer
-  micro-payment (§A23) tracks.
-Each game's acceptance gate (§A18.3): its E2E + adversarial + generated vectors green, at every
-supported seat count, on both builds.
+## §A21.9 多游戏分阶段推出（REQ-APP-221；镜像核心 §17）
+- **Phase 1** —— Texas Hold'em（单挑 NL、regtest、带发现）：完整管线（核心 D1）。
+- **Phase 2** —— Hold'em 健壮性 + 多人（6-max）+ 公平游玩（核心 §17 Phase 2）。
+- **Phase 3** —— Omaha、Seven-Card Stud、Five-Card Draw、Razz 作为模块（核心 §17 Phase 3），每个带
+  其变体档案、下注结构（PL/FL），以及已生成的手牌评估向量。
+- **后续轨道** —— Blackjack（在其 §A21.7 模型确定之后），以及 NFT（§A22）与更丰富的
+  微支付（§A23）轨道。
+每个游戏的验收闸门（§A18.3）：其 E2E + 对抗性 + 已生成向量为绿，在每个
+支持的座位数上，在两个构建上。
 
-**Provenance.** The substrate `cardtable` ships a partial **In-Between** (Acey-Deucey) as its first
-game (core §2.1); the platform uses cardtable's **primitives**, not its game, and builds the games
-above on top — it does **not** assume any poker variant exists in cardtable (core §2.1).
-
----
-
-# §A22 NFT / revocation integration track (required; later track; seam exposed)
-
-True transferable + revocable NFTs are a **required capability** (R10): once Bob owns the item, Alice
-permanently loses access. The platform realises this on `overlay-broadcast` (core §2.4) via the NFT/
-access seam (core §15.7), as a **separate product track** — **not** shipped inside the core poker
-phases, but with the seam exposed so it integrates without re-architecting (core §0.3, §15.7).
-
-## §A22.1 What revocation actually is (REQ-APP-230; core §2.4, P8)
-Revocation = an **unspent expiring output** decided by no operator (core §2.4 INV-OB-2): access is a
-funded session whose renewal spends a member output; **unspent past expiry = revoked**. Content is
-encrypted under a key-graph (Logical Key Hierarchy, `O(log n)` rekey); a transfer re-keys so the prior
-owner's key no longer opens the content. The UI MUST state the property **exactly** — revocation is
-the on-chain expiry/rekey fact; the platform claims no more than `overlay-broadcast` enforces (P8). A
-copy exfiltrated **before** revocation is outside what any such system can revoke; the UI says so
-where relevant.
-
-## §A22.2 App seam & UI (REQ-APP-231; core §15.7)
-The SDK seam (`OB`-backed `accessSession`, `revokeByExpiry`, `wrapContentKey`, core §15.7) is exposed
-but unused in core poker phases. The NFT product UI (gallery; list/buy/sell/**transfer-with-
-revocation**) is a later-track screen set; transfer triggers the re-key so the old owner's access is
-revoked on-chain. Marketplace economics are out of scope here.
-
-## §A22.3 Boundary & test (REQ-APP-232)
-The Grok-doc `revocable-nft-tee` repo is **not** in the author's published list (core §2.4 note); the
-revocable-content capability is the `overlay-broadcast` primitive, and the polished NFT product is
-unshipped — the platform builds it on that primitive, claims only what it enforces, and tests
-transfer→revocation against the **real** `overlay-broadcast` implementation (core §2.6 REQ-DEP-004).
-TEE-sealed custody is optional (AD7) and not required for revocation.
+**出处。** 基底 `cardtable` 作为其首个游戏发布了一个部分实现的 **In-Between**（Acey-Deucey）
+（核心 §2.1）；平台使用 cardtable 的**基元**，而非其游戏，并在其上构建上述
+游戏 —— 它**不**假定 cardtable 中存在任何扑克变体（核心 §2.1）。
 
 ---
 
-# §A23 Micro-payment integration track (required; flag-gated early)
+# §A22 NFT / 撤销集成轨道（必备；后续轨道；接缝已暴露）
 
-Sub-satoshi in-game value is a **required capability** (R9), realised on `bonded-subsat-channel`
-(core §2.2) — sub-satoshi granularity `k`, whole-satoshi on-chain settlement via the largest-
-remainder reconciliation `Q*`, and a fixed **1-satoshi anti-cheat bond** forfeited on a stale-state
-broadcast (core §2.2, §5.7, §9.4). It is **optional and flag-gated** in Phases 1–2 (core §0.3),
-because play-money/regtest play does not require it.
+真正可转让 + 可撤销的 NFT 是一项**必备能力**（R10）：一旦 Bob 拥有该物品，Alice
+就永久失去访问权。平台在 `overlay-broadcast`（核心 §2.4）上经 NFT/
+访问接缝（核心 §15.7）实现这一点，作为一条**独立产品轨道** —— **不**在核心扑克
+各阶段内发布，但接缝已暴露，使其无需重新架构即可集成（核心 §0.3、§15.7）。
 
-## §A23.1 App seam & custody (REQ-APP-240; core §2.2, §9.4)
-Micro-betting uses the `BS.channel.open/transfer/close/contested` lifecycle (core §15) and
-`BS.reconcile.Qstar` for whole-satoshi settlement (core §2.2). Channel keys and the 1-sat bond are
-managed via the `Custody` interface (core §9.4, REQ-WALLET-005); every channel operation is an
-**explicit signing action** with a clear prompt (§A6.7) — no silent value movement.
+## §A22.1 撤销究竟是什么（REQ-APP-230；核心 §2.4、P8）
+撤销 = 一个由无运营方裁定的**未花费的会过期输出**（核心 §2.4 INV-OB-2）：访问权是一个
+已注资的对局，其续期花费一个成员输出；**过期后仍未花费 = 已撤销**。内容
+在一个密钥图（逻辑密钥层次结构，`O(log n)` 重新分配密钥）下加密；一次转让重新分配密钥，使先前
+所有者的密钥不再能打开内容。UI MUST **确切**陈述该属性 —— 撤销是
+链上的过期/重新分配密钥事实；平台不宣称超出 `overlay-broadcast` 所强制者（P8）。在撤销
+**之前**外泄的副本超出任何此类系统所能撤销的范围；UI 在
+相关之处如此说明。
 
-## §A23.2 UI & consequence text (REQ-APP-241)
-The UI surfaces channel open/transfer/close/contested as signing actions; it shows that sub-satoshi
-precision lives only in off-chain accounting and **no fractional output is ever written on-chain**
-(core §2.2 INV-BS-1), and that risked capital is fixed at one satoshi/participant regardless of
-payment size/path (INV-BS-2). On a stale-state broadcast the bond is forfeited to honest parties (core
-§18.1); the UI states this is a tunable deterrent, not a proof.
+## §A22.2 应用接缝与 UI（REQ-APP-231；核心 §15.7）
+SDK 接缝（`OB` 支撑的 `accessSession`、`revokeByExpiry`、`wrapContentKey`，核心 §15.7）已暴露
+但在核心扑克各阶段未使用。NFT 产品 UI（画廊；上架/购买/出售/**带撤销的
+转让**）是一组后续轨道屏幕；转让触发重新分配密钥，使旧所有者的访问权
+在链上被撤销。市场经济学不在此处范围内。
 
-## §A23.3 Boundary & test (REQ-APP-242)
-Stale-state broadcast, contested-close, and the `Q*` whole-satoshi reconciliation are tested against
-the **real** `bonded-subsat-channel` implementation and through the real interpreter where on-chain
-(core §2.6 REQ-DEP-004, §14.3); the author specifies the cases, Claude Code runs them.
+## §A22.3 边界与测试（REQ-APP-232）
+Grok 文档中的 `revocable-nft-tee` 仓库**不**在作者公布的清单中（核心 §2.4 注）；
+可撤销内容能力即是 `overlay-broadcast` 基元，而打磨完善的 NFT 产品
+尚未发布 —— 平台在该基元之上构建它、仅宣称它所强制者，并针对
+**真实**的 `overlay-broadcast` 实现测试 转让→撤销（核心 §2.6 REQ-DEP-004）。
+TEE 密封托管是可选的（AD7），且撤销不需要它。
 
 ---
 
-# Appendix I — IPC command/event catalog (desktop Tauri main ⇄ ui-core)
+# §A23 微支付集成轨道（必备；早期由标志门控）
 
-Notation: `cmd(req) → res` for request/response; `evt: {…}` for one-way events. Types describe the
-**message contract** (not code); exact definitions are built against `protocol-types` and core §15.
-Every command obeys a trust-boundary rule (§A10.4) and fail-closed (§A11.2): an unrecognised/malformed
-message is rejected (`IPC-MALFORMED`, Appendix III) and logged, never partially applied (REQ-APP-026).
-Raw key material MUST NOT appear in any payload (REQ-APP-025). On web the same contract is served by
-the connection layer against remote services (§A4.1); `services.*` is desktop-only.
+亚聪级的游戏内价值是一项**必备能力**（R9），在 `bonded-subsat-channel`
+（核心 §2.2）上实现 —— 亚聪粒度 `k`、经最大
+余数对账 `Q*` 的整聪链上结算，以及一个在陈旧状态
+广播时被没收的固定 **1 聪反作弊保证金**（核心 §2.2、§5.7、§9.4）。在 Phase 1–2 中它是**可选且由标志门控的**（核心 §0.3），
+因为游戏币/regtest 游玩并不需要它。
 
-### I.1 `services.*` (desktop only) — service lifecycle (§A3.2)
-- `services.start() → {accepted: bool}` — ordered startup (node→indexer→relay); idempotent.
-- `services.stop() → {accepted: bool}` — reverse-order shutdown.
-- `evt services.status: {service:'node'|'indexer'|'relay', state:'starting'|'healthy'|'degraded'|'failed'|'recovering', detail?:string, attempt?:int}` — emitted on every transition.
-- Trust boundary: control-plane only; no value, no keys. Errors: `SVC-START-FAILED`, `SVC-PORT-CONFLICT`, `SVC-STORE-CORRUPT`.
+## §A23.1 应用接缝与托管（REQ-APP-240；核心 §2.2、§9.4）
+微下注使用 `BS.channel.open/transfer/close/contested` 生命周期（核心 §15）与
+用于整聪结算的 `BS.reconcile.Qstar`（核心 §2.2）。信道密钥与 1 聪保证金
+经 `Custody` 接口管理（核心 §9.4、REQ-WALLET-005）；每个信道操作都是一个
+带清晰提示的**显式签名动作**（§A6.7）—— 无静默价值移动。
 
-### I.2 `chain.*` — chain access (pass-through to `Chain`, core §15.9)
-- `chain.broadcast(rawTx:hex) → {txid:hex, status:'accepted'|'seen'|'double-spend-attempted'|'rejected', reason?:string}` — broadcasts an **already-signed** tx; never builds or signs.
-- `chain.outpointStatus({txid,vout}) → {state:'unspent'|'spent'|'unknown', spentBy?:hex}`.
-- `chain.txStatus(txid) → {state:'mempool'|'confirmed'|'evicted'|'unknown', confirmations?:int}`.
-- `chain.headers({from?,count?}) → {headers:BlockHeader[]}` — SPV-edge checks (core §34).
-- `chain.conflicts(outpoint) → {conflicting:hex[]}` — double-spend observability (core §8.4).
-- Trust boundary: read/broadcast only; responses are hints to confirm (core P3); `accepted` ≠ finality (finality = confirmation depth, core §5.7). Errors: `CHAIN-UNREACHABLE`, `CHAIN-BADTX`, `CHAIN-TIMEOUT`.
+## §A23.2 UI 与后果文案（REQ-APP-241）
+UI 将信道 open/transfer/close/contested 呈现为签名动作；它展示亚聪
+精度仅存在于链下记账，且**绝不在链上写入任何分数输出**
+（核心 §2.2 INV-BS-1），以及无论支付大小/路径，承担风险的资本都固定为
+每参与者一聪（INV-BS-2）。在陈旧状态广播时保证金被没收给诚实方（核心
+§18.1）；UI 陈述这是一种可调的威慑，而非一个证明。
 
-### I.3 `custody.*` — custody-trusted operations (results only; core §9.3, §15.6)
-- `custody.derive({gid,j?,role}) → {publicKey:hex}` — HKDF-derived **public** key only; never the scalar (REQ-APP-025).
-- `custody.sign(intent:SignIntent) → {signature:hex}` where `SignIntent={sighashPreimage:hex, describe:{action,amounts,potOrState}}` — signs exactly the bytes the prompt renders (§A6.7); fail-closed on mismatch.
-- `custody.decryptToViewer(card:ConcealedCardRef) → {viewerToken:opaque}` — decrypts into the controlled viewer path (§A10.3); returns a viewer token, never DOM plaintext.
-- `custody.combineSignShare(req) → {share|signature}` — Mode-B threshold share (core §6.7); absent under Mode A.
-- Trust boundary: the **only** door to key operations; keys never cross it. Errors: `CUSTODY-LOCKED`, `CUSTODY-BACKEND-UNAVAILABLE`, `CUSTODY-INTENT-MISMATCH`, `CUSTODY-DECRYPT-FAILED`.
+## §A23.3 边界与测试（REQ-APP-242）
+陈旧状态广播、争议关闭，以及 `Q*` 整聪对账针对
+**真实**的 `bonded-subsat-channel` 实现测试，并在涉及链上之处经真实解释器测试
+（核心 §2.6 REQ-DEP-004、§14.3）；作者规定用例，Claude Code 运行它们。
+
+---
+
+# Appendix I —— IPC 命令/事件目录（桌面端 Tauri main ⇄ ui-core）
+
+记法：`cmd(req) → res` 表请求/响应；`evt: {…}` 表单向事件。类型描述
+**消息契约**（非代码）；确切定义针对 `protocol-types` 与核心 §15 构建。
+每个命令都遵守一条信任边界规则（§A10.4）与 fail-closed（§A11.2）：一条无法识别/畸形的
+消息被拒绝（`IPC-MALFORMED`，Appendix III）并记录，绝不部分应用（REQ-APP-026）。
+原始密钥材料 MUST NOT 出现在任何载荷中（REQ-APP-025）。在 web 上，同一契约由
+连接层针对远端服务提供（§A4.1）；`services.*` 仅限桌面端。
+
+### I.1 `services.*`（仅桌面端）—— 服务生命周期（§A3.2）
+- `services.start() → {accepted: bool}` —— 有序启动（node→indexer→relay）；幂等。
+- `services.stop() → {accepted: bool}` —— 逆序关停。
+- `evt services.status: {service:'node'|'indexer'|'relay', state:'starting'|'healthy'|'degraded'|'failed'|'recovering', detail?:string, attempt?:int}` —— 在每次转换时发射。
+- 信任边界：仅控制面；无价值，无密钥。错误：`SVC-START-FAILED`、`SVC-PORT-CONFLICT`、`SVC-STORE-CORRUPT`。
+
+### I.2 `chain.*` —— 链访问（直通至 `Chain`，核心 §15.9）
+- `chain.broadcast(rawTx:hex) → {txid:hex, status:'accepted'|'seen'|'double-spend-attempted'|'rejected', reason?:string}` —— 广播一笔**已签名**的交易；绝不构建或签名。
+- `chain.outpointStatus({txid,vout}) → {state:'unspent'|'spent'|'unknown', spentBy?:hex}`。
+- `chain.txStatus(txid) → {state:'mempool'|'confirmed'|'evicted'|'unknown', confirmations?:int}`。
+- `chain.headers({from?,count?}) → {headers:BlockHeader[]}` —— SPV 边缘检查（核心 §34）。
+- `chain.conflicts(outpoint) → {conflicting:hex[]}` —— 双花可观测性（核心 §8.4）。
+- 信任边界：仅读取/广播；响应是有待确认的提示（核心 P3）；`accepted` ≠ 最终性（最终性 = 确认深度，核心 §5.7）。错误：`CHAIN-UNREACHABLE`、`CHAIN-BADTX`、`CHAIN-TIMEOUT`。
+
+### I.3 `custody.*` —— 托管受信操作（仅返回结果；核心 §9.3、§15.6）
+- `custody.derive({gid,j?,role}) → {publicKey:hex}` —— 仅 HKDF 派生的**公**钥；绝非标量（REQ-APP-025）。
+- `custody.sign(intent:SignIntent) → {signature:hex}`，其中 `SignIntent={sighashPreimage:hex, describe:{action,amounts,potOrState}}` —— 恰好签名提示所渲染的字节（§A6.7）；不匹配时 fail-closed。
+- `custody.decryptToViewer(card:ConcealedCardRef) → {viewerToken:opaque}` —— 解密进入受控查看器路径（§A10.3）；返回一个查看器令牌，绝非 DOM 明文。
+- `custody.combineSignShare(req) → {share|signature}` —— Mode-B 阈值份额（核心 §6.7）；在 Mode A 下不存在。
+- 信任边界：通向密钥操作的**唯一**门户；密钥绝不跨越它。错误：`CUSTODY-LOCKED`、`CUSTODY-BACKEND-UNAVAILABLE`、`CUSTODY-INTENT-MISMATCH`、`CUSTODY-DECRYPT-FAILED`。
 
 ### I.4 `config.*`
-- `config.runtime() → {ports, network:'regtest'|'mainnet', dataDir, flags}`.
-- `config.setNetwork(network) → {accepted:bool}` — **guarded**: rejects non-regtest unless the mainnet research flag is set (§A3.5, REQ-APP-030); success requires the UI banner. Errors: `CONFIG-MAINNET-FLAG-REQUIRED`, `CONFIG-INVALID`.
+- `config.runtime() → {ports, network:'regtest'|'mainnet', dataDir, flags}`。
+- `config.setNetwork(network) → {accepted:bool}` —— **受守护**：除非主网研究标志已设置，否则拒绝非 regtest（§A3.5、REQ-APP-030）；成功要求显示 UI 横幅。错误：`CONFIG-MAINNET-FLAG-REQUIRED`、`CONFIG-INVALID`。
 
-### I.5 `diag.*` — diagnostics (redacted, §A12.5)
-- `diag.logs(query) → {entries:LogEntry[]}` (redacted; no keys/faces/secrets, REQ-APP-124).
-- `diag.metrics() → {metrics:Metric[]}` (§A12.2).
-- `diag.bundleDiagnostics() → {path}` — opt-in, redacted. Errors: `DIAG-EXPORT-FAILED`.
-
----
-
-# Appendix II — Screen × action × SDK-call matrix
-
-Per action: the screen, the engine gate, the SDK build (core §15.5), the custody call (core §15.6),
-the send paths (§A7.4: canonical=`chain.broadcast`; speed=table channel), and the consequence/signing
-text. The UI never decides legality — it calls `getLegalActions` (core §15.2). Every value-affecting
-action raises the signing modal (§A6.7).
-
-### II.1 Lobby / table-create (§A6.3/§A6.4)
-| Action | Gate | SDK build | Custody | Send | Signing/consequence |
-|---|---|---|---|---|---|
-| Create table | ruleset valid (§15.3) | `createTable`/`buildFunding` | `sign` | both | "Locks your stake; refunds via the pre-signed path if the table aborts." |
-| Join table | seat open; stake available | `joinTable`/`buildFunding` | `sign` | both | "Joining locks your stake into the table." |
-
-### II.2 Table view — betting (all poker variants; §A6.5)
-| Action | Gate (`getLegalActions`) | SDK build | Custody | Send | Signing/consequence |
-|---|---|---|---|---|---|
-| Check | check legal | `buildAction(check)` | `sign` | both | "Check — no chips committed." Timeout-default if you do nothing & check is legal. |
-| Bet | bet legal; size ∈ `legalBets` (§5.4) | `buildAction(bet,amt)` | `sign` | both | shows amount + resulting pot. |
-| Call | facing a bet | `buildAction(call,amt)` | `sign` | both | shows call amount + pot. |
-| Raise | raise legal; size ∈ `legalBets` | `buildAction(raise,amt)` | `sign` | both | shows raise-to + pot. |
-| Fold | in hand | `buildFold` (**no reveal**, core P5/§4.6) | `sign` | both | "Fold — surrender the hand without showing your cards." |
-
-### II.3 Table view — variant-specific
-| Action | Variant | Gate | SDK build | Custody | Notes |
-|---|---|---|---|---|---|
-| Discard 0–5 / draw | Five-Card Draw | draw phase (§7.3.3) | `buildAction(draw,{discardSet})` + redeal | `sign` + `decryptToViewer` (new cards) | discards to dead-hand **no reveal**; count public, identities private (REQ-APP-215). |
-| Stand pat | Five-Card Draw | draw phase | `buildAction(draw,{discardSet:∅})` | `sign` | draw timeout-default = stand-pat (core REQ-FSM-010). |
-| Up-card reveal release | Stud/Razz | up-card dealt (§7.3.2/§7.3.4) | `buildReveal(upCard)` (N-of-N, §4.6) | `combineSignShare`/`sign` | UI shows cooperative-release + timeout-default, not a unilateral publish. |
-
-### II.4 Board reveals (Hold'em/Omaha; core §4.6)
-| Step | Gate | SDK build | Custody | Notes |
-|---|---|---|---|---|
-| Reveal flop/turn/river | street-reveal; N-of-N | `buildReveal(board)` | each party releases (`sign`/`combineSignShare`) | **N-of-N cooperative + timeout-default**; a withholder → recovery (core §6.4); UI shows progress. |
-
-### II.5 Showdown / settlement (§A6.8)
-| Action | Gate | SDK build | Custody | Notes |
-|---|---|---|---|---|
-| Reveal hand (min) | showdown; contender (§5.6) | `buildReveal(hand)` | `decryptToViewer` then `sign` | only what the showdown needs; verified vs commitments (core §6.6). |
-| Muck | cannot win a contested pot | muck (`buildFold`-equiv) | `sign` | no reveal. |
-| Settlement (close-out) | winning proof valid (engine) | `buildSettlement` (close-out, core §6.6) | `sign`/`combineSignShare` | engine computes the award; pots per §5.5/§19.B. |
-
-### II.6 Recovery / timeout (§A6.9, core §6.4)
-| Action | Gate | SDK build | Custody | Notes |
-|---|---|---|---|---|
-| Advance timeout-default | maturity reached (tx-level nLockTime, core §6.2) | `buildTimeout`/`buildRecovery` | `sign` | any peer may advance; the client does so when it is its role. |
-| Reconnect/resume | on (re)connect | — (request transcript gap) | — | engine rebuilds (core §8.6); no new value action. |
-
-Micro-payment channel actions (open/transfer/close/contested) map analogously via `BS` (§A23.1) when
-the micro-betting flag is on; each is an explicit signing action (§A6.7).
+### I.5 `diag.*` —— 诊断（已脱敏，§A12.5）
+- `diag.logs(query) → {entries:LogEntry[]}`（已脱敏；无密钥/牌面/机密，REQ-APP-124）。
+- `diag.metrics() → {metrics:Metric[]}`（§A12.2）。
+- `diag.bundleDiagnostics() → {path}` —— 选择性加入，已脱敏。错误：`DIAG-EXPORT-FAILED`。
 
 ---
 
-# Appendix III — Error-code catalog
+# Appendix II —— 屏幕 × 动作 × SDK 调用矩阵
 
-Each code: stable id, category (§A11.1), severity (`FATAL`/`DEGRADED`/`RECOVERABLE`/`USER`), plain
-user message, remediation, test (Appendix IV). No error is swallowed (§A11.1); secrets never appear in
-any error payload (§A12.5).
+逐动作：屏幕、引擎闸门、SDK 构建（核心 §15.5）、托管调用（核心 §15.6）、
+发送路径（§A7.4：规范=`chain.broadcast`；速度=牌桌信道），以及后果/签名
+文案。UI 绝不裁定合法性 —— 它调用 `getLegalActions`（核心 §15.2）。每个影响价值的
+动作都升起签名模态框（§A6.7）。
 
-| Code | Category | Severity | User message | Remediation | Test |
+### II.1 大厅 / 建桌（§A6.3/§A6.4）
+| Action | Gate | SDK build | Custody | Send | 签名/后果 |
 |---|---|---|---|---|---|
-| CFG-INVALID | configuration | FATAL | "Configuration is invalid; can't start." | reinstall / restore default | TC-ERR-001 |
-| SVC-START-FAILED | service-lifecycle | DEGRADED | "A local service didn't start." | retry; view diagnostics | TC-ERR-010 |
-| SVC-PORT-CONFLICT | service-lifecycle | DEGRADED | "A required port is in use." | free it / let the app pick another | TC-ERR-011 |
-| SVC-STORE-CORRUPT | service-lifecycle | DEGRADED | "The local regtest store is corrupt." | re-init store (explicit confirm) | TC-ERR-012 |
-| CHAIN-UNREACHABLE | connectivity | DEGRADED | "Can't reach the node/network." | reconnect; play continues on the speed path | TC-ERR-020 |
-| CHAIN-BADTX | protocol/validation | RECOVERABLE | "The network rejected a transaction." | re-derive; action not applied (fail-closed) | TC-ERR-021 |
-| CHAIN-TIMEOUT | connectivity | RECOVERABLE | "A chain request timed out." | retry with backoff | TC-ERR-022 |
-| RELAY-UNREACHABLE | connectivity | DEGRADED | "Can't reach the relay; trying LAN/peers." | reconnect; canonical path authoritative | TC-ERR-030 |
-| CUSTODY-LOCKED | custody/signing | USER | "Your wallet is locked." | unlock to continue | TC-ERR-040 |
-| CUSTODY-BACKEND-UNAVAILABLE | custody/signing | DEGRADED | "Custody backend unavailable." | check backend; signing paused | TC-ERR-041 |
-| CUSTODY-INTENT-MISMATCH | security | FATAL (per action) | "Bytes to sign didn't match what was shown — refused." | report; never auto-retry | TC-SEC-005 |
-| CUSTODY-DECRYPT-FAILED | custody/signing | RECOVERABLE | "Couldn't decrypt your card." | retry; no fake card shown | TC-ERR-042 |
-| TX-VALIDATION-FAILED | protocol/validation | RECOVERABLE | "A move wasn't valid for this state." | re-derive; legal actions only | TC-ERR-050 |
-| STATE-CONFLICT | protocol/validation | RECOVERABLE | "Resolving a conflicting move…" | follow accepted successor (core §8.5) | TC-ADV-007 |
-| PERSIST-CORRUPT-RECORD | persistence | RECOVERABLE | "A saved record was corrupt and was quarantined." | re-fetch/re-derive | TC-ERR-060 |
-| PERSIST-QUOTA | persistence | RECOVERABLE | "Local storage is full." | export/prune; load-bearing state re-derivable | TC-ERR-061 |
-| IPC-MALFORMED | configuration/security | RECOVERABLE | (internal) | reject + log; never partially applied | TC-SEC-010 |
-| CONFIG-MAINNET-FLAG-REQUIRED | security | USER | "Mainnet needs the explicit research flag." | set the flag knowingly; banner shown | TC-SEC-020 |
-| UI-RENDER-FAULT | UI/render | DEGRADED | "Something went wrong displaying this screen." | error boundary recovers it; app keeps running | TC-ERR-070 |
-| STRANDED-VALUE | protocol/validation | FATAL | "Unexpected state — stopping to protect funds." | surfaced, never hidden (core P4, §A11.5) | TC-ADV-020 |
+| Create table | ruleset valid (§15.3) | `createTable`/`buildFunding` | `sign` | both | "锁定你的赌注；若牌桌中止则经预签名路径退款。" |
+| Join table | seat open; stake available | `joinTable`/`buildFunding` | `sign` | both | "加入会将你的赌注锁入牌桌。" |
 
-The threat-failure codes (CUSTODY-INTENT-MISMATCH, CONFIG-MAINNET-FLAG-REQUIRED, IPC-MALFORMED)
-cross-reference §A10.5 and the core `THR-*` (core §18).
+### II.2 牌桌视图 —— 下注（所有扑克变体；§A6.5）
+| Action | Gate (`getLegalActions`) | SDK build | Custody | Send | 签名/后果 |
+|---|---|---|---|---|---|
+| Check | check legal | `buildAction(check)` | `sign` | both | "看牌 —— 不投入筹码。" 若你什么都不做且看牌合法，则为超时默认。 |
+| Bet | bet legal; size ∈ `legalBets` (§5.4) | `buildAction(bet,amt)` | `sign` | both | 显示金额 + 由此产生的底池。 |
+| Call | facing a bet | `buildAction(call,amt)` | `sign` | both | 显示跟注金额 + 底池。 |
+| Raise | raise legal; size ∈ `legalBets` | `buildAction(raise,amt)` | `sign` | both | 显示加注至 + 底池。 |
+| Fold | in hand | `buildFold`（**不揭示**，核心 P5/§4.6） | `sign` | both | "弃牌 —— 不亮牌而放弃这手牌。" |
 
----
+### II.3 牌桌视图 —— 变体专属
+| Action | Variant | Gate | SDK build | Custody | 备注 |
+|---|---|---|---|---|---|
+| Discard 0–5 / draw | Five-Card Draw | draw phase (§7.3.3) | `buildAction(draw,{discardSet})` + redeal | `sign` + `decryptToViewer`（新牌） | 弃入死手牌**不揭示**；数目公开，身份私有（REQ-APP-215）。 |
+| Stand pat | Five-Card Draw | draw phase | `buildAction(draw,{discardSet:∅})` | `sign` | 换牌超时默认 = 停牌（核心 REQ-FSM-010）。 |
+| Up-card reveal release | Stud/Razz | up-card dealt (§7.3.2/§7.3.4) | `buildReveal(upCard)`（N-of-N，§4.6） | `combineSignShare`/`sign` | UI 显示协作释放 + 超时默认，而非单方面公布。 |
 
-# Appendix IV — Test-case catalog (core set; full per-case expansion in Pass A5)
-
-Each case: id, level (§A16.1), gate/preconditions, expected UI+state, classification, requirement
-verified. **Claude Code runs every case** (§A19). Negative cases involving a script/transaction fail
-**inside** the real interpreter with Genesis rules (core §14.3, P9). The set below resolves every TC-*
-referenced in Appendix III.
-
-### IV.1 Determinism & replay (§A16.4)
-- **TC-DET-001** (property) same ordered valid-tx set + ruleset ⇒ byte-identical derived state across runs — REQ-APP-163, core REQ-TEST-002.
-- **TC-DET-002** (property) desktop and web builds agree exactly on the same set — cross-client agreement.
-- **TC-DET-003** (integration) reconnect-from-gap ≡ continuous play — REQ-APP-075.
-
-### IV.2 Engine-legality / UI (§A16.2)
-- **TC-UI-001** the UI never enables an action absent from `getLegalActions` — REQ-APP-010/051 (fail-closed).
-- **TC-UI-002** consequence text matches the acting state's timeout-default (check vs fold-when-facing-a-bet; never a forced wager) — core §6.4.
-
-### IV.3 Error paths (§A16.6) — resolves Appendix III TC-ERR-*
-- **TC-ERR-001** invalid config ⇒ FATAL, no play. **TC-ERR-010/011/012** start-fail/port/corrupt-store ⇒ DEGRADED + guided recovery. **TC-ERR-020/021/022** chain unreachable/badtx/timeout ⇒ banner+speed-path / fail-closed re-derive / backoff. **TC-ERR-030** relay unreachable ⇒ LAN/peer fallback. **TC-ERR-040/041/042** custody locked/unavailable/decrypt-failed ⇒ unlock / pause signing / no fake card. **TC-ERR-050** invalid move ⇒ re-derive, legal-only. **TC-ERR-060/061** corrupt-record/quota ⇒ quarantine / export-prune. **TC-ERR-070** render fault ⇒ error boundary recovers one screen.
-
-### IV.4 Security (§A16.9) — resolves TC-SEC-*
-- **TC-SEC-001** no key material in any log/metric/trace/bundle (redaction, REQ-APP-124). **TC-SEC-002** no key crosses IPC or reaches the DOM (REQ-APP-025/081). **TC-SEC-005** signing intent ≠ presented bytes ⇒ refuse (CUSTODY-INTENT-MISMATCH); no auto-retry. **TC-SEC-010** malformed IPC ⇒ reject+log, never partially applied. **TC-SEC-020** mainnet without flag ⇒ refused + banner when flagged. **TC-SEC-030** installer-signature / artifact-hash verification (supply chain, §A10.6).
-
-### IV.5 Adversarial / fault-injection (§A16.6) — resolves TC-ADV-*
-- **TC-ADV-001..006** disconnect at each phase (deal/bet/reveal/showdown/settle/recovery) ⇒ correct default/recover; no stranded value. **TC-ADV-007** conflicting spend ⇒ STATE-CONFLICT resolves to the accepted successor (core §8.5). **TC-ADV-008** withheld board/player reveal ⇒ N-of-N timeout-default to recovery (core §4.6/§6.4). **TC-ADV-009** stale-state micro-payment broadcast ⇒ 1-sat bond forfeited (core §18.1). **TC-ADV-010** mempool eviction ⇒ resubmission; convergence restored. **TC-ADV-020** any would-strand-value state ⇒ STRANDED-VALUE FATAL, surfaced (core P4, §A11.5).
-
-### IV.6 Interpreter-level script (§A16.5; Claude Code runs the real interpreter, Genesis)
-- **TC-INT-001** each template's positive spend accepted (funding, action, fold, reveal-or-timeout, settlement, fair-play, optional TTP — core §6.6). **TC-INT-002** each template's negative battery fails **inside** the interpreter (not a wrapper guard; no signature spot-check): card-substitution rejected by byte-equality (core §6.3), bad reveal opening rejected, replayed branch rejected by binding (core §6.3).
-
-### IV.7 Accessibility (§A16.8)
-- **TC-A11Y-001..N** keyboard-only + screen-reader walkthrough of each screen; turn/timer/consequence announced; contrast/roles/labels pass.
-
-### IV.8 Per-game (§A21.8) — one block per variant
-- **TC-GAME-HOLDEM-\*** HU + 6-max E2E; betting tree; min-reveal showdown; side pots. **TC-GAME-OMAHA-\*** 4 hole cards; 2+3 evaluation (generated vectors, core §19.D); PLO sizing. **TC-GAME-STUD-\*** up/down cards; bring-in; board-driven order; 8-handed deck-exhaustion case. **TC-GAME-DRAW-\*** no-reveal discard+redraw; stand-pat default; count-public/identities-private. **TC-GAME-RAZZ-\*** ace-to-five low; reversed bring-in/order (generated vectors).
-
----
-
-# Appendix V — Configuration catalog
-
-Every key: type, default, the AD/AD-OPEN it realises, validation (fail-closed, §A10.4). No timing
-constant here is a consensus value — timing is transaction-level (core §6.2); these are UI/operational
-timeouts and budgets.
-
-| Key | Type | Default | Realises | Validation |
+### II.4 公共牌揭示（Hold'em/Omaha；核心 §4.6）
+| Step | Gate | SDK build | Custody | 备注 |
 |---|---|---|---|---|
-| `project.name` | string | `bsv-poker` | core §0.4 | non-empty; matches rename script |
-| `desktop.shell` | enum(tauri,electron) | tauri | AD2 | electron only on a recorded Tauri limitation |
-| `web.stack` | enum | react-ts-vite | AD3 | fixed for Phase 1 |
-| `chain.backend` | enum | bonded-subsat-node | AD4 | must expose `BS.node` (core §2.2) |
-| `chain.network` | enum(regtest,mainnet) | regtest | §A3.5 | mainnet rejected unless `flags.mainnetResearch` |
-| `flags.mainnetResearch` | bool | false | §A3.5/REQ-VM-007 | true requires explicit user action + banner |
-| `services.ports.{node,indexer,relay}` | int\|auto | auto | §A3.4 | allocated, written to runtime config; no hard-coding |
-| `services.restart.maxAttempts` | int | TRACKED ASSUMPTION | §A3.2 REQ-APP-022 | bounded; never unbounded loop |
-| `services.restart.backoffMs` | int | TRACKED ASSUMPTION | §A3.2 | bounded, increasing |
-| `dataDir` | path | per-user app dir | §A3.4 | namespaced by network (regtest/mainnet isolated) |
+| Reveal flop/turn/river | street-reveal; N-of-N | `buildReveal(board)` | 各方释放（`sign`/`combineSignShare`） | **N-of-N 协作 + 超时默认**；扣留者 → 恢复（核心 §6.4）；UI 显示进度。 |
+
+### II.5 摊牌 / 结算（§A6.8）
+| Action | Gate | SDK build | Custody | 备注 |
+|---|---|---|---|---|
+| Reveal hand (min) | showdown; contender (§5.6) | `buildReveal(hand)` | `decryptToViewer` 随后 `sign` | 仅揭示摊牌所需者；对照承诺进行验证（核心 §6.6）。 |
+| Muck | cannot win a contested pot | muck（`buildFold` 等价） | `sign` | 不揭示。 |
+| Settlement (close-out) | winning proof valid (engine) | `buildSettlement`（收尾，核心 §6.6） | `sign`/`combineSignShare` | 引擎计算彩金归属；底池依 §5.5/§19.B。 |
+
+### II.6 恢复 / 超时（§A6.9，核心 §6.4）
+| Action | Gate | SDK build | Custody | 备注 |
+|---|---|---|---|---|
+| Advance timeout-default | maturity reached（交易级 nLockTime，核心 §6.2） | `buildTimeout`/`buildRecovery` | `sign` | 任何对端皆可推进；客户端在轮到其角色时这样做。 |
+| Reconnect/resume | on (re)connect | —（请求记录缺口） | — | 引擎重建（核心 §8.6）；无新的价值动作。 |
+
+当微下注标志开启时，微支付信道动作（open/transfer/close/contested）经 `BS` 类似地映射（§A23.1）；
+每个都是一个显式签名动作（§A6.7）。
+
+---
+
+# Appendix III —— 错误码目录
+
+每个码：稳定 id、类别（§A11.1）、严重度（`FATAL`/`DEGRADED`/`RECOVERABLE`/`USER`）、朴素的
+用户消息、补救、测试（Appendix IV）。没有错误被吞没（§A11.1）；机密绝不出现在
+任何错误载荷中（§A12.5）。
+
+| Code | Category | Severity | 用户消息 | 补救 | Test |
+|---|---|---|---|---|---|
+| CFG-INVALID | configuration | FATAL | "配置无效；无法启动。" | 重新安装 / 恢复默认 | TC-ERR-001 |
+| SVC-START-FAILED | service-lifecycle | DEGRADED | "某本地服务未能启动。" | 重试；查看诊断 | TC-ERR-010 |
+| SVC-PORT-CONFLICT | service-lifecycle | DEGRADED | "某必需端口正被占用。" | 释放它 / 让应用另选一个 | TC-ERR-011 |
+| SVC-STORE-CORRUPT | service-lifecycle | DEGRADED | "本地 regtest 存储已损坏。" | 重新初始化存储（明确确认） | TC-ERR-012 |
+| CHAIN-UNREACHABLE | connectivity | DEGRADED | "无法到达 node/网络。" | 重连；游玩在速度路径上继续 | TC-ERR-020 |
+| CHAIN-BADTX | protocol/validation | RECOVERABLE | "网络拒绝了一笔交易。" | 重新推导；动作未应用（fail-closed） | TC-ERR-021 |
+| CHAIN-TIMEOUT | connectivity | RECOVERABLE | "一次链请求超时。" | 带退避重试 | TC-ERR-022 |
+| RELAY-UNREACHABLE | connectivity | DEGRADED | "无法到达 relay；正在尝试 LAN/对端。" | 重连；规范路径权威 | TC-ERR-030 |
+| CUSTODY-LOCKED | custody/signing | USER | "你的钱包已锁定。" | 解锁以继续 | TC-ERR-040 |
+| CUSTODY-BACKEND-UNAVAILABLE | custody/signing | DEGRADED | "托管后端不可用。" | 检查后端；签名已暂停 | TC-ERR-041 |
+| CUSTODY-INTENT-MISMATCH | security | FATAL（逐动作） | "待签名的字节与所显示者不匹配 —— 已拒绝。" | 上报；绝不自动重试 | TC-SEC-005 |
+| CUSTODY-DECRYPT-FAILED | custody/signing | RECOVERABLE | "无法解密你的牌。" | 重试；不显示假牌 | TC-ERR-042 |
+| TX-VALIDATION-FAILED | protocol/validation | RECOVERABLE | "某动作对此状态无效。" | 重新推导；仅合法动作 | TC-ERR-050 |
+| STATE-CONFLICT | protocol/validation | RECOVERABLE | "正在解决一个冲突的动作……" | 跟随被接受的后继（核心 §8.5） | TC-ADV-007 |
+| PERSIST-CORRUPT-RECORD | persistence | RECOVERABLE | "一条已保存记录已损坏并被隔离。" | 重新获取/重新推导 | TC-ERR-060 |
+| PERSIST-QUOTA | persistence | RECOVERABLE | "本地存储已满。" | 导出/修剪；承重状态可重新推导 | TC-ERR-061 |
+| IPC-MALFORMED | configuration/security | RECOVERABLE | （内部） | 拒绝 + 记录；绝不部分应用 | TC-SEC-010 |
+| CONFIG-MAINNET-FLAG-REQUIRED | security | USER | "主网需要明确的研究标志。" | 在知情下设置该标志；显示横幅 | TC-SEC-020 |
+| UI-RENDER-FAULT | UI/render | DEGRADED | "显示此屏幕时出错。" | 错误边界恢复它；应用继续运行 | TC-ERR-070 |
+| STRANDED-VALUE | protocol/validation | FATAL | "意外状态 —— 为保护资金而停止。" | 已呈现，绝不隐藏（核心 P4、§A11.5） | TC-ADV-020 |
+
+威胁失败码（CUSTODY-INTENT-MISMATCH、CONFIG-MAINNET-FLAG-REQUIRED、IPC-MALFORMED）
+交叉引用 §A10.5 与核心 `THR-*`（核心 §18）。
+
+---
+
+# Appendix IV —— 测试用例目录（核心集；完整逐用例展开见 Pass A5）
+
+每个用例：id、层级（§A16.1）、闸门/前置条件、预期 UI+状态、分类、所验证的
+需求。**Claude Code 运行每个用例**（§A19）。涉及脚本/交易的负向用例
+以 Genesis 规则在真实解释器**内**失败（核心 §14.3、P9）。下列集合解决 Appendix III 中
+引用的每个 TC-*。
+
+### IV.1 确定性 & 重放（§A16.4）
+- **TC-DET-001**（属性）同一有序有效交易集 + 规则集 ⇒ 跨多次运行逐字节相同的推导状态 —— REQ-APP-163、核心 REQ-TEST-002。
+- **TC-DET-002**（属性）桌面端与 web 构建在同一集合上完全一致 —— 跨客户端一致性。
+- **TC-DET-003**（集成）从缺口重连 ≡ 连续游玩 —— REQ-APP-075。
+
+### IV.2 引擎合法性 / UI（§A16.2）
+- **TC-UI-001** UI 绝不启用一个不在 `getLegalActions` 中的动作 —— REQ-APP-010/051（fail-closed）。
+- **TC-UI-002** 后果文案与行动状态的超时默认相符（看牌 vs 面对下注时弃牌；绝不强制下注）—— 核心 §6.4。
+
+### IV.3 错误路径（§A16.6）—— 解决 Appendix III 的 TC-ERR-*
+- **TC-ERR-001** 无效配置 ⇒ FATAL，无法游玩。**TC-ERR-010/011/012** 启动失败/端口/损坏存储 ⇒ DEGRADED + 引导式恢复。**TC-ERR-020/021/022** 链不可达/坏交易/超时 ⇒ 横幅+速度路径 / fail-closed 重新推导 / 退避。**TC-ERR-030** relay 不可达 ⇒ LAN/对端回退。**TC-ERR-040/041/042** 托管锁定/不可用/解密失败 ⇒ 解锁 / 暂停签名 / 无假牌。**TC-ERR-050** 无效动作 ⇒ 重新推导，仅合法。**TC-ERR-060/061** 损坏记录/配额 ⇒ 隔离 / 导出-修剪。**TC-ERR-070** 渲染故障 ⇒ 错误边界恢复一个屏幕。
+
+### IV.4 安全（§A16.9）—— 解决 TC-SEC-*
+- **TC-SEC-001** 任何日志/指标/追踪/诊断包中均无密钥材料（脱敏，REQ-APP-124）。**TC-SEC-002** 无密钥跨越 IPC 或到达 DOM（REQ-APP-025/081）。**TC-SEC-005** 签名意图 ≠ 所呈现的字节 ⇒ 拒绝（CUSTODY-INTENT-MISMATCH）；无自动重试。**TC-SEC-010** 畸形 IPC ⇒ 拒绝+记录，绝不部分应用。**TC-SEC-020** 无标志的主网 ⇒ 拒绝 + 带标志时显示横幅。**TC-SEC-030** 安装程序签名 / 制品哈希验证（供应链，§A10.6）。
+
+### IV.5 对抗性 / 故障注入（§A16.6）—— 解决 TC-ADV-*
+- **TC-ADV-001..006** 在各阶段断连（发牌/下注/揭示/摊牌/结算/恢复）⇒ 正确的默认/恢复；无搁浅价值。**TC-ADV-007** 冲突的花费 ⇒ STATE-CONFLICT 解决到被接受的后继（核心 §8.5）。**TC-ADV-008** 被扣留的公共牌/玩家揭示 ⇒ N-of-N 超时默认进入恢复（核心 §4.6/§6.4）。**TC-ADV-009** 陈旧状态微支付广播 ⇒ 1 聪保证金被没收（核心 §18.1）。**TC-ADV-010** mempool 驱逐 ⇒ 重新提交；收敛恢复。**TC-ADV-020** 任何会搁浅价值的状态 ⇒ STRANDED-VALUE FATAL，已呈现（核心 P4、§A11.5）。
+
+### IV.6 解释器级脚本（§A16.5；Claude Code 运行真实解释器，Genesis）
+- **TC-INT-001** 每个模板的正向花费被接受（funding、action、fold、reveal-or-timeout、settlement、fair-play、可选 TTP —— 核心 §6.6）。**TC-INT-002** 每个模板的负向组合在解释器**内**失败（非包装守卫；无签名抽检）：换牌被字节相等性拒绝（核心 §6.3），坏的揭示开启被拒绝，重放分支被绑定拒绝（核心 §6.3）。
+
+### IV.7 无障碍（§A16.8）
+- **TC-A11Y-001..N** 对每个屏幕的仅键盘 + 屏幕阅读器走查；轮次/计时器/后果被播报；对比度/角色/标签通过。
+
+### IV.8 逐游戏（§A21.8）—— 每变体一块
+- **TC-GAME-HOLDEM-\*** 单挑 + 6-max E2E；下注树；最小揭示摊牌；边池。**TC-GAME-OMAHA-\*** 4 张暗牌；2+3 评估（已生成向量，核心 §19.D）；PLO 尺度。**TC-GAME-STUD-\*** 明/暗牌；bring-in；牌面驱动顺序；8 人牌堆耗尽用例。**TC-GAME-DRAW-\*** 不亮牌弃牌+重抽；停牌默认；数目公开/身份私有。**TC-GAME-RAZZ-\*** ace-to-five 低牌；反向 bring-in/顺序（已生成向量）。
+
+---
+
+# Appendix V —— 配置目录
+
+每个键：类型、默认、它实现的 AD/AD-OPEN、校验（fail-closed，§A10.4）。此处没有任何计时
+常量是共识值 —— 计时在交易级别（核心 §6.2）；这些是 UI/运营
+超时与预算。
+
+| Key | Type | Default | 实现 | 校验 |
+|---|---|---|---|---|
+| `project.name` | string | `bsv-poker` | 核心 §0.4 | 非空；与重命名脚本相符 |
+| `desktop.shell` | enum(tauri,electron) | tauri | AD2 | 仅在有记录的 Tauri 局限下才用 electron |
+| `web.stack` | enum | react-ts-vite | AD3 | Phase 1 固定 |
+| `chain.backend` | enum | bonded-subsat-node | AD4 | 必须暴露 `BS.node`（核心 §2.2） |
+| `chain.network` | enum(regtest,mainnet) | regtest | §A3.5 | 除非 `flags.mainnetResearch`，否则拒绝主网 |
+| `flags.mainnetResearch` | bool | false | §A3.5/REQ-VM-007 | 设为 true 需要明确的用户操作 + 横幅 |
+| `services.ports.{node,indexer,relay}` | int\|auto | auto | §A3.4 | 已分配，写入运行时配置；无硬编码 |
+| `services.restart.maxAttempts` | int | TRACKED ASSUMPTION | §A3.2 REQ-APP-022 | 有界；绝不无界循环 |
+| `services.restart.backoffMs` | int | TRACKED ASSUMPTION | §A3.2 | 有界、递增 |
+| `dataDir` | path | 按用户的应用目录 | §A3.4 | 按网络划分命名空间（regtest/mainnet 隔离） |
 | `desktop.store` | enum | sqlite | AD9 | — |
-| `web.store` | enum | indexeddb | AD10 | localStorage/sessionStorage forbidden for load-bearing state |
-| `web.connectionMode` | enum(bundled-local,hosted) | DECISION REQUIRED | AD-OPEN-1 | per environment |
-| `web.serviceWorker` | bool | DECISION REQUIRED | AD-OPEN-2 | if on, must not cache keys/secrets |
-| `custody.backend` | enum(software,threshold,tee) | software | AD7 | TEE optional; pluggable |
-| `custody.processBoundary` | enum(rust,worker) | rust | AD-OPEN-3 | both keep keys off the DOM |
-| `crypto.signingMode` | enum(A,B) | A | core D9 | UI must not claim Mode B property under Mode A |
-| `timeouts.decisionMs` | int | TRACKED ASSUMPTION | core §6.4 | UI countdown; default check/fold, never forced wager |
-| `timeouts.recoveryMs` | int | TRACKED ASSUMPTION | core §6.4 | > decision timeout |
-| `reconnect.{backoffMs,maxAttempts}` | int | TRACKED ASSUMPTION | §A7.6 | bounded |
-| `transcripts.retention` | int\|all | TRACKED ASSUMPTION | §A13.4 | export-before-prune offered |
-| `microBetting.enabled` | bool | false (P1–P2) | §A23/core §0.3 | flag-gated; uses `BS` |
-| `microBetting.granularityK` | int | per `BS` | §A23/core §2.2 | whole-satoshi settle via `Q*` |
-| `table.maxSeats` | int(2..9) | 2 (P1) | core D2 | envelope 2–9; UI handles all |
-| `nft.track.enabled` | bool | false | §A22 | seam exposed; product later |
+| `web.store` | enum | indexeddb | AD10 | 承重状态禁用 localStorage/sessionStorage |
+| `web.connectionMode` | enum(bundled-local,hosted) | DECISION REQUIRED | AD-OPEN-1 | 逐环境 |
+| `web.serviceWorker` | bool | DECISION REQUIRED | AD-OPEN-2 | 若开启，不得缓存密钥/机密 |
+| `custody.backend` | enum(software,threshold,tee) | software | AD7 | TEE 可选；可插拔 |
+| `custody.processBoundary` | enum(rust,worker) | rust | AD-OPEN-3 | 两者都将密钥保持在 DOM 之外 |
+| `crypto.signingMode` | enum(A,B) | A | 核心 D9 | UI 在 Mode A 下不得宣称 Mode B 属性 |
+| `timeouts.decisionMs` | int | TRACKED ASSUMPTION | 核心 §6.4 | UI 倒计时；默认看牌/弃牌，绝不强制下注 |
+| `timeouts.recoveryMs` | int | TRACKED ASSUMPTION | 核心 §6.4 | > 决策超时 |
+| `reconnect.{backoffMs,maxAttempts}` | int | TRACKED ASSUMPTION | §A7.6 | 有界 |
+| `transcripts.retention` | int\|all | TRACKED ASSUMPTION | §A13.4 | 提供修剪前导出 |
+| `microBetting.enabled` | bool | false (P1–P2) | §A23/核心 §0.3 | 由标志门控；使用 `BS` |
+| `microBetting.granularityK` | int | 依 `BS` | §A23/核心 §2.2 | 经 `Q*` 整聪结算 |
+| `table.maxSeats` | int(2..9) | 2 (P1) | 核心 D2 | 范围 2–9；UI 处理全部 |
+| `nft.track.enabled` | bool | false | §A22 | 接缝已暴露；产品为后续 |
 
-All `TRACKED ASSUMPTION` values are set and **measured/justified** by the build (§A16.7); the author
-asserts none.
+所有 `TRACKED ASSUMPTION` 值都由构建设置并**测量/论证**（§A16.7）；作者
+不断言任何一个。
 
 ---
 
-# Appendix VI — Glossary (application layer)
+# Appendix VI —— 术语表（应用层）
 
-Consistent with the core glossary (core §0.6).
-- **Supervisor** — the Tauri Rust main process that spawns/supervises/tears down local services and
-  hosts custody-trusted operations (§A3).
-- **Shell** — a thin host of the UI core: `client-desktop` (Tauri/WebView2) or `client-web` (Vite); no
-  business logic (§A5).
-- **UI core (`ui-core`)** — the shared TS/React core both shells run: store, view-models, components (§A5).
-- **app-services** — the client-side layer between `ui-core` and the SDK: connection manager,
-  sync/deriver, custody client, timeout/observer, persistence gateway (§A2.3).
-- **Connection manager** — owns both send paths and the table-channel/presence/reconnect lifecycle (§A7).
-- **Canonical path** — sending an action to the node/network as a real transaction (authoritative;
-  eventual finality) (§A7.4, core §8.3).
-- **Speed path** — sending an action directly to table peers for fast convergence; never overrides the
-  canonical path (§A7.4, core §8.3).
-- **Table channel** — the per-table inventory/object relay subscription (§A7.3, core §8.2 Tier B).
-- **Custody boundary** — the trusted process/worker where keys live and signing/decryption happen; keys
-  never cross it to the DOM (§A8.2, core §9.3/§11.5).
-- **Viewer path** — the controlled path rendering a decrypted card face to its holder only; never DOM
-  plaintext (§A10.3, core §11.5).
-- **Fail-closed** — on any ambiguity affecting value/state, do not act and surface it (§A11.2).
-- **Degraded / Paused** — degraded = play continues with reduced connectivity (canonical path alive);
-  paused = play gated until a required local service recovers (§A11.3).
-- **Self-contained image ("VM")** — the reproducible container (and optional VM image) bundling
-  node+relay+client with a one-command bootstrap (§A14, core §10/D5).
-- **Game module / variant profile** — a `GameModule` (core §7.1) and the registry data parameterising
-  the table view for that game (§A21).
-- **TRACKED ASSUMPTION** — a value/target the build must meet and **measure**, not a claim it is met (§A0.1).
-- **DECISION REQUIRED** — a choice not yet fixed; asserted nowhere until decided (§A0.1).
+与核心术语表（核心 §0.6）一致。
+- **监督进程（Supervisor）** —— 启动/监督/拆除本地服务并
+  托管托管受信操作的 Tauri Rust main 进程（§A3）。
+- **外壳（Shell）** —— UI 核心的薄宿主：`client-desktop`（Tauri/WebView2）或 `client-web`（Vite）；无
+  业务逻辑（§A5）。
+- **UI 核心（`ui-core`）** —— 两个外壳共同运行的共享 TS/React 核心：store、视图模型、组件（§A5）。
+- **app-services** —— 位于 `ui-core` 与 SDK 之间的客户端侧层：连接管理器、
+  同步/推导器、托管客户端、超时/观察器、持久化网关（§A2.3）。
+- **连接管理器（Connection manager）** —— 拥有两条发送路径以及牌桌信道/在线状态/重连生命周期（§A7）。
+- **规范路径（Canonical path）** —— 将一个动作作为真实交易发往 node/网络（权威；
+  最终达成最终性）（§A7.4，核心 §8.3）。
+- **速度路径（Speed path）** —— 将一个动作直接发往牌桌对端以求快速收敛；绝不覆盖
+  规范路径（§A7.4，核心 §8.3）。
+- **牌桌信道（Table channel）** —— 逐牌桌的库存/对象 relay 订阅（§A7.3，核心 §8.2 Tier B）。
+- **托管边界（Custody boundary）** —— 密钥存活且签名/解密发生于其中的受信进程/worker；密钥
+  绝不跨越它到 DOM（§A8.2，核心 §9.3/§11.5）。
+- **查看器路径（Viewer path）** —— 仅向其持有者渲染已解密牌面的受控路径；绝非 DOM
+  明文（§A10.3，核心 §11.5）。
+- **Fail-closed** —— 在任何影响价值/状态的含糊处，不行动并呈现之（§A11.2）。
+- **降级 / 暂停（Degraded / Paused）** —— 降级 = 游玩在连通性降低下继续（规范路径存活）；
+  暂停 = 游玩门控直至某必需本地服务恢复（§A11.3）。
+- **自包含镜像（"VM"）** —— 捆绑 node+relay+client 并带一个单命令引导程序的可复现容器
+  （及可选 VM 镜像）（§A14，核心 §10/D5）。
+- **游戏模块 / 变体档案（Game module / variant profile）** —— 一个 `GameModule`（核心 §7.1）以及为该游戏
+  参数化牌桌视图的注册表数据（§A21）。
+- **TRACKED ASSUMPTION** —— 构建必须达到并**测量**的值/目标，而非它已达成的宣称（§A0.1）。
+- **DECISION REQUIRED** —— 一个尚未确定的选择；在决定之前处处都不断言（§A0.1）。

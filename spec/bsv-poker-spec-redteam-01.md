@@ -1,270 +1,270 @@
-# Red-Team Review 01 — `bsv-poker-spec.md` (Part 1)
+# 红队评审 01 — `bsv-poker-spec.md`（Part 1）
 
-**Subject:** Master Engineering Specification, Part 1.
-**Method:** adversarial review against the document's own principles (P1–P10) and the
-stated engineering bar. Each finding states the defect, the principle it violates, and the
-required fix. Severity: **BLOCKER** (spec is unsound until fixed), **MAJOR** (must be fixed
-before the affected phase ships), **MINOR** (must be fixed; not phase-blocking).
-**Reviewer stance:** no deference to the author (myself). A single internal inconsistency
-in a load-bearing claim is sufficient to reject the section it governs.
+**对象：** 主工程规范，Part 1。
+**方法：** 对照文档自身的原则（P1–P10）和
+所陈述的工程标准进行对抗性评审。每条发现陈述其缺陷、所违反的原则，以及
+所需修复。严重度：**BLOCKER**（修复前规范不成立）、**MAJOR**（必须在
+受影响阶段交付前修复）、**MINOR**（必须修复；不阻断阶段）。
+**评审者立场：** 不迁就作者（我自己）。一个承重声称中的单个内部不一致
+即足以否决其所辖的章节。
 
-**Verdict:** **Revise-and-resubmit.** The architecture is sound and the contracts are
-usable, but the document contains **two BLOCKER-class internal inconsistencies** in the
-cryptographic core (B1, B2) that, left standing, would propagate a false security claim
-into the build. Six MAJOR defects and several MINOR ones follow. None are unsalvageable;
-all are fixed in the corrections applied this pass (see end).
+**结论：** **修订后重新提交。** 架构稳健、契约可用，
+但文档在密码学核心中包含**两个 BLOCKER 级的内部不一致**
+（B1、B2），若放任不管，将把一项虚假的安全声称传播
+到构建中。其后有六个 MAJOR 缺陷和数个 MINOR。无一无可挽救；
+全部在本轮所应用的更正中得到修复（见末尾）。
 
 ---
 
 ## BLOCKERS
 
-### B1 — The "combined private key is never reconstructed in one place" claim contradicts the GB2616862 mechanism the spec is built on.
+### B1 — "组合私钥绝不在一处重构"的声称与规范所依据的 GB2616862 机制相矛盾。
 
-**Where:** §0.6 glossary; §4.3 ("`w_j … **never reconstructed in one place**`"); §6.6
-per-card selection lock; §6.7; §9.3 REQ-WALLET-004.
+**位置：** §0.6 词汇表；§4.3（"`w_j … **never reconstructed in one place**`"）；§6.6
+每张牌选牌锁；§6.7；§9.3 REQ-WALLET-004。
 
-**Defect.** The spec asserts, as an unconditional property, that the combined private key
-`w_j = Σ_p s_{p,j}` is never reconstructed in one place. But the cited basis — GB2616862,
-§2.5 — does the opposite. In the patent's worked settlement (pages 47–61), bet outputs are
-locked to a combined address `P = (s_A·G)+(s_B·G)`, and to spend it a party must produce a
-signature under `P`, which requires the scalar `w = s_A + s_B`. The patent's reveal step
-(Figure 15; pages 49, 59–61) has each party **disclose their private key share** so the
-winner can derive `w` and sign. The patent reconstructs `w` in the winner's hand. The
-"never reconstructed" property is the *v27 academic paper's* addition (threshold ECDSA),
-not a property of GB2616862.
+**缺陷。** 规范断言一项无条件属性：组合私钥
+`w_j = Σ_p s_{p,j}` 绝不在一处重构。但所引用的依据——GB2616862，
+§2.5——恰恰相反。在该专利的结算示例中（第 47–61 页），下注输出被
+锁定到一个组合地址 `P = (s_A·G)+(s_B·G)`，要花费它，一方必须产生一个
+`P` 下的签名，这需要标量 `w = s_A + s_B`。该专利的揭示步骤
+（图 15；第 49、59–61 页）让每一方**披露其私钥分片**，以便
+获胜者能推导出 `w` 并签名。该专利在获胜者手中重构 `w`。
+"绝不重构"属性是 *v27 学术论文*的补充（门限 ECDSA），
+而非 GB2616862 的属性。
 
-So the spec claims a security property (no whole-key reconstruction) while citing a
-primitive that reconstructs the whole key. This is an internal inconsistency in the
-load-bearing claim of the settlement layer.
+因此规范在引用一个会重构完整密钥的原语的同时，声称一项安全属性
+（无完整密钥重构）。这是结算层承重声称中的
+内部不一致。
 
-**Principle violated:** P6 (a claim that creates internal inconsistency is a material
-defect), P8 (no overclaim — asserting a property the chosen construction does not provide).
+**违反的原则：** P6（造成内部不一致的声称是实质
+缺陷）、P8（不过度声称——断言所选构造并不提供的属性）。
 
-**Required fix.** Replace the unconditional claim with an explicit two-mode decision,
-stated with consequences:
+**所需修复。** 将该无条件声称替换为一项明确的双模式决策，
+并陈述其后果：
 
-- **Mode A — patent-literal (reconstruct-at-reveal).** Follow GB2616862: at reveal,
-  parties disclose the per-card scalars; the winner sums to `w_j` and signs the
-  combined-key spend. Consequence to state in ink: the disclosed scalars are reusable
-  secret material once revealed, so (i) per-card keys are single-game and never reused,
-  (ii) funds locked to combined keys are active only for the shuffle/hand window (hours, per
-  GB2616862 pages 39–40), and (iii) the security argument is the patent's bounded-window
-  argument, **not** "no whole key ever exists." Simpler; faithful to the cited primitive.
-  **DEFAULT for Phase 1.**
-- **Mode B — no-reconstruction (threshold/multi-party signing).** Produce the `Q_j`
-  signature by a dealerless threshold/multi-party ECDSA so `w_j` never exists whole. This
-  is the v27 improvement but is **not** BSVM-specific and therefore compatible with the
-  BSV-only constraint (P1). More complex; an explicit hardening upgrade (Phase 2+).
+- **Mode A — 专利字面（揭示时重构）。** 遵循 GB2616862：揭示时，
+  各方披露每张牌的标量；获胜者求和得到 `w_j` 并签署
+  组合密钥花费。须写在纸面上的后果：所披露的标量一经揭示即为可复用的
+  秘密材料，因此 (i) 每张牌的密钥是单局的且绝不复用，
+  (ii) 锁定到组合密钥的资金仅在洗牌/手牌窗口内有效（数小时，依
+  GB2616862 第 39–40 页），且 (iii) 安全论据是该专利的有界窗口
+  论据，**而非**"完整密钥从不存在"。更简单；忠实于所引用的原语。
+  **Phase 1 默认。**
+- **Mode B — 无重构（门限/多方签名）。** 通过无荷官门限/多方 ECDSA 产生 `Q_j`
+  签名，使 `w_j` 从不完整存在。这
+  是 v27 的改进，但**并非** BSVM 特定，因而兼容
+  仅限 BSV 的约束（P1）。更复杂；一项明确的加固升级（Phase 2+）。
 
-The unconditional "never reconstructed in one place" text is deleted everywhere and
-replaced by a reference to this mode decision. **The default must not claim Mode B's
-property while shipping Mode A's mechanism.**
+无条件的"绝不在一处重构"文字在各处删除，并
+替换为对此模式决策的引用。**默认模式不得在交付 Mode A 机制的同时声称 Mode B 的
+属性。**
 
-### B2 — "Selection = spending the UTXO" is asserted as the dealing mechanism, but poker deals to positions; the mapping is unspecified.
+### B2 — "选牌 = 花费 UTXO"被断言为发牌机制，但扑克是发牌到各位置；该映射未被规定。
 
-**Where:** §0.6 glossary; §4.3 ("**Selecting card `j` is mechanically spending that
-UTXO**"); §6.1 Deal class.
+**位置：** §0.6 词汇表；§4.3（"**Selecting card `j` is mechanically spending that
+UTXO**"）；§6.1 Deal 类。
 
-**Defect.** GB2616862's worked game is *highest-card-wins*: each player **selects** one
-card by spending its combined-key UTXO. Hold'em (and every poker variant) does not work by
-players selecting cards; the protocol **deals** concealed cards to positions (two hole
-cards per seat; three/one/one board cards) in a defined order, and the combined-key spend
-is the *settlement* event at the end, not the deal. The spec imports "selection = spend"
-verbatim and never maps the poker **deal-to-positions** operation onto the primitive. As
-written, it implies players pick cards by spending, which is not Hold'em. This is an
-unstated gap in the central state mechanic.
+**缺陷。** GB2616862 的示例游戏是*最高牌获胜*：每名玩家通过花费某张牌的组合密钥 UTXO 来
+**选**一张牌。Hold'em（以及每一种扑克变体）的运作方式并非
+玩家选牌；协议按既定顺序将隐藏的牌**发**到各位置（每个座位两张
+底牌；公共牌三/一/一张），而组合密钥花费
+是最末的*结算*事件，而非发牌。规范逐字照搬了"选牌 = 花费"
+而从未将扑克的**发牌到各位置**操作映射到该原语上。按照
+所写内容，它意味着玩家靠花费来挑牌，那不是 Hold'em。这是
+中心状态机制中未陈述的空缺。
 
-**Principle violated:** P7 (hidden/omitted assumption about how dealing maps to the
-primitive), P2 (the state machine cannot be deterministic if the deal operation is
-undefined).
+**违反的原则：** P7（关于发牌如何映射到原语的隐藏/遗漏
+假设）、P2（若发牌操作
+未定义，状态机便无法确定）。
 
-**Required fix.** Specify the card lifecycle explicitly (adopting the v27 covenant-chain
-lifecycle, which is the correct shape for deal-to-positions games):
-`minted → drawn(position) → revealed | folded → discarded`. The **draw/deal** operation
-binds a concealed card UTXO to a seat-position as a committed state transition (this is the
-poker "deal", not a player selection). "Selection-by-spend" of the combined-key UTXO is the
-**close-out/settlement** primitive used at reveal/showdown, not the deal. §4.3, §5, §6.1,
-and §7 must use this lifecycle consistently; "selection" must not be used to mean "deal".
+**所需修复。** 明确规定牌的生命周期（采用 v27 的契约链
+生命周期，它是发牌到各位置类游戏的正确形态）：
+`minted → drawn(position) → revealed | folded → discarded`。**抽/发**操作
+将一张隐藏的牌 UTXO 作为已承诺的状态转移绑定到一个座位-位置（这是
+扑克的"发牌"，而非玩家选牌）。对组合密钥 UTXO 的"花费即选牌"是
+揭示/摊牌时所用的**收尾/结算**原语，而非发牌。§4.3、§5、§6.1
+和 §7 必须一致地使用此生命周期；"选牌"不得用来表示"发牌"。
 
 ---
 
 ## MAJOR
 
-### M1 — The determinism principle overstates what holds before confirmation.
+### M1 —确定性原则对确认前所成立的内容过度声称。
 
-**Where:** §0.1(4); P2 (§0.2); §3.3.
+**位置：** §0.1(4)；P2（§0.2）；§3.3。
 
-**Defect.** P2 states `table_state = f(valid_tx_set, ruleset)` and that honest clients with
-the same valid tx set agree. True as stated — but it quietly assumes clients *have the same
-valid tx set*, which is exactly what is **not** globally true before confirmation:
-unconfirmed transactions can be evicted from a mempool, reorganized, or seen in different
-orders by different peers (the document itself acknowledges mempool volatility in §8.4).
-The determinism property is real but **relative to an agreed transaction ordering**; the
-thing that makes pre-confirmation play *safe* is the convergence machinery (dual-path
-propagation §8.3 + deterministic conflict rules §8.5 + timeout-default §6.4), not the
-determinism property alone. Presenting P2 without this is an overclaim about safety.
+**缺陷。** P2 陈述 `table_state = f(valid_tx_set, ruleset)`，并称拥有
+相同有效交易集的诚实客户端会达成一致。如其所述为真——但它悄然假设客户端*拥有相同的
+有效交易集*，而这恰恰是确认前在全局上**不**成立的：
+未确认交易可能被逐出 mempool、被重组，或被不同对等方以不同
+顺序看到（文档自身在 §8.4 中承认了 mempool 的易变性）。
+确定性属性是真实的，但**相对于一个商定的交易排序**；使
+确认前对局*安全*的，是收敛机制（双路径
+传播 §8.3 + 确定性冲突规则 §8.5 + 超时默认 §6.4），而非
+确定性属性本身。不带这些就呈现 P2 是对安全性的过度声称。
 
-**Principle violated:** P8 (overclaim), P7 (the "same valid tx set" precondition is hidden).
+**违反的原则：** P8（过度声称）、P7（"相同有效交易集"的前提被隐藏）。
 
-**Required fix.** Sharpen P2: determinism is relative to an agreed transaction ordering;
-state explicitly that (i) pre-confirmation convergence is provided by §8.3+§8.5+§6.4, not by
-determinism per se; (ii) reorg/eviction is handled by the recovery/timeout path (§6.4) and
-by treating block confirmation as final settlement for value that leaves the table; (iii)
-the engine is deterministic *given* an ordering, and disagreements about ordering are
-resolved by §8.5, not by the engine.
+**所需修复。** 锐化 P2：确定性相对于一个商定的交易排序；
+明确陈述 (i) 确认前的收敛由 §8.3+§8.5+§6.4 提供，而非由
+确定性本身提供；(ii) 重组/逐出由 恢复/超时 路径（§6.4）处理，
+并将区块确认视为离桌价值的最终结算；(iii)
+引擎*在给定*一个排序时是确定的，而关于排序的分歧由
+§8.5 解决，而非由引擎解决。
 
-### M2 — Board (community-card) reveals are described as merely "published"; they are N-of-N cooperative operations with a liveness failure mode.
+### M2 — 公共牌（社区牌）揭示被描述为仅仅"发布"；它们实为带活性失败模式的 N-of-N 协作操作。
 
-**Where:** §4.6 ("Public reveal (board cards): revealed to all… any observer can verify").
+**位置：** §4.6（"Public reveal (board cards): revealed to all… any observer can verify"）。
 
-**Defect.** A board card is concealed under every party's encryption until reveal.
-*Producing* the public reveal requires **all N parties to release their decryption
-material**; a single withholder prevents the flop/turn/river from being revealed. The spec
-describes only the *verification* of a published reveal and omits that the *production* of
-the reveal is an N-of-N cooperative step with a timeout-default. As written it hides a
-liveness failure mode at every street.
+**缺陷。** 一张公共牌在揭示前隐藏在每一方的加密之下。
+*产生*该公共揭示需要**全部 N 方都释放其解密
+材料**；单个扣留者即可阻止 flop/turn/river 被揭示。规范
+仅描述了已发布揭示的*验证*，却遗漏了揭示的*产生*
+是一个带超时默认的 N-of-N 协作步骤。按其所写，它在每条街
+都隐藏了一个活性失败模式。
 
-**Principle violated:** P4 (every actionable state needs a timeout exit — board reveal is
-such a state and was not given one), P7.
+**违反的原则：** P4（每个可行动状态都需要一个超时出口——公共牌揭示就是
+这样一个状态，却未被赋予出口）、P7。
 
-**Required fix.** State that each board reveal is an N-of-N cooperative transition with a
-timeout-default branch (recovery if a party withholds), exactly like a player action; the
-withholding case resolves via §6.4 and bond slashing where configured.
+**所需修复。** 陈述每次公共牌揭示都是一个 N-of-N 协作转移，带有
+超时默认分支（若一方扣留则恢复），与玩家行动完全一样；
+扣留情形经 §6.4 及（在配置处的）保证金罚没解决。
 
-### M3 — Fair-play scaling to a 52-card deck is assumed, not measured; the patent's in-script proof is already large for 3 cards.
+### M3 — 公平博弈向 52 张牌牌组的扩展是假设的，而非测量的；该专利的脚本内证明在 3 张牌时已然很大。
 
-**Where:** §4.7 REQ-CRYPTO-006 ("scaled from the patent's 3-element worked example to the
-deck size"); §6.6 Fair-play template.
+**位置：** §4.7 REQ-CRYPTO-006（"scaled from the patent's 3-element worked example to the
+deck size"）；§6.6 公平博弈模板。
 
-**Defect.** GB2616862's fair-play locking script (pages 68–72) is a long nested
-`OP_IF`/`OP_ELSE` structure for **3 elements and 2 parties**. The spec says it is "scaled
-to the deck size" as if that were a parameter change. For 52 cards × N parties, an in-script
-proof that every committed key derives every used key may be an enormous script. Post-Genesis
-BSV removed the script-size cap, so it is not impossible, but the byte size, fee, and
-constructibility are unmeasured. Asserting it scales is an unproven claim.
+**缺陷。** GB2616862 的公平博弈锁定脚本（第 68–72 页）是针对 **3 个元素和 2 个参与方**的
+一长串嵌套 `OP_IF`/`OP_ELSE` 结构。规范称它已"扩展
+到牌组大小"，仿佛那只是一次参数更改。对于 52 张牌 × N 方，一个证明
+每个已承诺密钥都推导出每个所用密钥的脚本内证明可能是一个巨大的脚本。post-Genesis
+BSV 移除了脚本大小上限，因此并非不可能，但其字节大小、费用和
+可构造性均未测量。断言它能扩展是一项未经证明的声称。
 
-**Principle violated:** P6 (no fabricated/assumed numbers — "scales" is an unverified
-performance claim), P8.
+**违反的原则：** P6（无捏造/假设的数字——"扩展"是一项未经验证的
+性能声称）、P8。
 
-**Required fix.** Mark fair-play scaling as a measured risk: REQ to **measure** the
-fair-play script size for the target deck/party counts before relying on a single-script
-approach; specify the fallback (per-card or per-batch fair-play transactions) if the single
-script is impractical; do not state it scales until §19.C carries a measured byte schedule.
+**所需修复。** 将公平博弈扩展标记为一项需测量的风险：要求在依赖单脚本
+方案之前，针对目标牌组/参与方数量**测量**
+公平博弈脚本大小；若单脚本不切实际，则规定回退方案
+（每张牌或每批次公平博弈交易）；在 §19.C 给出测量得出的字节排布之前，不要陈述它能扩展。
 
-### M4 — Testing the engine against fakes for CT/BS/VA/OB can hide protocol-security bugs; no conformance requirement binds fakes to real implementations.
+### M4 — 针对 CT/BS/VA/OB 的 fakes 测试引擎会掩盖协议安全缺陷；没有任何一致性要求将 fakes 绑定到真实实现。
 
-**Where:** §2.6 REQ-DEP-001/002; §14.1.
+**位置：** §2.6 REQ-DEP-001/002；§14.1。
 
-**Defect.** The spec tests the engine against in-memory fakes of the dependency contracts
-and notes "fakes are for the non-script orchestration." But the security-critical behaviors
-— shuffle correctness, reveal single-use, fair-play forfeiture — live precisely in those
-dependencies. A green test suite against fakes can certify an engine that is wrong about the
-real crypto. There is no requirement that the **real adapters pass the same contract
-conformance suite as the fakes**, nor that security-critical paths are tested against real
-implementations.
+**缺陷。** 规范针对依赖契约的内存版 fakes 测试引擎，
+并注明"fakes 用于非脚本编排"。但安全关键行为
+——洗牌正确性、揭示一次性、公平博弈没收——恰恰位于那些
+依赖之中。一个针对 fakes 通过的绿色测试套件可能认证一个在
+真实密码学上出错的引擎。没有任何要求规定**真实适配器须通过与 fakes
+相同的契约一致性套件**，也没有要求安全关键路径须针对真实
+实现测试。
 
-**Principle violated:** P9 (a test must exercise the real behavior, not a flattering stand-in).
+**违反的原则：** P9（测试必须演练真实行为，而非讨好性的替身）。
 
-**Required fix.** Add: (i) a single **contract conformance suite** that both the fake and
-the real adapter must pass, so the fake provably matches the real contract; (ii) a
-requirement that shuffle, reveal, and fair-play are tested against the **real** CT/crypto
-implementations (and through the real Script interpreter for the on-chain parts), with fakes
-permitted only for orchestration wiring, never for the security property under test.
+**所需修复。** 增设：(i) 一个 fake 和真实适配器都必须通过的单一**契约一致性
+套件**，使 fake 可证明地匹配真实契约；(ii) 一项
+要求，规定洗牌、揭示和公平博弈须针对**真实**的 CT/密码学
+实现测试（链上部分则通过真实 Script 解释器），fakes
+仅允许用于编排接线，绝不用于被测的安全属性。
 
-### M5 — "NASA NPR 7150.2 + Power of Ten" is claimed; several Power-of-Ten rules cannot hold in a GC'd TS/Go runtime, so literal compliance is not achievable.
+### M5 — 声称了"NASA NPR 7150.2 + Power of Ten"；但若干 Power-of-Ten 规则在 GC 的 TS/Go 运行时中无法成立，故字面合规不可达成。
 
-**Where:** §13.1 REQ-ENG-001; §3.2 hand-eval note; §5.3.4.
+**位置：** §13.1 REQ-ENG-001；§3.2 手牌评估说明；§5.3.4。
 
-**Defect.** Power-of-Ten rule 3 (no dynamic memory allocation after initialization) and the
-pointer/aliasing rules are written for C in safety-critical embedded contexts. In a
-garbage-collected TypeScript/Go application they cannot literally hold; the spec says "where
-applicable," which is honest but soft, and the headline "built to … Power of Ten" reads as
-literal compliance. Claiming literal compliance would be an overclaim.
+**缺陷。** Power-of-Ten 规则 3（初始化后不动态分配内存）以及
+指针/别名规则是为安全关键嵌入式环境中的 C 而写。在一个
+垃圾回收的 TypeScript/Go 应用中它们无法字面成立；规范称"在
+适用处"，这虽诚实但偏软，而标题"按……Power of Ten 构建"读起来像
+字面合规。声称字面合规将是一种过度声称。
 
-**Principle violated:** P8 (overclaim), P7 (the "where applicable" carve-out is too quiet to
-carry the weight).
+**违反的原则：** P8（过度声称）、P7（"在适用处"的免责太轻，
+撑不起这份分量）。
 
-**Required fix.** State plainly which Power-of-Ten rules are **adopted**, which are **adapted**,
-and which are **N/A** for a GC runtime (rule 3 and the raw-pointer rules are N/A; bounded
-loops, no-recursion-in-consensus-paths, assertions, checked returns, small functions,
-warnings-as-errors, restricted `any` are adopted/adapted). Claim "an adaptation of the
-Power-of-Ten rules appropriate to a GC runtime," not literal compliance.
+**所需修复。** 明确陈述哪些 Power-of-Ten 规则被**采用**、哪些被**适配**，
+以及哪些对 GC 运行时**不适用**（规则 3 和裸指针规则不适用；有界
+循环、共识路径中不递归、断言、检查返回值、小函数、
+warnings-as-errors、受限 `any` 被采用/适配）。声称"一种适合 GC 运行时的
+Power-of-Ten 规则适配"，而非字面合规。
 
-### M6 — The reveal-token construction and the signing construction are both `DECISION REQUIRED`, but both are load-bearing security mechanisms; the spec ships a security model with two holes.
+### M6 — 揭示令牌构造与签名构造均为 `DECISION REQUIRED`，但两者都是承重的安全机制；规范交付了一个带两个漏洞的安全模型。
 
-**Where:** §4.6 (reveal token); §6.7 (combined-key signing).
+**位置：** §4.6（揭示令牌）；§6.7（组合密钥签名）。
 
-**Defect.** Confidentiality of a player's hand depends entirely on the reveal-token
-construction; settlement integrity depends on the signing construction. Both are deferred to
-"after reading cardtable's API" with only a "leading candidate." A security model with its
-two central mechanisms unfixed is not yet a security model — it is a placeholder. This is
-acceptable as an explicitly-marked Part-1 boundary **only if** the spec states the fallback
-that lets Phase 0/1 proceed without them and does not let the holes hide.
+**缺陷。** 玩家手牌的机密性完全取决于揭示令牌
+构造；结算完整性取决于签名构造。两者都被推迟到
+"读取 cardtable 的 API 之后"，且仅有一个"首选候选"。一个其
+两个中心机制尚未确定的安全模型还算不上安全模型——它是一个占位符。
+**仅当**规范陈述了使 Phase 0/1 在没有它们的情况下也能推进的回退方案，
+且不让漏洞被遮掩时，将其作为明确标注的 Part-1 边界才可接受。
 
-**Principle violated:** P7/P8 (the holes must be visible and bounded, not glossed).
+**违反的原则：** P7/P8（漏洞必须可见且有界，而非被掩饰）。
 
-**Required fix.** For each: (i) fully specify the leading candidate as the **provisional
-normative** construction (so the build is not blocked), (ii) state the exact property each
-must provide and the test that will confirm it, (iii) bind the final choice to an explicit
-action (read cardtable's API) with a named owner, and (iv) cross-reference both from §18.
-B1's Mode A already gives a concrete signing path for Phase 1, which closes the §6.7 hole
-for the default; say so.
+**所需修复。** 对每一项：(i) 将首选候选完整规定为**临时
+规范性**构造（以免阻断构建）；(ii) 陈述每一项必须提供的确切属性
+以及将确认它的测试；(iii) 将最终选择绑定到一项明确的
+行动（读取 cardtable 的 API）并指定具名负责人；以及 (iv) 从 §18 交叉引用两者。
+B1 的 Mode A 已为 Phase 1 给出一条具体的签名路径，这为默认情形
+关闭了 §6.7 漏洞；明确说明这一点。
 
 ---
 
 ## MINOR
 
-### m1 — Participant set per hand is unspecified.
+### m1 — 每手牌的参与方集合未被规定。
 
-The shuffle is N-of-N over the seated set, but players sit out/join between hands; the spec
-never states that each hand is a **fresh N-party shuffle over the currently-seated set**,
-that sit-out/join takes effect **between hands only**, and that there is **no partial
-reshuffle** of an in-progress deck. Add this (it is also a determinism input: who is in the
-party set fixes the canonical order §4.4).
+洗牌是在就座集合上的 N-of-N，但玩家会在手牌之间暂离/加入；规范
+从未陈述每手牌都是一次**在当前就座集合上的全新 N 方洗牌**，
+暂离/加入**仅在手牌之间**生效，以及对进行中的牌组**不做部分
+重洗**。补上这点（它也是一项确定性输入：参与方集合中有谁
+固定了规范顺序 §4.4）。
 
-### m2 — No on-chain cost model.
+### m2 — 无链上成本模型。
 
-The spec specifies 52 combined-key UTXOs + stage commitments + per-action/per-reveal/fold/
-settlement transactions but carries no transaction-count or byte/fee model per hand. Even on
-regtest (where fees are irrelevant) the design needs a cost envelope to judge feasibility and
-to size the fair-play question (M3). Add a per-hand transaction-count and byte estimate as a
-`TRACKED ASSUMPTION` to be replaced by measured values in §19.C. (For reference, the v27
-paper reports order-of-thousands of bytes for a 52-card Hold'em game; the platform must
-derive its own figure, not import that one.)
+规范规定了 52 个组合密钥 UTXO + 阶段承诺 + 每次行动/每次揭示/弃牌/
+结算交易，但没有任何每手牌的交易计数或字节/费用模型。即便在
+regtest 上（费用无关紧要），设计也需要一个成本封套来判断可行性并
+为公平博弈问题（M3）定量。添加一个每手牌交易计数与字节估计，作为
+`TRACKED ASSUMPTION`，待 §19.C 中以测量值替换。（作参考，v27
+论文报告 52 张牌 Hold'em 游戏的字节量级为数千；平台必须
+推导自己的数字，而非照搬那个。）
 
-### m3 — Odd-chip rule mixes a determinism rule with a possible suit-precedence rule.
+### m3 — 奇数筹码规则把确定性规则与可能的花色优先级规则混在一起。
 
-§5.5.1 gives a deterministic "left of the button" rule (good) but then mentions a stud "high
-card by suit order" tiebreak. Poker hand ranking has **no** suit precedence; any suit-based
-tiebreak is a house rule and must be flagged as such and defaulted **off**, so it is not
-mistaken for hand-evaluation logic. Tighten the wording.
+§5.5.1 给出了一条确定性的"庄家按钮左侧"规则（好），但随后提及了一条 stud 的"按花色
+顺序定高牌"破平规则。扑克手牌排名**没有**花色优先级；任何基于花色的
+破平都是一条 house rule，必须如此标明并默认**关闭**，以免被
+误认为手牌评估逻辑。收紧措辞。
 
-### m4 — `OP_RETURN` vs pushdata guidance is correct but the shuffle stage commitments should be re-examined.
+### m4 — `OP_RETURN` 与 pushdata 的指引正确，但洗牌阶段承诺应予重新审查。
 
-§4.4 REQ-CRYPTO-004 commits shuffle stages via `OP_RETURN`. That is fine **if** those
-commitments are genuinely dead-end (anchoring only). But if dispute-replay (§12.3) ever needs
-the commitment to remain in the spend-linked graph (e.g. to bind a stage to the next stage's
-spend), it must be pushdata (§6.5). Add a note that the carriage choice for stage commitments
-is revisited when §12.3's dispute mechanism is finalized.
+§4.4 REQ-CRYPTO-004 通过 `OP_RETURN` 承诺洗牌阶段。**若**那些
+承诺确实是死路一条（仅作锚定）则无妨。但若争议重放（§12.3）某天需要
+该承诺保留在花费链接图中（例如将一个阶段绑定到下一阶段的
+花费），它就必须是 pushdata（§6.5）。添加一条说明：阶段承诺的承载选择
+在 §12.3 的争议机制确定时重新审视。
 
-### m5 — Glossary "trustless" hygiene.
+### m5 — 词汇表"trustless"清理。
 
-The glossary and §4.8 are careful, but §1 and §2 use "trustless"/"non-custodial" in prose.
-Ensure every such use is bounded by the enumerated trust surface (§18) or replaced with the
-specific property meant. (Tracked for the §18 pass.)
+词汇表和 §4.8 措辞谨慎，但 §1 和 §2 在散文中使用了"trustless"/"non-custodial"。
+确保每一处此类用法都受所枚举的信任面（§18）约束，或被替换为
+所指的具体属性。（已为 §18 那一轮记录在案。）
 
 ---
 
-## What this pass fixes
+## 本轮所修复的内容
 
-The corrections for **B1, B2, M1, M2, M3, M4, M5** and **m1, m3** are applied in place to
-`bsv-poker-spec.md` this pass (see the changelog appended to that file, §20). **M6** is
-partially closed (B1 Mode A closes the signing hole for the Phase-1 default; the reveal-token
-candidate is elevated to provisional-normative). The remaining expansion — §18 threat model
-(filled), §19.B side-pot algorithm (worked example), §19.E Hold'em transition table — is
-written this pass. m2, m4, m5 and the full §19.C/D catalogs are scheduled for the next pass
-and listed in §20.
+针对 **B1、B2、M1、M2、M3、M4、M5** 以及 **m1、m3** 的更正本轮已就地应用于
+`bsv-poker-spec.md`（见附加于该文件的变更日志，§20）。**M6** 已
+部分关闭（B1 Mode A 为 Phase-1 默认情形关闭了签名漏洞；揭示令牌
+候选被提升为临时规范性）。其余扩展——§18 威胁模型
+（已填）、§19.B 边池算法（带示例）、§19.E Hold'em 转移表——本轮
+已撰写。m2、m4、m5 以及完整的 §19.C/D 目录已安排在下一轮，
+并列于 §20。
 
-**Re-review trigger:** once B1's mode is confirmed (A vs B) and cardtable's reveal/signing
-APIs are read, a Red-Team Review 02 re-checks the cryptographic core against the *fixed*
-constructions, not the candidates.
+**复评触发器：** 一旦 B1 的模式获确认（A vs B）且 cardtable 的 揭示/签名
+API 被读取，红队评审 02 将针对*已修定*的构造（而非候选）重新核查
+密码学核心。

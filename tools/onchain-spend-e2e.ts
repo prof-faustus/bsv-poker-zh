@@ -1,9 +1,9 @@
 /**
- * Full on-chain submit-and-confirm E2E (core §6, §8.4) against the REAL embedded BSV node. The
- * platform mines a coinbase to a key it controls, then BUILDS + SIGNS a real P2PKH spend (BIP-143
- * sighash) entirely in TypeScript, submits it — the node ACCEPTS it into the mempool through its
- * real Script interpreter — mines it, and the platform observes the confirmation via the UTXO
- * RPC (coinbase now spent, the new output unspent). This is a genuine on-chain transaction.
+ * 针对真实嵌入式 BSV 节点的完整链上 submit-and-confirm E2E（core §6, §8.4）。
+ * 平台向它控制的密钥挖出一个 coinbase，然后完全用 TypeScript 构建并签名一笔真实的 P2PKH 花费
+ * （BIP-143 sighash），提交它——节点通过其
+ * 真实 Script interpreter 将其接受进 mempool——挖入它，平台通过 UTXO
+ * RPC 观察到确认（coinbase 现已被花费，新输出未花费）。这是一笔真正的链上交易。
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -45,15 +45,15 @@ async function main(): Promise<void> {
     assert.equal(before.unspent, true);
     console.log(`[onchain-spend] coinbase ${coinbaseTxid.slice(0, 16)}…:0 value=${before.value}`);
 
-    // Build a real P2PKH spend of the coinbase, paying value-1000 back to the same key.
-    const scriptCode = p2pkh(k.pubCompressed); // the coinbase's P2PKH scriptPubKey
+    // 构建一笔真实的 coinbase P2PKH 花费，把 value-1000 支付回同一密钥。
+    const scriptCode = p2pkh(k.pubCompressed); // coinbase 的 P2PKH scriptPubKey
     const spend: Tx = {
       version: 1,
       inputs: [{ prevTxid: coinbaseTxid, vout: 0, sequence: 0xffffffff }],
       outputs: [{ satoshis: SUBSIDY - 1000, locking: p2pkh(k.pubCompressed) }],
       nLockTime: 0,
     };
-    // sign the BIP-143 sighash; the scriptSig sig carries the sighash-type byte (ALL|FORKID).
+    // 对 BIP-143 sighash 签名；scriptSig 中的签名携带 sighash-type 字节（ALL|FORKID）。
     const msg = sighashMessage(spend, 0, scriptCode, SUBSIDY);
     const der = signPreimage(msg, k.priv);
     const sigWithType = Uint8Array.from([...der, SIGHASH_ALL_FORKID]);

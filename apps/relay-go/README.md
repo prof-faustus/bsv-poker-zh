@@ -1,62 +1,62 @@
 # relay-go
 
-Phase-1 hosted **relay** for bsv-poker (BSV-only, post-Genesis).
+bsv-poker 的阶段 1 托管**中继**（仅限 BSV，Genesis 升级后）。
 
-> **REQ-NET-001 (core §8.1, P3):** the relay is **transport + indexing only and
-> is NEVER the source of truth**. It accelerates convergence and fans out
-> opaque table messages; it never parses, validates, or adjudicates game logic.
-> The truth is the validated transaction graph, reconstructed identically by
-> each client (P2). A lying/faulty relay is detectable by the client because the
-> client rebuilds state from the canonical tx set (REQ-NET-007).
+> **REQ-NET-001（core §8.1，P3）：** 中继**仅负责传输 + 索引，
+> 绝不是真相来源**。它加速收敛并向外扇出
+> 不透明的牌桌消息；它从不解析、验证或裁决游戏逻辑。
+> 真相是经过验证的交易图，由每个客户端
+> 以相同方式重建（P2）。一个撒谎的/有故障的中继可被客户端检测出来，因为
+> 客户端从规范交易集重建状态（REQ-NET-007）。
 
-Zero external dependencies — Go standard library only (`net/http`, SSE).
+零外部依赖 — 仅使用 Go 标准库（`net/http`、SSE）。
 
-## Run
+## 运行
 
 ```
 go run . -addr 127.0.0.1:8091
 ```
 
-Flags:
-- `-addr` loopback listen address (default `127.0.0.1:8091`; `8081` is taken on the build host).
-- `-presence-ttl` heartbeat expiry window (default `30s`).
-- `-sweep-interval` presence expiry sweep cadence (default `10s`).
+标志：
+- `-addr` 回环监听地址（默认 `127.0.0.1:8091`；构建主机上 `8081` 已被占用）。
+- `-presence-ttl` 心跳过期窗口（默认 `30s`）。
+- `-sweep-interval` 在场状态过期清扫节奏（默认 `10s`）。
 
-## Two-tier model (core §8.2, REQ-NET-002)
+## 双层模型（core §8.2，REQ-NET-002）
 
-### Tier A — discovery (presence + table directory)
+### 层 A — 发现（在场状态 + 牌桌目录）
 
-| Method | Path | Purpose |
+| 方法 | 路径 | 用途 |
 |---|---|---|
-| `POST` | `/presence` | Register/refresh presence. Body: `{"playerId","addr"}` (heartbeat/keepalive). |
-| `DELETE` | `/presence/{id}` | Explicit leave. |
-| `GET` | `/presence` | List live presence (id-sorted). Stale entries expire by TTL. |
-| `POST` | `/tables` | Create a table. Body: `{"id","name"}`. `409` on duplicate id. |
-| `GET` | `/tables` | List tables (id-sorted) with subscriber counts. |
+| `POST` | `/presence` | 注册/刷新在场状态。请求体：`{"playerId","addr"}`（心跳/保活）。 |
+| `DELETE` | `/presence/{id}` | 显式离开。 |
+| `GET` | `/presence` | 列出在线的在场状态（按 id 排序）。陈旧条目按 TTL 过期。 |
+| `POST` | `/tables` | 创建一个牌桌。请求体：`{"id","name"}`。id 重复时返回 `409`。 |
+| `GET` | `/tables` | 列出牌桌（按 id 排序）及其订阅者数量。 |
 
-### Tier B — table-scoped opaque object relay (Bitmessage-style)
+### 层 B — 按牌桌划分的不透明对象中继（Bitmessage 风格）
 
-| Method | Path | Purpose |
+| 方法 | 路径 | 用途 |
 |---|---|---|
-| `POST` | `/tables/{id}/publish` | Fan out the raw request body (opaque bytes, ≤1 MiB) to all subscribers. Returns `{"delivered":N}`. |
-| `GET` | `/tables/{id}/subscribe` | Subscribe via Server-Sent Events; each opaque object arrives as one `data:` event. |
+| `POST` | `/tables/{id}/publish` | 将原始请求体（不透明字节，≤1 MiB）扇出给所有订阅者。返回 `{"delivered":N}`。 |
+| `GET` | `/tables/{id}/subscribe` | 通过 Server-Sent Events 订阅；每个不透明对象作为一个 `data:` 事件到达。 |
 
-The relay **stores and forwards opaque bytes**; it does not interpret them. Slow
-subscribers drop messages on the speed path (bounded per-subscriber buffer) and
-reconcile via the canonical tx graph — the relay never blocks or invents state.
+中继**存储并转发不透明字节**；它不解释这些字节。慢速
+订阅者会在速度路径上丢弃消息（每个订阅者有界的缓冲区），并
+通过规范交易图进行对账——中继从不阻塞或臆造状态。
 
-### Health
+### 健康
 
-| Method | Path | Response |
+| 方法 | 路径 | 响应 |
 |---|---|---|
-| `GET` | `/healthz` | `200` + `{"status":"ok"}` (supervisor liveness, app §A3.2). |
+| `GET` | `/healthz` | `200` + `{"status":"ok"}`（监管进程存活检测，app §A3.2）。 |
 
-## Tests
+## 测试
 
 ```
 go test ./...
 ```
 
-Covers presence register/expiry/heartbeat-refresh, table create/join/list,
-Tier-B publish→subscribe fan-out to all subscribers, publish buffer-copy
-isolation, and `/healthz`.
+涵盖在场状态注册/过期/心跳刷新、牌桌创建/加入/列出、
+层 B 的 publish→subscribe 向所有订阅者扇出、publish 的缓冲区拷贝
+隔离，以及 `/healthz`。

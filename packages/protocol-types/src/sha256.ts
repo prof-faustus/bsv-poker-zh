@@ -1,9 +1,8 @@
 /**
- * Portable, deterministic SHA-256 (pure TypeScript) — identical output to node:crypto, but runs
- * in the browser bundle too (the engine/hand-eval/game-holdem must run in both Node and the web
- * shell — core §3.2/§11.1, one core two shells). No dependency on node:crypto here so the
- * deterministic core is environment-agnostic; node:crypto is reserved for the script interpreter
- * (ECDSA) and custody, which run Node-side.
+ * 可移植、确定性的 SHA-256（纯 TypeScript）— 输出与 node:crypto 完全一致，但同样能在
+ * 浏览器打包中运行（engine/hand-eval/game-holdem 必须同时在 Node 和 web shell 中运行
+ * — core §3.2/§11.1，一个 core 两个 shell）。此处不依赖 node:crypto，使确定性 core
+ * 与环境无关；node:crypto 保留给脚本解释器（ECDSA）和托管使用，它们在 Node 端运行。
  */
 
 const K = new Uint32Array([
@@ -28,12 +27,12 @@ export function sha256(data: Uint8Array): Uint8Array {
 
   const len = data.length;
   const bitLen = len * 8;
-  // padded length: multiple of 64, with 1 byte 0x80 + 8-byte length
+  // 填充后的长度：64 的倍数，包含 1 字节 0x80 + 8 字节长度
   const totalLen = ((len + 8) >> 6) * 64 + 64;
   const buf = new Uint8Array(totalLen);
   buf.set(data, 0);
   buf[len] = 0x80;
-  // 64-bit big-endian length (we only fill the low 32 bits — inputs are well under 2^32 bytes)
+  // 64 位大端长度（我们只填充低 32 位 — 输入远小于 2^32 字节）
   const dv = new DataView(buf.buffer);
   dv.setUint32(totalLen - 4, bitLen >>> 0, false);
   dv.setUint32(totalLen - 8, Math.floor(bitLen / 0x100000000), false);

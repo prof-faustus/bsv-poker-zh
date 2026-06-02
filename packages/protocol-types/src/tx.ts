@@ -1,7 +1,7 @@
 /**
- * Transaction classes — core §6.1. These are conceptual classes (wire names are
- * implementation detail). Every transaction binds gid + rulesetHash + round + state hash +
- * successor commitment (core §6.3, REQ-TX-005) for anti-replay.
+ * 交易类别 — core §6.1。这些是概念性类别（wire 名称属于实现细节）。
+ * 每笔交易都绑定 gid + rulesetHash + round + 状态哈希 + 后继承诺
+ * （core §6.3, REQ-TX-005）以防重放。
  */
 
 export const TX_CLASSES = [
@@ -20,30 +20,30 @@ export const TX_CLASSES = [
 export type TxClass = (typeof TX_CLASSES)[number];
 
 /**
- * The anti-replay binding carried by every protocol transaction (core §6.3).
- * Carried as pushdata in a live script — NEVER OP_RETURN (core P11/§6.5).
+ * 每笔协议交易携带的防重放绑定（core §6.3）。
+ * 作为 pushdata 携带于有效脚本中 — 绝不使用 OP_RETURN（core P11/§6.5）。
  */
 export interface BranchBinding {
   readonly gid: string; // hex
   readonly rulesetHash: string; // hex
   readonly round: number;
-  readonly stateHash: string; // hex — hash of the state being spent
-  readonly actingSeat: number; // -1 where not applicable
-  readonly successorCommitment: string; // hex — commitment to the successor state
+  readonly stateHash: string; // hex — 被花费状态的哈希
+  readonly actingSeat: number; // 不适用时为 -1
+  readonly successorCommitment: string; // hex — 对后继状态的承诺
 }
 
-/** A protocol transaction as the engine consumes it (the on-chain bytes live in tx-builder). */
+/** 引擎所消费的协议交易（链上字节位于 tx-builder 中）。 */
 export interface ProtocolTx {
   readonly txid: string; // hex
   readonly cls: TxClass;
   readonly binding: BranchBinding;
-  /** Class-specific payload, already validated/normalised by the SDK. */
+  /** 类别特定的载荷，已由 SDK 校验/规范化。 */
   readonly payload: Readonly<Record<string, unknown>>;
 }
 
 /**
- * A transcript is the ordered set of valid table transactions plus the commit/reveal material
- * needed to re-derive state (core §12.2, REQ-DATA-002).
+ * transcript 是有效牌桌交易的有序集合，外加重新推导状态所需的
+ * commit/reveal 材料（core §12.2, REQ-DATA-002）。
  */
 export interface Transcript {
   readonly rulesetHash: string;

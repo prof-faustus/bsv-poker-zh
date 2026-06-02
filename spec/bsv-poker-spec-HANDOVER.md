@@ -1,256 +1,256 @@
-# HANDOVER — Completing the BSV Poker Platform Specification
+# HANDOVER — 完成 BSV Poker 平台规范
 
-**Purpose.** You are taking over authorship of a large engineering specification for a
-**new** dealerless multiplayer poker platform on Bitcoin SV. This document tells you the
-rules you must work under, what is verified (do not re-derive), what exists, what is done,
-what remains, and exactly how to continue — so you can finish the spec without re-reading
-the whole history.
+**目的。** 你正在接手一份大型工程规范的撰写工作，该规范针对一个建立在 Bitcoin SV 之上的
+**全新**无荷官多人扑克平台。本文件告诉你
+你必须遵守的规则、哪些已验证（不要重新推导）、有哪些已存在、哪些已完成、
+尚余哪些工作，以及如何确切地继续——以便你无需重读
+全部历史即可完成该规范。
 
-**Read this, then open `bsv-poker-spec.md` (the spec) and `bsv-poker-spec-redteam-01.md`
-(the review). The spec's §20 / §20.1 changelog is the live status; this handover frames it.**
-
----
-
-## 0. The one-line scope
-
-Write the **specification only**. The application is built in **Claude Code**, which has
-the dependency repositories. **You build nothing** — no application code. A spec file, a
-review file, and generated test vectors are the deliverables.
+**先读本文件，然后打开 `bsv-poker-spec.md`（规范）和 `bsv-poker-spec-redteam-01.md`
+（评审）。规范的 §20 / §20.1 变更日志是活跃状态；本交接为其提供框架。**
 
 ---
 
-## 1. Hard rules (non-negotiable — from the principal; violating any is a failure)
+## 0. 一句话范围
 
-1. **Zero fabrication.** Every number traces to a cited source, a measured value, or is
-   marked `TRACKED ASSUMPTION`. A hardcoded figure that creates internal inconsistency is a
-   material defect. **Generate vectors by running code, never from memory** (see §3, the
-   oracle). A made-up reference or number is treated as fraud.
-2. **No assumptions; classify them.** Every assumption appears explicitly. Hidden
-   assumptions are the worst class of failure. If a thing is not fixed, mark it
-   `DECISION REQUIRED` or `TRACKED ASSUMPTION` — do not assert it.
-3. **No overclaim.** Never claim more than the construction guarantees. State boundaries in
-   ink (e.g. the audit system cannot detect a lie at origin; N-of-N reveal is a liveness
-   risk; "trustless" only within the enumerated trust surface §18).
-4. **BSV-only, post-Genesis.** No BTC code, no BTC assumptions, no Lightning-style in-script
-   penalty. **`OP_CHECKLOCKTIMEVERIFY`/`OP_CHECKSEQUENCEVERIFY` (CLTV/CSV) are no-ops on
-   post-Genesis BSV** — timing is enforced at the **transaction level** (`nLockTime` +
-   `nSequence` under the original replacement rule). Confusing BTC and BSV is a failure.
-5. **Engineering bar.** NASA **NPR 7150.2** assurance practice + a **documented Power-of-Ten
-   adaptation** (NOT literal compliance — rule 3 and the pointer rules are N/A in a GC
-   runtime; say so). Requirements-traceability matrix. **Interpreter-level tests**: script
-   spends run through the real BSV Script interpreter with Genesis rules; **negative tests
-   must fail inside the interpreter**, never in a wrapper guard; signature spot-checks are
-   not acceptable. **Reproducible vectors**: a `reproduce` command regenerates every number
-   and exits non-zero on mismatch.
-6. **Style.** Direct, concise, unambiguous. **Apologies are banned.** Do not pad. Do not
-   bluff or sound confident without evidence.
-7. **Do not second-guess the principal's stated facts.** The principal has stated the
-   `prof-faustus` repositories exist and that Claude Code has access to them. **Accept
-   this.** Build against their contracts (§2.1–§2.4 of the spec). Do not re-verify their
-   existence or re-litigate it.
+**只编写规范**。应用在 **Claude Code** 中构建，那里拥有
+依赖仓库。**你不构建任何东西**——没有应用代码。一个规范文件、一个
+评审文件，以及生成的测试向量即为交付物。
 
 ---
 
-## 2. Verified facts (cite these; do not re-derive or re-check)
+## 1. 硬性规则（不可商量——来自委托人；违反任一即为失败）
 
-**The dependency repositories (real; the platform consumes them via the adapter contracts
-in spec §2):**
-
-- `bonded-subsat-channel` — sub-satoshi channels (granularity `k`, largest-remainder `Q*`
-  whole-satoshi settlement, fixed 1-sat anti-cheat bond) **and** a self-contained embedded
-  BSV system (native P2P-wire node, PoW header chain longest-by-work, DB-backed block/UTXO
-  store, conflict-detecting mempool under the original replacement rule, HD wallet). This
-  embedded node is the platform's **local chain backend** for the VM (spec §10.2, D6).
-- `verifiable-accounting` (Rust), `verifiable-accounting-bsv` (TS), `verifiable-accounting-chain`
-  (TS) — Merkle inclusion against block-header `merkleroot`; selective disclosure;
-  triple-entry. **Stated boundary (must be surfaced, never overstated):** establishes only
-  inclusion, integrity, selective disclosure, arithmetic correctness over disclosed records;
-  **does not** establish truth-at-origin. Carries commitments as **pushdata in a live
-  script, not `OP_RETURN`**, when they must stay in the spend-linked graph.
-- `overlay-broadcast` — key-graph (Logical Key Hierarchy) broadcast encryption, `O(log n)`
-  rekey, revocation = **unspent expiring output**, FROST/GG20 threshold custody, ECIES /
-  AES-256-GCM. **Graded to NPR 7150.2 + Power of Ten with a requirements-traceability
-  matrix** (the platform adopts the same bar). Basis for later revocable-content NFTs (a
-  separate product, not in core poker phases) and for optional threshold custody of pot keys.
-- `cardtable` — mental-poker engine + transaction-native game substrate. **Status (the
-  author's own words):** protocol fully specified; off-chain crypto + simulation runnable;
-  early build phases substantively in place; **full multi-card game partial; first target
-  game In-Between**; CLI-first research code; regtest-by-default. The platform uses its
-  *primitives*, not its game, and does **not** assume Hold'em exists in it.
-
-**Corrections to the Grok-authored doc (do not propagate its errors):** `cardtable` does
-**not** contain 5 poker variants + Blackjack ("Phases 0–5 complete" is false). Repos
-`revocable-nft-tee` and `triple-entry-bsv-sql` are **not** in the author's current published
-list; revocable NFTs are built on `overlay-broadcast`, and the polished product is unshipped.
-
-**Patent GB2616862 (the shuffle/settlement primitive; read in full; in memory):** "Set
-shuffling," Burns & Wright, applicant nChain Licensing AG, filed 2022-03-22, published as
-**GB2616862A** (application) 2023-09-23. Cite as **A** unless/until B-grant is confirmed
-(the v27 paper cites a "B" not confirmed by the document). Mechanism: shuffle key
-`P'=(s,±√(s³+7))` on secp256k1, private key `s` = x-coord, public key `P=s·G`; per-element
-**combined key** `Q_j = Σ P_{p,j}` (point addition); two-round encryption (shared scalar,
-then per-element distinct scalars) + reorder = the shuffle, reversed by inverse scalars at
-reveal; OP_RETURN stage commitments; settlement via 2-of-2 funding multisig + nLocktime
-refund + locktime-tiered bet txs + fair-play scripts + optional 2-of-3 TTP. Worked example
-is **2-party / 3-card** (Ace>King>Queen); scaling to N-party/52-card is the platform's work.
-
-**The signing-mode fact (BLOCKER B1 resolved — do not reintroduce the error):** GB2616862
-**reconstructs** the combined private key `w_j` at reveal (each party discloses its scalar;
-the winner sums and signs). The earlier spec claim "never reconstructed in one place" was a
-property of the *v27 threshold-ECDSA* path, **not** the patent — it was an internal
-inconsistency and is removed. The spec now declares **Mode A** (patent-literal,
-reconstruct-at-reveal; Phase-1 default; single-game keys; bounded hand-window exposure) vs
-**Mode B** (threshold/no-reconstruction; upgrade; not BSVM-specific so BSV-compatible).
-**Never present Mode A while claiming Mode B's property.**
-
-**Post-Genesis Script (rule 4 above):** CLTV/CSV no-ops; timing at the transaction level.
+1. **零捏造。** 每个数字都可追溯到一个被引用的来源、一个测量值，或被
+   标注 `TRACKED ASSUMPTION`。一个造成内部不一致的硬编码数值是
+   实质缺陷。**通过运行代码生成向量，绝不凭记忆**（见 §3，那个
+   oracle）。编造的参考文献或数字将被视为欺诈。
+2. **无假设；对其分类。** 每一项假设都明确出现。隐藏
+   假设是最严重的失败类别。若某事项未确定，标注
+   `DECISION REQUIRED` 或 `TRACKED ASSUMPTION`——不要断言它。
+3. **不过度声称。** 绝不声称超过该构造所保证的内容。把边界写在
+   纸面上（例如审计系统无法检测源头的谎言；N-of-N 揭示是一项活性
+   风险；"trustless"仅在所枚举的信任面 §18 之内成立）。
+4. **仅限 BSV，post-Genesis。** 无 BTC 代码，无 BTC 假设，无 Lightning 式脚本内
+   惩罚。**`OP_CHECKLOCKTIMEVERIFY`/`OP_CHECKSEQUENCEVERIFY`（CLTV/CSV）在
+   post-Genesis BSV 上为 no-ops**——计时在**交易层级**强制执行（在原始替换规则下使用 `nLockTime` +
+   `nSequence`）。混淆 BTC 与 BSV 即为失败。
+5. **工程标准。** NASA **NPR 7150.2** 保障实践 + 一份**有文档记录的 Power-of-Ten
+   适配**（**非**字面合规——规则 3 和指针规则在 GC
+   运行时中不适用；明确说明）。需求可追溯性矩阵。**解释器级测试**：脚本
+   花费通过真实的 BSV Script 解释器在 Genesis 规则下运行；**负向测试
+   必须在解释器内部失败**，绝不在外层守卫中失败；签名抽查
+   不可接受。**可复现向量**：`reproduce` 命令重新生成每个数字
+   并在不匹配时以非零状态退出。
+6. **风格。** 直接、简洁、无歧义。**致歉禁止。** 不要灌水。不要
+   虚张声势或在无证据时显得自信。
+7. **不要质疑委托人陈述的事实。** 委托人已声明
+   `prof-faustus` 各仓库存在，且 Claude Code 可访问它们。**接受
+   这一点。** 针对它们的契约进行构建（规范的 §2.1–§2.4）。不要重新验证其
+   存在性或再行争辩。
 
 ---
 
-## 3. Artifacts and working environment
+## 2. 已验证的事实（引用这些；不要重新推导或重新核查）
 
-| Path | What it is | Notes |
+**依赖仓库（真实；平台通过规范 §2 中的适配器契约
+消费它们）：**
+
+- `bonded-subsat-channel` — 亚聪通道（粒度 `k`、最大余数 `Q*`
+  整数聪结算、固定的 1 聪反作弊保证金）**以及**一个自包含的嵌入式
+  BSV 系统（原生 P2P-wire 节点、按工作量最长的 PoW 区块头链、DB 支持的 block/UTXO
+  存储、在原始替换规则下检测冲突的 mempool、HD 钱包）。该
+  嵌入式节点是平台用于 VM 的**本地链后端**（规范 §10.2，D6）。
+- `verifiable-accounting`（Rust）、`verifiable-accounting-bsv`（TS）、`verifiable-accounting-chain`
+  （TS）— 针对区块头 `merkleroot` 的 Merkle 包含证明；选择性披露；
+  三式记账。**陈述的边界（必须浮现，绝不夸大）：** 仅确立
+  对已披露记录的包含性、完整性、选择性披露、算术正确性；
+  **不**确立源头真实性。当承诺必须保留在花费链接图中时，将其作为**活跃
+  脚本中的 pushdata，而非 `OP_RETURN`** 承载。
+- `overlay-broadcast` — 密钥图（逻辑密钥层级 Logical Key Hierarchy）广播加密、`O(log n)`
+  rekey、撤销 = **未花费的会过期输出**、FROST/GG20 门限托管、ECIES /
+  AES-256-GCM。**已按 NPR 7150.2 + Power of Ten 评级，并附需求可追溯性
+  矩阵**（平台采用同一标准）。后续可撤销内容 NFT（一个
+  独立产品，不在核心扑克各阶段内）以及底池密钥的可选门限托管之基础。
+- `cardtable` — 心智扑克引擎 + 交易原生游戏底层。**状态（作者
+  原话）：** 协议已完整规范化；离线密码学 + 仿真可运行；
+  早期构建阶段实质上已就位；**完整的多牌游戏部分完成；首个目标
+  游戏为 In-Between**；CLI 优先的研究代码；默认 regtest。平台使用其
+  *原语*，而非其游戏，并**不**假设其中存在 Hold'em。
+
+**对 Grok 撰写文档的更正（不要传播其错误）：** `cardtable` 并**不**
+包含 5 种扑克变体 + Blackjack（"Phases 0–5 complete"为假）。仓库
+`revocable-nft-tee` 和 `triple-entry-bsv-sql` **不**在作者当前已发布的
+清单中；可撤销 NFT 构建于 `overlay-broadcast` 之上，且成品尚未交付。
+
+**专利 GB2616862（洗牌/结算原语；已完整阅读；在记忆中）：** "Set
+shuffling"，Burns & Wright，申请人 nChain Licensing AG，2022-03-22 提交，于
+2023-09-23 作为 **GB2616862A**（申请）公布。引作 **A**，除非/直到 B-授权获确认
+（v27 论文引用了一个文档未确认的"B"）。机制：secp256k1 上的洗牌密钥
+`P'=(s,±√(s³+7))`，私钥 `s` = x 坐标，公钥 `P=s·G`；每元素的
+**组合密钥** `Q_j = Σ P_{p,j}`（点加法）；两轮加密（先共享标量，
+再每元素各异标量）+ 重排 = 洗牌，揭示时用逆标量
+逆转；OP_RETURN 阶段承诺；结算通过 2-of-2 出资多签 + nLocktime
+退款 + locktime 分级下注交易 + 公平博弈脚本 + 可选的 2-of-3 TTP。所给示例
+为 **2 方 / 3 张牌**（Ace>King>Queen）；扩展到 N 方/52 张牌是平台的工作。
+
+**签名模式事实（BLOCKER B1 已解决——不要重新引入该错误）：** GB2616862
+在揭示时**重构**组合私钥 `w_j`（每方披露其标量；
+获胜者求和并签名）。早先规范中的声称"绝不在一处重构"实为
+*v27 门限 ECDSA* 路径的属性，**而非**该专利——那是一个内部
+不一致，已被移除。规范现声明 **Mode A**（专利字面，
+揭示时重构；Phase-1 默认；单局密钥；有界手牌窗口暴露） vs
+**Mode B**（门限/无重构；升级项；非 BSVM 特定，故兼容 BSV）。
+**绝不在声称 Mode B 属性的同时呈现 Mode A。**
+
+**post-Genesis Script（上文规则 4）：** CLTV/CSV no-ops；计时在交易层级。
+
+---
+
+## 3. 工件与工作环境
+
+| 路径 | 它是什么 | 说明 |
 |---|---|---|
-| `/mnt/user-data/outputs/bsv-poker-spec.md` | The specification (live) | ~1,700 lines, 115 requirements, 17 threats, 5 variant FSMs. §20/§20.1 is the status. |
-| `/mnt/user-data/outputs/bsv-poker-spec-redteam-01.md` | Red-Team Review 01 | 2 BLOCKERs + 6 MAJOR + MINORs, all applied. Has the RT-02 re-review trigger. |
-| `/home/claude/eval.py` | The hand-evaluation **oracle** | Run `python3 /home/claude/eval.py` to regenerate §19.D vectors and the consistency checks. This is the no-fabrication mechanism — extend it for new vectors. |
-| `/mnt/project/` (read-only) | Source documents | GB2616862A patent; v27 poker paper + appendices; the In-Between architecture doc; the Cassandra schema; BSVM papers. Copy out before editing. |
-| Memory | GB2616862 identity + mechanism | Already recorded; consistent with the above. |
+| `/mnt/user-data/outputs/bsv-poker-spec.md` | 规范（活跃） | 约 1,700 行，115 条需求，17 个威胁，5 个变体 FSM。§20/§20.1 为状态。 |
+| `/mnt/user-data/outputs/bsv-poker-spec-redteam-01.md` | 红队评审 01 | 2 个 BLOCKER + 6 个 MAJOR + MINOR，均已应用。含 RT-02 复评触发器。 |
+| `/home/claude/eval.py` | 手牌评估 **oracle** | 运行 `python3 /home/claude/eval.py` 以重新生成 §19.D 向量及一致性检查。这是无捏造机制——为新向量扩展它。 |
+| `/mnt/project/`（只读） | 源文档 | GB2616862A 专利；v27 扑克论文 + 附录；In-Between 架构文档；Cassandra schema；BSVM 论文。编辑前先拷出。 |
+| 记忆 | GB2616862 标识 + 机制 | 已记录；与上文一致。 |
 
-**Environment notes:** the container has Python; `pip install --break-system-packages` if
-needed. Output files go in `/mnt/user-data/outputs/`. To regenerate vectors:
-`python3 /home/claude/eval.py`. The real BSV Script interpreter is **not** wired in this
-authoring environment — interpreter-level tests (rule 5) are an obligation the **build**
-(Claude Code) executes; the spec specifies them, and any script-byte measurement done here
-is a structural estimate marked `TRACKED ASSUMPTION` until the build measures it for real.
+**环境说明：** 容器中已有 Python；如有需要则 `pip install --break-system-packages`。
+输出文件放入 `/mnt/user-data/outputs/`。重新生成向量：
+`python3 /home/claude/eval.py`。真实的 BSV Script 解释器在本撰写环境中
+**未**接入——解释器级测试（规则 5）是**构建**
+（Claude Code）执行的义务；规范规定了它们，而此处所做的任何脚本字节测量
+都是结构性估计，标注 `TRACKED ASSUMPTION`，直到构建真正测量为止。
 
 ---
 
-## 4. Section status (snapshot — confirm against the spec's §20.1 before working)
+## 4. 章节状态（快照——动手前对照规范的 §20.1 确认）
 
-| Spec section | Status |
+| 规范章节 | 状态 |
 |---|---|
-| §0 principles, glossary, decisions D1–D9 | DONE |
-| §1 product | DONE |
-| §2 dependency contracts + conformance | DONE |
-| §3 architecture | DONE |
-| §4 mental-poker crypto (incl. signing-mode decision, card lifecycle) | DONE |
-| §5 poker domain (hand eval, betting, pots, odd-chip) | DONE |
-| §6 BSV tx/script model (incl. CLTV/CSV correction) | DONE |
-| §7.1–§7.2 FSM framework + Hold'em | DONE |
-| §7.3 Omaha / Stud / Draw / Razz FSMs | DONE (multi-way 3–9 tables still owed) |
-| §8 networking/discovery | DONE (Phase-5 P2P/NAT detail owed in §8.7) |
-| §9 wallet/custody | DONE |
-| §10 self-contained VM | DONE (compose topology detail owed in §10.6) |
-| §11 Windows + Web shells | DONE (full screen specs owed in §11.7) |
-| §12 persistence/transcript/audit | DONE |
-| §13 engineering standard + traceability | DONE |
-| §14 test strategy + acceptance | DONE |
-| §15 SDK contracts | DONE (full type signatures owed in §15.10) |
-| §16 build/CI/reproducibility | DONE |
-| §17 phased roadmap + gates | DONE |
-| §18 threat model | DONE |
-| §19.A canonical serialization | **OWED** |
-| §19.B side-pot algorithm (worked) | DONE |
-| §19.C script byte schedules + fair-play measurement + cost envelope | **OWED** |
-| §19.D hand-eval vectors (generated) | DONE (edge-case vectors owed) |
-| §19.E Hold'em transition table | DONE |
-| §19.F requirements register (115) | DONE |
-| §19.G references | DONE (light) |
+| §0 原则、词汇表、决策 D1–D9 | DONE |
+| §1 产品 | DONE |
+| §2 依赖契约 + 一致性 | DONE |
+| §3 架构 | DONE |
+| §4 心智扑克密码学（含签名模式决策、牌生命周期） | DONE |
+| §5 扑克领域（手牌评估、下注、底池、奇数筹码） | DONE |
+| §6 BSV 交易/脚本模型（含 CLTV/CSV 更正） | DONE |
+| §7.1–§7.2 FSM 框架 + Hold'em | DONE |
+| §7.3 Omaha / Stud / Draw / Razz FSM | DONE（多路 3–9 表仍待补） |
+| §8 网络/发现 | DONE（Phase-5 P2P/NAT 细节待补于 §8.7） |
+| §9 钱包/托管 | DONE |
+| §10 自包含 VM | DONE（compose 拓扑细节待补于 §10.6） |
+| §11 Windows + Web 外壳 | DONE（完整屏幕规格待补于 §11.7） |
+| §12 持久化/交易记录/审计 | DONE |
+| §13 工程标准 + 可追溯性 | DONE |
+| §14 测试策略 + 验收 | DONE |
+| §15 SDK 契约 | DONE（完整类型签名待补于 §15.10） |
+| §16 构建/CI/可复现性 | DONE |
+| §17 分阶段路线图 + 门槛 | DONE |
+| §18 威胁模型 | DONE |
+| §19.A 规范序列化 | **OWED** |
+| §19.B 边池算法（带示例） | DONE |
+| §19.C 脚本字节排布 + 公平博弈测量 + 成本封套 | **OWED** |
+| §19.D 手牌评估向量（生成） | DONE（边界情形向量待补） |
+| §19.E Hold'em 转移表 | DONE |
+| §19.F 需求登记册（115） | DONE |
+| §19.G 参考文献 | DONE（简略） |
 
 ---
 
-## 5. Work remaining — in priority order, with how to do each
+## 5. 尚余工作——按优先级排序，并附各项做法
 
-1. **§19.A canonical serialization (byte-exact).** Everything binds to it (P2 determinism;
-   `rulesetHash`). Specify the exact byte layout for: card, ruleset, action, state, and the
-   commitment preimages. *How:* fixed-width integers, defined endianness, length-prefixed
-   variable fields, canonical field order, no floats. Provide a **computed** worked example
-   (serialize a sample `Ruleset`, show the bytes and the resulting `rulesetHash`) by running
-   a small script — do not hand-write the hash.
-2. **§19.C script byte schedules + fair-play measurement (REQ-CRYPTO-009) + per-hand cost
-   envelope (RT-01 m2).** *How:* (a) transcribe the GB2616862 fair-play locking/unlocking
-   scripts (patent pages 55–72), count opcodes and pushdata bytes for the published
-   **3-element / 2-party** case to get a real base size; (b) derive the scaling formula for
-   52 cards × N parties and decide single-script vs **per-card / per-batch** fair-play
-   transactions; (c) build a **per-hand transaction-count envelope** for heads-up Hold'em by
-   counting the state transitions in §19.E that emit transactions (funding, commitments,
-   deal, per-street reveals, per-action bets, fold/settlement, fair-play) — this count is
-   structurally derivable now; **byte sizes** stay `TRACKED ASSUMPTION` until the build runs
-   them through the real interpreter. Do **not** claim fair-play "scales" without the number.
-3. **Remaining §19.D edge-case vectors.** Tie/odd-chip split; coincident all-in levels
-   collapsing to one side-pot layer; folded-but-contributing player in a side pot (link to
-   §19.B); Omaha-8 qualifying-low at exactly 8-high. *How:* extend `/home/claude/eval.py`,
-   run it, embed the verified output. Never assert these.
-4. **Full multi-way (3–9 seat) transition tables** for Hold'em (generalise §19.E) and the
-   variants (generalise §7.3): round-close with multiple players, blinds/button rotation,
-   multi-way side-pot settlement at the SETTLE state.
-5. **§15.10 full type signatures, error enums, canonical serialization rules** for every SDK
-   contract (§15.1–§15.9).
-6. **m4 / m5 closure:** re-examine shuffle stage-commitment carriage (OP_RETURN vs pushdata)
-   once §12.3 dispute-replay is finalized; sweep all prose uses of "trustless"/"non-custodial"
-   to bound them by §18.6.
-7. **Resolve the two `DECISION REQUIRED` items — requires reading `cardtable`'s actual code.**
-   (a) the reveal-token construction (§4.6; leading candidate: consensus-timestamped
-   single-use ECDH token bound to `(gid,j,position,height,recipient-ephemeral-key)`); (b) the
-   Mode-B signing construction (§6.7; candidate: dealerless threshold ECDSA via `OB.custody`).
-   *How:* have Claude Code clone `cardtable`; read its reveal/deal/signing API; fix both to
-   the real API; then **trigger Red-Team Review 02** on the cryptographic core against the
-   *fixed* constructions (the RT-01 file names this trigger). Mode A keeps Phase 0/1
-   unblocked meanwhile.
-
----
-
-## 6. Open decisions (defaults taken so the build is not blocked; principal may override)
-
-`D1` first game = heads-up NL Texas Hold'em (regtest). `D2` seats 2–9 (P1 fixed 2; 6-max P3;
-9-max P4). `D3` No-Limit first; PL/FL behind one interface. `D4` discovery = hosted relay +
-LAN auto-discovery for P1; internet P2P/NAT at P5. `D5` "FULL VM" = reproducible
-self-contained image (container + optional VM image) bundling node+relay+client, no external
-services. `D6` reuse `bonded-subsat-channel`'s embedded node as local chain backend. `D7`
-Blackjack deferred (dealerless blackjack ≠ symmetric poker shuffle). `D8` play-money / no
-external value in early phases. `D9` signing **Mode A** default for Phase 1, Mode B upgrade.
-Items most worth confirming with the principal: `D1` (first game), `D5` (does "VM" mean a
-literal hypervisor image too?), `D9` (Mode A vs Mode B), and whether the variant set beyond
-Hold'em is wanted in the order given.
+1. **§19.A 规范序列化（字节精确）。** 一切都绑定于它（P2 确定性；
+   `rulesetHash`）。为以下各项规定确切的字节布局：牌、规则集、动作、状态，以及
+   承诺原像。*做法：* 定宽整数、明确的字节序、长度前缀的
+   变长字段、规范字段顺序、无浮点。通过运行一段小脚本提供一个**计算得出**的示例
+   （序列化一个样例 `Ruleset`，展示字节及由此得到的 `rulesetHash`）
+   ——不要手写该哈希。
+2. **§19.C 脚本字节排布 + 公平博弈测量（REQ-CRYPTO-009）+ 每手牌成本
+   封套（RT-01 m2）。** *做法：*（a）抄录 GB2616862 公平博弈 锁定/解锁
+   脚本（专利第 55–72 页），为已发布的
+   **3 元素 / 2 方**情形清点操作码和 pushdata 字节以得到真实基准大小；（b）推导
+   52 张牌 × N 方的扩展公式，并决定单脚本 vs **每张牌 / 每批次**公平博弈
+   交易；（c）通过清点 §19.E 中发出交易的状态转移，为单挑 Hold'em 构建
+   **每手牌交易计数封套**（出资、承诺、
+   发牌、每条街揭示、每次行动下注、弃牌/结算、公平博弈）——此计数
+   现已可结构化推导；**字节大小**在构建将其
+   通过真实解释器运行之前仍为 `TRACKED ASSUMPTION`。**不要**在没有那个数字时声称公平博弈"能扩展"。
+3. **剩余的 §19.D 边界情形向量。** 平局/奇数筹码分配；同时 all-in 级别
+   坍缩为单一边池层；边池中已弃牌但有出资的玩家（链接到
+   §19.B）；Omaha-8 恰为 8 高时的合格低牌。*做法：* 扩展 `/home/claude/eval.py`，
+   运行它，嵌入已验证的输出。绝不断言这些。
+4. **完整的多路（3–9 座）转移表**，针对 Hold'em（推广 §19.E）及
+   各变体（推广 §7.3）：多玩家下的回合结束、盲注/庄家按钮轮转、
+   SETTLE 状态下的多路边池结算。
+5. **§15.10 完整类型签名、错误枚举、规范序列化规则**，针对每个 SDK
+   契约（§15.1–§15.9）。
+6. **m4 / m5 了结：** 一旦 §12.3 争议重放确定，重新审查洗牌阶段承诺的承载（OP_RETURN vs pushdata）；
+   扫描所有"trustless"/"non-custodial"的措辞用法，
+   使其受 §18.6 约束。
+7. **解决两项 `DECISION REQUIRED`——需要读取 `cardtable` 的实际代码。**
+   （a）揭示令牌构造（§4.6；首选候选：共识时间戳化的
+   一次性 ECDH 令牌，绑定到 `(gid,j,position,height,recipient-ephemeral-key)`）；（b）
+   Mode-B 签名构造（§6.7；候选：经 `OB.custody` 的无荷官门限 ECDSA）。
+   *做法：* 让 Claude Code 克隆 `cardtable`；阅读其 揭示/发牌/签名 API；将两者修定到
+   真实 API；然后针对*已修定*的构造在密码学核心上**触发红队评审 02**
+   （RT-01 文件命名了此触发器）。其间 Mode A 保持 Phase 0/1
+   不被阻断。
 
 ---
 
-## 7. Operational checklist (apply every pass)
+## 6. 待定决策（已取默认值以免阻断构建；委托人可推翻）
 
-- Before adding any vector/number: **compute it** (run code) or mark `TRACKED ASSUMPTION`.
-- Before claiming any script is correct: it must be specified to pass the **real interpreter
-  with Genesis rules**; negative cases fail **inside** the interpreter.
-- After each pass: update the **§20.x changelog**; keep the **§19.F register count** in sync
-  with the unique `REQ-*` count (a mismatch is a defect — there was one, now fixed); re-run
-  `eval.py` consistency checks if vectors changed; report the **honest line count** (do not
-  claim completeness you don't have).
-- Maintain internal consistency: if you change a claim, grep for every place it appears and
-  fix all of them (B1 lived in five places).
-- Keep the document **BSV-only**; no CLTV/CSV for timing; no BTC anything.
-- Do not apologize; do not pad; do not second-guess the principal's stated facts.
-
----
-
-## 8. Definition of done (when the spec is complete)
-
-The specification is complete when: every section is filled (no `[EXPAND]` / `OWED`); every
-`REQ-*` is registered with an intended owning module and test family and is traceable; every
-vector/number is generated and reproducible (`reproduce` green); the per-hand cost and the
-fair-play size are measured (or carry an explicit, justified `TRACKED ASSUMPTION` pending the
-build's interpreter run); the two `DECISION REQUIRED` constructions are fixed against
-`cardtable`'s real API; **Red-Team Review 02** has re-checked the cryptographic core against
-the fixed constructions; and — the practical test — **Claude Code can build Phase 0 and Phase
-1 from the spec without asking a further design question.** The full 10k–50k-line target is
-reached by completing §19.A, §19.C, the remaining §19.D vectors, the multi-way tables, and
-§15.10 to the same standard, without padding.
+`D1` 首个游戏 = 单挑 NL 德州扑克（regtest）。`D2` 座位 2–9（P1 固定为 2；6-max 于 P3；
+9-max 于 P4）。`D3` 先做无限注；PL/FL 置于同一接口之后。`D4` 发现 = 托管 relay +
+P1 的 LAN 自动发现；P5 的互联网 P2P/NAT。`D5` "FULL VM" = 可复现的
+自包含镜像（容器 + 可选 VM 镜像），捆绑 node+relay+客户端，无外部
+服务。`D6` 复用 `bonded-subsat-channel` 的嵌入式节点作为本地链后端。`D7`
+Blackjack 延后（无荷官 blackjack ≠ 对称的扑克洗牌）。`D8` 早期阶段游戏币 / 无
+外部价值。`D9` 签名 Phase 1 默认 **Mode A**，Mode B 为升级项。
+最值得与委托人确认的事项：`D1`（首个游戏）、`D5`（"VM"是否也指
+字面意义上的 hypervisor 镜像？）、`D9`（Mode A vs Mode B），以及是否希望按所给顺序
+要 Hold'em 之外的变体集合。
 
 ---
 
-## 9. Immediate next action (what the continuing author should do first)
+## 7. 操作清单（每一轮均适用）
 
-Start with **§19.A canonical serialization** (it unblocks nothing else's *correctness* but is
-the foundation everything binds to, and it is fully specifiable now with a computed example),
-then **§19.C** (transaction-count envelope now, fair-play byte measurement from the patent
-script, byte sizes marked pending the interpreter), then the **remaining §19.D edge-case
-vectors** via `eval.py`. The continuation that accompanies this handover begins §19.A.
+- 添加任何向量/数字之前：**计算它**（运行代码）或标注 `TRACKED ASSUMPTION`。
+- 声称任何脚本正确之前：它必须被规定为可通过**带 Genesis 规则的真实解释器**；
+  负向情形在解释器**内部**失败。
+- 每一轮之后：更新 **§20.x 变更日志**；保持 **§19.F 登记册计数**与
+  唯一 `REQ-*` 计数同步（不匹配即为缺陷——曾有一处，现已修复）；若向量变更则重新运行
+  `eval.py` 一致性检查；汇报**诚实的行数**（不要
+  声称你并不具备的完整性）。
+- 维持内部一致性：若你更改一项声称，grep 出它出现的每一处并
+  全部修复（B1 曾存在于五处）。
+- 保持文档**仅限 BSV**；不用 CLTV/CSV 计时；不涉任何 BTC。
+- 不致歉；不灌水；不质疑委托人陈述的事实。
+
+---
+
+## 8. 完成的定义（规范何时算完成）
+
+规范在以下情况下算完成：每个章节都已填满（无 `[EXPAND]` / `OWED`）；每个
+`REQ-*` 都已登记，附其预期归属模块与测试族，且可追溯；每个
+向量/数字都已生成且可复现（`reproduce` 绿）；每手牌成本和
+公平博弈大小已测量（或带有明确、有理据的 `TRACKED ASSUMPTION`，待
+构建的解释器运行）；两处 `DECISION REQUIRED` 构造已针对
+`cardtable` 的真实 API 修定；**红队评审 02** 已针对已修定的构造重新核查
+密码学核心；并且——实务检验——**Claude Code 能从规范构建 Phase 0 和 Phase
+1，无需再问一个设计问题。** 完整的 1 万至 5 万行目标通过
+按同一标准完成 §19.A、§19.C、剩余的 §19.D 向量、多路表，以及
+§15.10 达成，且不灌水。
+
+---
+
+## 9. 即刻的下一项行动（接续作者应首先做什么）
+
+从 **§19.A 规范序列化**开始（它不解除其他任何东西的*正确性*阻塞，但它是
+一切所绑定的基础，且现在即可用计算示例完整规范化），
+然后做 **§19.C**（现在做交易计数封套，从专利脚本做公平博弈字节测量，
+字节大小标注为待解释器确认），然后通过 `eval.py` 做**剩余的 §19.D 边界情形
+向量**。随本交接附带的续篇从 §19.A 开始。

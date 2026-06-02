@@ -1,7 +1,7 @@
 /**
- * Omaha module tests — core §7.3.1, REQ-FSM-006 / REQ-POKER-005. Uses the §19.D Omaha vector
- * board `As Ks Qs 2s 7d` to prove the 2+3 constraint picks a DIFFERENT winner than naive
- * best-of-7, plus 4-hole deal, determinism, and fold-without-reveal.
+ * 奥马哈模块测试 —— 核心 §7.3.1,REQ-FSM-006 / REQ-POKER-005。使用 §19.D 奥马哈向量
+ * 公共牌 `As Ks Qs 2s 7d` 来证明 2+3 约束选出的赢家与朴素的
+ * best-of-7 不同,外加 4 张底牌发牌、确定性和弃牌不揭示。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,17 +29,17 @@ const seats = [
   { seat: 1, stack: 100 },
 ];
 
-// Deal order (button-first, 4 rounds): seat0 = deck[0,2,4,6]; seat1 = deck[1,3,5,7];
-// board = deck[8..12] = As Ks Qs 2s 7d (the §19.D Omaha vector board).
-//   seat0 hole = Js 9h 4c 3d  → Omaha best = high card A K Q J 9 (Js 9h | As Ks Qs)
-//   seat1 hole = 8c 8d 5c 5d  → Omaha best = two pair 8s & 5s with A board kicker (much worse?)
-// Actually seat1 with 8c8d makes pair eights + board; let's verify seat0 (high card) loses or
-// wins via the evaluators directly below — the asserted winner is whatever the oracle says.
+// 发牌顺序(从庄家开始,4 轮):seat0 = deck[0,2,4,6];seat1 = deck[1,3,5,7];
+// 公共牌 = deck[8..12] = As Ks Qs 2s 7d(§19.D 奥马哈向量公共牌)。
+//   seat0 底牌 = Js 9h 4c 3d  → 奥马哈最佳 = 高牌 A K Q J 9(Js 9h | As Ks Qs)
+//   seat1 底牌 = 8c 8d 5c 5d  → 奥马哈最佳 = 两对 8 与 5,带 A 公共牌踢脚(差很多?)
+// 实际上 seat1 用 8c8d 凑成一对 8 + 公共牌;让我们直接通过下方的求值器验证 seat0(高牌)是输
+// 还是赢 —— 断言的赢家以参考实现(oracle)的结果为准。
 function omahaDeck(): Card[] {
   const s0 = ['Js', '9h', '4c', '3d'].map(parseCard);
   const s1 = ['8c', '8d', '5c', '5d'].map(parseCard);
   const board = ['As', 'Ks', 'Qs', '2s', '7d'].map(parseCard);
-  // interleave hole cards in deal order
+  // 按发牌顺序交错排列底牌
   const head: Card[] = [];
   for (let k = 0; k < 4; k++) {
     head.push(s0[k]!);
@@ -66,39 +66,39 @@ test('Omaha 2+3 constraint: showdown winner DIFFERS from naive best-of-7 (§19.D
   const h0 = ['Js', '9h', '4c', '3d'].map(parseCard);
   const h1 = ['8c', '8d', '5c', '5d'].map(parseCard);
 
-  // Naive best-of-7 (Hold'em-style, all 4 hole + board) gives seat0 a spade FLUSH.
+  // 朴素的 best-of-7(德州扑克风格,全部 4 张底牌 + 公共牌)给 seat0 一手黑桃同花。
   const naive0 = bestHigh([...h0, ...board]).value;
-  assert.equal(naive0.category, 5); // flush — the WRONG answer for Omaha (§19.D)
+  assert.equal(naive0.category, 5); // 同花 —— 对奥马哈来说是错误答案(§19.D)
 
-  // Correct Omaha (exactly 2 hole + 3 board) gives seat0 only high card A-K-Q-J-9.
+  // 正确的奥马哈(恰好 2 张底牌 + 3 张公共牌)只给 seat0 一手高牌 A-K-Q-J-9。
   const omaha0 = bestOmaha(h0, board).value;
   const omaha1 = bestOmaha(h1, board).value;
-  assert.equal(omaha0.category, 0); // high card — no flush possible (one spade in hand)
+  assert.equal(omaha0.category, 0); // 高牌 —— 无法成同花(手中只有一张黑桃)
 
-  // Now play the hand through the module and confirm the module uses the Omaha evaluator.
+  // 现在让这手牌走完整个模块,确认模块使用的是奥马哈求值器。
   const m = createOmaha({ deck: omahaDeck() });
   let s: OmahaState = m.init(PLO, seats);
   const play: Action[] = [
     { kind: 'call', seat: 0, amount: 1 },
     { kind: 'check', seat: 1, amount: 0 },
-    { kind: 'check', seat: 1, amount: 0 }, // flop
+    { kind: 'check', seat: 1, amount: 0 }, // 翻牌
     { kind: 'check', seat: 0, amount: 0 },
-    { kind: 'check', seat: 1, amount: 0 }, // turn
+    { kind: 'check', seat: 1, amount: 0 }, // 转牌
     { kind: 'check', seat: 0, amount: 0 },
-    { kind: 'check', seat: 1, amount: 0 }, // river
+    { kind: 'check', seat: 1, amount: 0 }, // 河牌
     { kind: 'check', seat: 0, amount: 0 },
   ];
   for (const a of play) s = m.apply(s, a);
   assert.equal(s.phase, PHASES.HAND_END);
   assert.equal(s.board.length, 5);
 
-  // The module-decided winner must match the Omaha (2+3) comparison, NOT the naive one.
+  // 模块判定的赢家必须与奥马哈(2+3)比较一致,而不是朴素的那个。
   const omahaWinner = compareHigh(omaha0, omaha1) > 0 ? 0 : 1;
   const naive1 = bestHigh([...h1, ...board]).value;
   const naiveWinner = compareHigh(naive0, naive1) > 0 ? 0 : 1;
   const payoutWinner = s.payouts.find((p) => p.amount > 0)!.seat;
   assert.equal(payoutWinner, omahaWinner);
-  // Sanity: the two regimes pick different winners here (the whole point of §19.D).
+  // 合理性检查:两种规则在此选出不同的赢家(这正是 §19.D 的核心要点)。
   assert.notEqual(omahaWinner, naiveWinner);
 });
 

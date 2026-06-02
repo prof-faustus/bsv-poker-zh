@@ -1,13 +1,13 @@
 /**
- * On-chain E2E against the REAL embedded BSV regtest node (core D6 / §10.2, REQ-DEP-004).
- * Starts the `bonded-subsat-channel` node daemon (the prof-faustus reference node), then drives
- * it from the platform's real node adapter: ping → height → mine blocks → height increments.
- * This proves the platform's chain backend binds to the real node (not a fake), on regtest.
+ * 针对真实嵌入式 BSV regtest 节点的链上 E2E（core D6 / §10.2, REQ-DEP-004）。
+ * 启动 `bonded-subsat-channel` 节点守护进程（prof-faustus 参考节点），然后从
+ * 平台的真实节点适配器驱动它：ping → height → 挖区块 → height 递增。
+ * 这证明平台的链后端绑定到真实节点（而非 fake），在 regtest 上。
  *
- * The node is run on the host (regtest only); the daemon is started here and stopped at the end
- * (never left as a zombie; never a reboot).
+ * 节点在宿主机上运行（仅 regtest）；守护进程在此启动并在结束时停止
+ * （绝不留作僵尸进程；绝不重启）。
  *
- * Override the node repo location with BSV_NODE_DIR; default is the known checkout.
+ * 用 BSV_NODE_DIR 覆盖节点仓库位置；默认为已知的 checkout。
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -21,7 +21,7 @@ const PORT = Number(process.env.BSV_NODE_PORT ?? 8744);
 let daemon: ChildProcess | null = null;
 
 function startDaemon(): ChildProcess {
-  // python -m channel.cli daemon-start --port PORT --db :memory:  (PYTHONPATH=src)
+  // python -m channel.cli daemon-start --port PORT --db :memory:  （PYTHONPATH=src）
   const child = spawn(
     'python',
     ['-m', 'channel.cli', 'daemon-start', '--port', String(PORT), '--db', ':memory:'],
@@ -36,7 +36,7 @@ async function waitForNode(node: RealBsvNode, timeoutMs: number): Promise<void> 
     try {
       if (await node.ping()) return;
     } catch {
-      /* not up yet */
+      /* 尚未启动 */
     }
     if (Date.now() > deadline) throw new Error('real node did not come up');
     await new Promise((r) => setTimeout(r, 400));
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     const h0 = await node.height();
     console.log(`[node-e2e] initial height = ${h0}`);
 
-    // The platform derives a payout key and mines two regtest blocks via the REAL node.
+    // 平台派生一个支付密钥，并通过真实节点挖两个 regtest 区块。
     const payout = bytesToHex(genKeyPair().pubCompressed);
     const b1 = await node.generateBlock(payout);
     const b2 = await node.generateBlock(payout);

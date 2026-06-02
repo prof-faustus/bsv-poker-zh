@@ -1,11 +1,11 @@
 /**
- * Variant-generic, multi-seat multiplayer E2E (v3). Proves real players can choose a variant and
- * sit N-handed: runs a 3-handed Texas Hold'em and a 2-handed Omaha over the relay through the
- * lobby + interactive client, asserting all players converge byte-for-byte (REQ-TEST-002).
+ * 变体通用、多座位的多人 E2E（v3）。证明真实玩家可以选择一种变体并
+ * N 人就座：通过大厅 + 交互式客户端在中继上运行一局 3 人德州扑克和一局 2 人奥马哈，
+ * 断言所有玩家逐字节收敛一致（REQ-TEST-002）。
  *
- * (Hold'em/Omaha use the check/bet/call/raise/fold action set, so a passive auto-strategy drives
- * them headlessly. Stud/Razz/Draw add bring-in/draw actions that a human supplies in the UI; their
- * engines are covered by the module unit tests — this harness proves the networked generic path.)
+ * （Hold'em/Omaha 使用 check/bet/call/raise/fold 的动作集，因此一个被动的自动策略可以无头地
+ * 驱动它们。Stud/Razz/Draw 增加了 bring-in/draw 动作，需由人类在 UI 中提供；它们的
+ * 引擎由模块单元测试覆盖——本测试套件证明的是联网的通用路径。）
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -38,7 +38,7 @@ async function waitHealthy(url: string, timeoutMs: number): Promise<void> {
     try {
       if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) return;
     } catch {
-      /* not up */
+      /* 尚未启动 */
     }
     if (Date.now() > deadline) throw new Error(`not healthy: ${url}`);
     await new Promise((r) => setTimeout(r, 400));
@@ -49,7 +49,7 @@ function cleanup(): void {
     try {
       c.kill();
     } catch {
-      /* ignore */
+      /* 忽略 */
     }
   }
 }
@@ -101,11 +101,11 @@ async function main(): Promise<void> {
   await waitHealthy('http://127.0.0.1:8091/healthz', 30000);
 
   const base = 'http://127.0.0.1:8091';
-  await scenario(base, 'holdem', 3); // multi-seat (3-handed)
-  await scenario(base, 'omaha', 2); // 4 hole cards, 2+3
-  await scenario(base, 'stud', 2); // ante + bring-in, up/down cards
-  await scenario(base, 'draw', 2); // discard + redraw
-  await scenario(base, 'razz', 2); // ace-to-five low
+  await scenario(base, 'holdem', 3); // 多座位（3 人）
+  await scenario(base, 'omaha', 2); // 4 张底牌，2+3
+  await scenario(base, 'stud', 2); // ante + bring-in，明牌/暗牌
+  await scenario(base, 'draw', 2); // 弃牌 + 重抽
+  await scenario(base, 'razz', 2); // ace-to-five 低牌
 
   console.log('\n[multi-e2e] PASS — ALL FIVE variants play multiplayer over the relay (incl. 3-handed).');
 }

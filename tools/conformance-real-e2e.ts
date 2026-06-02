@@ -1,8 +1,8 @@
 /**
- * Conformance-against-real E2E (REQ-DEP-003, RT-02 F2). The SAME contract conformance suite that
- * the fakes pass (packages/adapters/test/conformance.test.ts) is run here against the REAL
- * verifiable-accounting adapter — proving the real implementation satisfies the same invariants
- * (INV-VA-2 boundary + Merkle inclusion/tamper-rejection), not just a conformant fake.
+ * 针对真实实现的一致性 E2E（REQ-DEP-003, RT-02 F2）。fakes 通过的那套相同契约一致性测试
+ * 套件（packages/adapters/test/conformance.test.ts）在此针对真实的
+ * verifiable-accounting 适配器运行——证明真实实现满足相同的不变量
+ * （INV-VA-2 边界 + Merkle 包含/篡改拒绝），而不仅仅是一个符合一致性的 fake。
  */
 
 import { runVAConformance } from '@bsv-poker/adapters/conformance';

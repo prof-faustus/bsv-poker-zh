@@ -1,136 +1,64 @@
-# Red-Team Review 02 — the *implementation* (`bsv-poker`)
+# 红队评审 02 ——*实现*（`bsv-poker`）
 
-**Scope.** Red-Team Review 01 (`spec/bsv-poker-spec-redteam-01.md`) audited the *specification*. This
-pass audits the **built system** on `master`: does the implementation actually close RT-01's
-findings, and what new risks does the running code introduce? Every claim below cites the satisfying
-source + a **passing test** (run via `node tools/ci.ts`: 151 TS + 16 Go) or a host-local E2E.
+**范围。** 红队评审 01（`spec/bsv-poker-spec-redteam-01.md`）审计了*规范*。本轮审计 `master` 上的**已构建系统**：实现是否真正闭合了 RT-01 的发现，运行中的代码又引入了哪些新风险？下文每一条主张都引用了满足它的源码 + 一个**通过的测试**（经由 `node tools/ci.ts` 运行：151 个 TS + 16 个 Go）或一个主机本地的端到端测试。
 
-**Method.** Adversarial behaviours are exercised in `packages/sdk/test/adversarial.test.ts` and the
-on-chain / dependency E2Es (`tools/onchain-*-e2e.ts`, `tools/va-bind-e2e.ts`, `tools/ob-bind-e2e.ts`).
-Negative cases must fail **inside the real Script interpreter**, not in a wrapper.
+**方法。** 对抗性行为在 `packages/sdk/test/adversarial.test.ts` 以及链上/依赖端到端测试（`tools/onchain-*-e2e.ts`、`tools/va-bind-e2e.ts`、`tools/ob-bind-e2e.ts`）中被实施。否定性用例必须在**真实的 Script 解释器内部**失败，而非在某个包装层中。
 
 ---
 
-## Disposition of RT-01 findings
+## RT-01 发现的处置
 
-### B1 — "combined private key never reconstructed in one place" vs the GB2616862 mechanism
-**Status: MITIGATED (Mode A); Mode B key-setup REAL, online signing OUTSTANDING.**
-- Mode A (`reconstruct-at-reveal`) does transiently reconstruct the per-hand scalar:
-  `packages/wallet-custody/src/custody.ts` `reconstructAndSign` — covered by
-  `packages/wallet-custody/test/custody.test.ts` ("Mode A reconstructAndSign sums scalars and
-  produces a valid signature"). The build is **honest about this**: software custody **refuses**
-  `combineSignShare`, so it cannot falsely claim Mode B (same test file).
-- The Mode B mitigation (no party ever holds the whole key) now has a **real** key source: the
-  `overlay-broadcast` threshold custody generates the t-of-n group key
-  (`packages/adapters/src/real-ob.ts`, `tools/ob-bind-e2e.ts` — 2/3, 3/5, 6/9 on-curve group keys;
-  no whole-key reconstruction).
-- **Residual risk:** the *online* t-of-n signing protocol that emits a single signature under the
-  group key is not yet wired (OB does not expose signing via its CLI). Until then, settlement that
-  must avoid any reconstruction relies on the **N-of-N CHECKMULTISIG** funding path (each player
-  signs with their own key, never shared) — proven on-chain in `tools/onchain-poker-e2e.ts`. This is
-  a security-equivalent avoidance of reconstruction for the pot, but not the single-signature Mode B.
+### B1 ——"组合私钥从不在单一位置被重构" vs GB2616862 机制
+**状态：已缓解（模式 A）；模式 B 密钥建立为真实，在线签名尚未完成。**
+- 模式 A（`reconstruct-at-reveal`）确实会瞬态地重构每手牌的标量：`packages/wallet-custody/src/custody.ts` 的 `reconstructAndSign`——由 `packages/wallet-custody/test/custody.test.ts`（"Mode A reconstructAndSign sums scalars and produces a valid signature"）覆盖。该构建对此**诚实以告**：软件托管**拒绝** `combineSignShare`，因此它无法虚假地声称具备模式 B（同一测试文件）。
+- 模式 B 的缓解措施（任何一方都从不持有完整密钥）现在有了一个**真实的**密钥来源：`overlay-broadcast` 门限托管生成 t-of-n 群密钥（`packages/adapters/src/real-ob.ts`、`tools/ob-bind-e2e.ts`——2/3、3/5、6/9 曲线上群密钥；无完整密钥重构）。
+- **残余风险：** 在群密钥下发出单一签名的*在线* t-of-n 签名协议尚未接入（OB 未通过其 CLI 暴露签名功能）。在此之前，必须避免任何重构的结算依赖于 **N-of-N CHECKMULTISIG** 资金路径（每个玩家用自己的密钥签名，从不共享）——已在 `tools/onchain-poker-e2e.ts` 中链上证明。这对底池而言是一种安全等价的、避免重构的方式，但不是单签名的模式 B。
 
-### B2 — "selection = spending the UTXO" vs dealing to positions
-**Status: RESOLVED.** Dealing is an explicit position→card map, not "spend = deal":
-`packages/app-services/src/mp-shuffle.ts` (`deckFromEntropies` composes each player's secret
-permutation) feeds the per-variant position deal in the game modules; `packages/sdk/test/table.test.ts`
-("runHand wires entropy/shuffle/deal/betting/settlement into one hand") exercises the full mapping,
-and card-substitution at reveal **fails inside the interpreter**
-(`packages/sdk/test/adversarial.test.ts`, "card-substitution at reveal fails INSIDE the interpreter").
+### B2 ——"选择 = 花费 UTXO" vs 向座位发牌
+**状态：已解决。** 发牌是一个显式的 位置→牌 映射，而非"花费 = 发牌"：`packages/app-services/src/mp-shuffle.ts`（`deckFromEntropies` 组合每个玩家的秘密置换）馈入游戏模块中按变体的位置发牌；`packages/sdk/test/table.test.ts`（"runHand wires entropy/shuffle/deal/betting/settlement into one hand"）实施了完整映射，且揭示时的换牌**在解释器内部失败**（`packages/sdk/test/adversarial.test.ts`，"card-substitution at reveal fails INSIDE the interpreter"）。
 
-### M1 — determinism overstated before confirmation
-**Status: RESOLVED, honestly.** Post-confirmation determinism: transcript replays to **byte-identical**
-state (`table.test.ts` "deriveState replays the transcript to byte-identical state"). Pre-confirmation
-non-determinism is handled by the **nSequence original-replacement rule**, demonstrated on-chain
-(`tools/onchain-recovery-e2e.ts`: a higher-sequence cooperative spend supersedes the broadcast
-timeout-default). No claim of pre-confirmation finality is made.
+### M1 —— 确认前确定性被夸大
+**状态：已解决，且诚实。** 确认后确定性：转录回放至**逐字节相同**的状态（`table.test.ts` "deriveState replays the transcript to byte-identical state"）。确认前的非确定性由 **nSequence 原始替换规则**处理，并已链上演示（`tools/onchain-recovery-e2e.ts`：一个更高序列号的协作式花费取代已广播的超时默认值）。未做出任何关于确认前终局性的主张。
 
-### M2 — board reveals are N-of-N cooperative ops with a liveness failure mode
-**Status: RESOLVED.** Liveness is guaranteed by the **pre-signed fallback graph**
-(`packages/tx-builder/src/fallback.ts`, `presignFallbackGraph`) + the decision/recovery timeout
-layers; `packages/tx-builder/test/fallback.test.ts` verifies the pre-signed refund validates inside
-the interpreter and is value-conserving, and `adversarial.test.ts` ("timeout-default applied keeps
-the hand progressing (no freeze, P4)") confirms no freeze. The two-exit mechanism is real on-chain
-(M1 evidence).
+### M2 —— 公共牌揭示是带活性失效模式的 N-of-N 协作操作
+**状态：已解决。** 活性由**预签名回退图**（`packages/tx-builder/src/fallback.ts`、`presignFallbackGraph`）+ 决策/恢复超时层来保证；`packages/tx-builder/test/fallback.test.ts` 验证预签名退款在解释器内部通过验证且价值守恒，`adversarial.test.ts`（"timeout-default applied keeps the hand progressing (no freeze, P4)"）确认无冻结。该双出口机制在链上是真实的（M1 证据）。
 
-### M3 — fair-play scaling to 52 cards assumed, not measured
-**Status: MITIGATED.** The in-script EC fair-play proof is implemented and **byte-measured**
-(`packages/script-templates-ts/src/templates.ts` `fairPlayEcLocking`, with wire-byte vectors in
-`packages/script-templates-ts/test/templates.test.ts`; ~231 B/card). Hot-path cost is now measured
-(`tools/perf-suite.ts`). **Residual:** a full 52-card deck end-to-end fair-play timing/cost profile is
-not yet published as a single vector.
+### M3 —— 公平博弈扩展至 52 张牌为假设，未经度量
+**状态：已缓解。** 脚本内的 EC 公平博弈证明已实现并**逐字节度量**（`packages/script-templates-ts/src/templates.ts` 的 `fairPlayEcLocking`，连同 `packages/script-templates-ts/test/templates.test.ts` 中的线格式字节向量；约 231 B/牌）。热路径成本现已度量（`tools/perf-suite.ts`）。**残余：** 完整 52 张牌牌组端到端的公平博弈时延/成本剖面尚未作为单一向量发布。
 
-### M4 — fakes can hide protocol-security bugs; bind fakes to real implementations
-**Status: MOSTLY RESOLVED.** Security-critical behaviours now run against **real** implementations:
-real CT crypto (`packages/crypto-mentalpoker`), real BSV node (`@bsv-poker/adapters/real-node`,
-`tools/onchain-*-e2e.ts`), real VA Merkle (`@bsv-poker/adapters/real-va`, `tools/va-bind-e2e.ts`),
-real OB threshold custody (`@bsv-poker/adapters/real-ob`, `tools/ob-bind-e2e.ts`). The *single*
-conformance suite now runs identically against the fake **and the real VA adapter**
-(`tools/conformance-real-e2e.ts` runs `runVAConformance(realVAContract())` — same suite, real
-`@vaa/merkle`). **Residual (REQ-DEP-003):** OB's contract methods (`isRevoked(height)`,
-`thresholdSplit` of a supplied secret) are not exposed by its CLI, so OB conformance-vs-real is not
-yet wired; CT (`cardtable`) is absent on disk.
+### M4 —— 伪造件可能掩盖协议安全缺陷；将伪造件绑定至真实实现
+**状态：基本已解决。** 安全关键行为现在针对**真实**实现运行：真实 CT 加密（`packages/crypto-mentalpoker`）、真实 BSV 节点（`@bsv-poker/adapters/real-node`、`tools/onchain-*-e2e.ts`）、真实 VA Merkle（`@bsv-poker/adapters/real-va`、`tools/va-bind-e2e.ts`）、真实 OB 门限托管（`@bsv-poker/adapters/real-ob`、`tools/ob-bind-e2e.ts`）。*单一*一致性套件现在针对伪造件**和真实 VA 适配器**运行结果一致（`tools/conformance-real-e2e.ts` 运行 `runVAConformance(realVAContract())`——同一套件，真实的 `@vaa/merkle`）。**残余（REQ-DEP-003）：** OB 的合约方法（`isRevoked(height)`、对所提供秘密的 `thresholdSplit`）未由其 CLI 暴露，因此 OB 的一致性对真实尚未接入；CT（`cardtable`）在磁盘上缺失。
 
-### M5 — Power-of-Ten literal compliance not achievable in a GC'd runtime
-**Status: RESOLVED, honestly.** `docs/adr/0003-*` records the non-literal adaptation; the
-**measurable** part (bounded working memory in the hot path) is now actually measured:
-`tools/perf-suite.ts` runs 200k hot-path evals under `--expose-gc` and asserts ~0 retained heap
-(REQ-APP-092). No false claim of literal NPR-7150.2 compliance.
+### M5 —— 在带 GC 的运行时中无法实现 Power-of-Ten 字面合规
+**状态：已解决，且诚实。** `docs/adr/0003-*` 记录了非字面的适配；其中**可度量**的部分（热路径中有界的工作内存）现已被实际度量：`tools/perf-suite.ts` 在 `--expose-gc` 下运行 20 万次热路径求值并断言约 0 保留堆（REQ-APP-092）。未做出任何关于字面 NPR-7150.2 合规的虚假主张。
 
-### M6 — reveal-token + signing were both `DECISION REQUIRED` (two holes)
-**Status: ONE CLOSED, ONE PARTIAL.** Reveal: commit-reveal binds the value
-(`adversarial.test.ts` "withheld/incorrect entropy reveal is detected by the commitment"). Signing:
-Mode A is implemented + tested; Mode B online signing is the remaining hole (see B1 residual).
+### M6 —— 揭示令牌 + 签名两者均为 `DECISION REQUIRED`（两个缺口）
+**状态：一个已闭合，一个部分完成。** 揭示：承诺-揭示绑定其值（`adversarial.test.ts` "withheld/incorrect entropy reveal is detected by the commitment"）。签名：模式 A 已实现并测试；模式 B 在线签名是剩余的缺口（见 B1 残余）。
 
-### m1–m5 (MINOR)
-- **m1 (participant set per hand):** RESOLVED — lobby + waiting room define the set
-  (`packages/ui-core/src/view-models/network-lobby.ts`, seat-range tests in `table-room-vm.test.ts`).
-- **m2 (on-chain cost model):** PARTIAL — per-tx wire bytes are measurable (real serialization in
-  `packages/tx-builder/src/wire.ts`); a published fee/cost model is outstanding.
-- **m3 (odd-chip rule):** RESOLVED in the engine pot logic (`packages/engine/src/pots.ts`,
-  `pots.test.ts`).
-- **m4 (OP_RETURN vs pushdata / shuffle-stage commitments):** RESOLVED — OP_RETURN is banned in
-  live scripts and rejected by the interpreter; `tools/lint-opreturn.ts` enforces it
-  (REQ-TX-010). Dead-end shuffle-stage commitments may still use it (REQ-TX-009).
-- **m5 (glossary "trustless" hygiene):** documentation-only; reflected in `docs/user-guide.md`.
+### m1–m5（次要）
+- **m1（每手牌的参与者集合）：** 已解决——大厅 + 等候室定义该集合（`packages/ui-core/src/view-models/network-lobby.ts`，`table-room-vm.test.ts` 中的座位范围测试）。
+- **m2（链上成本模型）：** 部分完成——每笔交易的线格式字节可度量（`packages/tx-builder/src/wire.ts` 中的真实序列化）；已发布的手续费/成本模型尚未完成。
+- **m3（奇数筹码规则）：** 在引擎底池逻辑中已解决（`packages/engine/src/pots.ts`、`pots.test.ts`）。
+- **m4（OP_RETURN vs pushdata / 洗牌阶段承诺）：** 已解决——OP_RETURN 在活动脚本中被禁止并被解释器拒绝；`tools/lint-opreturn.ts` 强制执行此规则（REQ-TX-010）。终结性的洗牌阶段承诺仍可使用它（REQ-TX-009）。
+- **m5（术语表"trustless"卫生）：** 仅文档层面；已反映于 `docs/user-guide.md`。
 
 ---
 
-## New findings (from auditing the running system)
+## 新发现（来自审计运行中的系统）
 
-### F1 — Mode B online threshold signing. **CLOSED.**
-Mode B is now implemented end-to-end against the REAL overlay-broadcast GG20 engine: `overlay-broadcast
-custody sign --threshold t --shares n` runs trusted-dealer keygen + a t-of-n threshold sign producing
-a standard DER ECDSA signature under the group key, with the group private key **never reconstructed**
-(additive shares; `crates/custody/gg20`). `tools/mode-b-e2e.ts` proves a 2-of-3 and 3-of-5 threshold
-signature is **accepted by the platform's real Script interpreter `OP_CHECKSIG` under the group key**
-(and a tampered message is rejected) — i.e. a Mode B settlement output is spendable by the quorum
-exactly as a single-key spend, closing the B1/M6 residual. (A full BIP-143-bound on-chain submit with a
-persisted group is the remaining wiring; the cryptographic capability + consensus acceptance are proven.)
+### F1 —— 模式 B 在线门限签名。**已闭合。**
+模式 B 现在针对真实的 overlay-broadcast GG20 引擎端到端实现：`overlay-broadcast custody sign --threshold t --shares n` 运行受信任发牌方密钥生成 + 一次 t-of-n 门限签名，在群密钥下产出一个标准 DER ECDSA 签名，且群私钥**从不重构**（加性份额；`crates/custody/gg20`）。`tools/mode-b-e2e.ts` 证明一个 2-of-3 和 3-of-5 门限签名**在群密钥下被平台真实的 Script 解释器 `OP_CHECKSIG` 接受**（且被篡改的消息被拒绝）——即一个模式 B 结算输出可由法定人数花费，与单密钥花费完全一致，从而闭合 B1/M6 残余。（一个绑定 BIP-143 的完整链上提交连同持久化的群组是剩余的接入工作；密码学能力 + 共识接受已被证明。）
 
-### F2 — Conformance-against-real is partial (REQ-DEP-003). **MAJOR → reduced to MINOR.**
-The identical conformance suite now passes against the **real VA** adapter
-(`tools/conformance-real-e2e.ts`). Remaining: **OB** (its CLI doesn't expose the contract's
-`isRevoked(height)` / `thresholdSplit(secret)` — needs the OB library/daemon, not the CLI) and
-**CT** (`cardtable` absent on disk). *Action:* bind OB's library for `thresholdSplit`/revocation and
-gate CT when the repo is present.
+### F2 —— 一致性对真实仅部分完成（REQ-DEP-003）。**MAJOR → 降为 MINOR。**
+相同的一致性套件现在针对**真实 VA** 适配器通过（`tools/conformance-real-e2e.ts`）。剩余：**OB**（其 CLI 不暴露合约的 `isRevoked(height)` / `thresholdSplit(secret)`——需要 OB 库/守护进程，而非 CLI）和 **CT**（`cardtable` 在磁盘上缺失）。*行动：* 绑定 OB 的库以提供 `thresholdSplit`/撤销，并在仓库存在时启用 CT 门禁。
 
-### F3 — Mainnet safety relies on the regtest default, not a hard gate. **MAJOR (pre-mainnet).**
-The node defaults to regtest and the build is research-only, but there is no signed-binary chain of
-trust (installers are unsigned) and no explicit, tested mainnet-enable flag with a confirmation gate
-(REQ-PROD-012 is traced for the banner; the *flag* path needs a test). *Action:* code-sign the
-MSI/NSIS, add a tested `--network=main` gate behind explicit acknowledgement before any mainnet use.
+### F3 —— mainnet 安全依赖 regtest 默认值，而非硬门禁。**MAJOR（mainnet 前）。**
+节点默认 regtest 且该构建仅供研究，但不存在已签名二进制的信任链（安装包未签名），也没有显式的、经测试的、带确认门禁的 mainnet 启用标志（REQ-PROD-012 已为横幅追溯；*标志*路径需要一个测试）。*行动：* 对 MSI/NSIS 进行代码签名，在任何 mainnet 使用之前于显式确认背后加入一个经测试的 `--network=main` 门禁。
 
-### F4 — Replacement-rule reliance assumes miner policy. **MINOR.**
-On-chain recovery (M1/M2) depends on the node honouring the original nSequence replacement rule. The
-embedded node does; a mainnet miner's policy may differ. *Action:* document the assumption and add a
-pre-signed-graph fallback that does not depend on replacement (already partly covered by F-graph).
+### F4 —— 替换规则的依赖假设了矿工策略。**MINOR。**
+链上恢复（M1/M2）依赖于节点遵守原始 nSequence 替换规则。嵌入式节点遵守它；某个 mainnet 矿工的策略可能不同。*行动：* 记录该假设，并加入一条不依赖替换规则的预签名图回退（已部分由 F-graph 覆盖）。
 
 ---
 
-## Verdict
-RT-01's two BLOCKERS are **resolved (B2) and mitigated with an honest residual (B1)**; the MAJORs are
-resolved or mitigated with named residuals. The system does not ship a security claim it cannot back
-with a passing test. **The remaining security-relevant work is F1 (Mode B online signing), F2
-(conformance-vs-real for VA/OB + CT), and F3 (mainnet hardening + code-signing)** — none of which
-block research/regtest play, all of which gate a mainnet deployment.
+## 结论
+RT-01 的两个 BLOCKER 已**解决（B2）并以诚实的残余加以缓解（B1）**；各 MAJOR 已解决或在指明残余的情况下缓解。系统不会交付任何无法以通过的测试支撑的安全主张。**剩余的安全相关工作是 F1（模式 B 在线签名）、F2（VA/OB + CT 的一致性对真实）和 F3（mainnet 加固 + 代码签名）**——其中没有一项会阻碍 research/regtest 对局，但全部都是 mainnet 部署的门禁。

@@ -1,10 +1,10 @@
 /**
- * OP_RETURN-absence lint (core P11/§6.5, HANDOVER §3; build rule 2). Fails the build if the
- * OP_RETURN opcode (0x6a) appears in any locking or unlocking script the templates produce.
+ * OP_RETURN 缺失 lint（core P11/§6.5, HANDOVER §3；build rule 2）。如果模板产生的任何
+ * 锁定或解锁脚本中出现 OP_RETURN opcode（0x6a），则使构建失败。
  *
- * Two layers: (1) build every template family with representative data and scan the opcode
- * stream for 0x6a; (2) a source scan of the script/tx packages for a raw `0x6a` opcode push
- * outside the sanctioned definition/rejection sites.
+ * 两层：(1) 用代表性数据构建每个模板族并扫描 opcode
+ * 流中的 0x6a；(2) 对 script/tx 包做源码扫描，查找在被许可的定义/拒绝位置之外的
+ * 裸 `0x6a` opcode 压栈。
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -78,13 +78,13 @@ function sourceScan(root: string): string[] {
     try {
       walk(full, files);
     } catch {
-      continue; // package may not exist yet
+      continue; // 该包可能尚不存在
     }
     for (const f of files) {
-      // opcodes.ts defines OP_RETURN; interpreter.ts/script.ts reject it — those are sanctioned.
+      // opcodes.ts 定义 OP_RETURN；interpreter.ts/script.ts 拒绝它——这些是被许可的。
       if (/(opcodes|interpreter|script)\.ts$/.test(f)) continue;
       const text = readFileSync(f, 'utf8');
-      // flag an OP_RETURN opcode being USED in a script array (heuristic: OP.OP_RETURN reference)
+      // 标记在脚本数组中被使用的 OP_RETURN opcode（启发式：OP.OP_RETURN 引用）
       if (/\bOP\.OP_RETURN\b/.test(text)) findings.push(`${f}: references OP.OP_RETURN as an opcode`);
     }
   }

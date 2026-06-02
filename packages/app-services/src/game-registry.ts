@@ -1,8 +1,8 @@
 /**
- * Browser-safe game registry (app §A21.2) — variant → module factory for ALL FIVE variants.
- * Lets the web client and the networked clients play any variant generically (the SDK's registry
- * pulls node:crypto via crypto-mentalpoker and can't run in the browser; the game modules
- * themselves are browser-safe — they use only protocol-types' portable sha256).
+ * 浏览器安全的游戏注册表（app §A21.2）——为全部五种变体提供 variant → 模块工厂的映射。
+ * 让 web 客户端和网络客户端能够通用地进行任意变体的对战（SDK 的注册表通过
+ * crypto-mentalpoker 引入了 node:crypto，无法在浏览器中运行；而游戏模块本身是
+ * 浏览器安全的——它们只使用 protocol-types 提供的可移植 sha256）。
  */
 
 import type { Card, GameState, Variant } from '@bsv-poker/protocol-types';
@@ -16,8 +16,8 @@ import { createRazz } from '@bsv-poker/game-razz';
 export type GenericGameModule = GameModule<GameState> & { stateHash: (s: GameState) => string };
 
 const FACTORIES: Record<Variant, (deck: readonly Card[], buttonIndex: number) => GenericGameModule> = {
-  // Hold'em rotates the button across hands (§19.E S13); the others take the deck only
-  // (stud/razz use bring-in not a button; draw/omaha default to button 0 here).
+  // Hold'em 在每手牌之间轮转庄家按钮（§19.E S13）；其余变体仅接收牌堆
+  // （stud/razz 使用 bring-in 而非按钮；draw/omaha 在此默认使用按钮 0）。
   holdem: (deck, buttonIndex) => createHoldem({ deck, buttonIndex }) as unknown as GenericGameModule,
   omaha: (deck) => createOmaha({ deck }) as unknown as GenericGameModule,
   stud: (deck) => createStud({ deck }) as unknown as GenericGameModule,
@@ -37,7 +37,7 @@ export function createGameModule(
 
 export const SUPPORTED_VARIANTS: readonly Variant[] = ['holdem', 'omaha', 'stud', 'draw', 'razz'];
 
-/** Display metadata per variant for the lobby UI. */
+/** 供大厅 UI 使用的各变体显示元数据。 */
 export const VARIANT_INFO: Record<
   Variant,
   { readonly label: string; readonly minSeats: number; readonly maxSeats: number; readonly note: string }
@@ -49,23 +49,22 @@ export const VARIANT_INFO: Record<
   razz: { label: 'Razz (ace-to-five low)', minSeats: 2, maxSeats: 8, note: 'lowest hand wins' },
 };
 
-// ---- Reserved (planned) games (REQ-APP-219) ----
+// ---- 预留（计划中）的游戏（REQ-APP-219） ----
 export interface PlannedGameProfile {
   readonly id: string;
   readonly label: string;
   readonly status: 'planned';
   readonly reason: string;
-  /** Variant-profile controls reserved for the UI (no inter-player pot; a dealer area). */
+  /** 为 UI 预留的变体配置控件（无玩家间底池；设有一个荷官区域）。 */
   readonly controls: readonly string[];
   readonly dealerArea: boolean;
   readonly interPlayerPot: boolean;
 }
 
 /**
- * Games the spec REQUIRES but whose protocol model is DECISION REQUIRED — reserved now (registry
- * entry + variant profile + test obligation) without shipping a model the project hasn't specified
- * (P7/P8). Blackjack is dealerless and needs its own concealment/settlement model (core D7); it is
- * NOT smuggled into the poker pipeline.
+ * 规范要求（REQUIRES）但其协议模型尚处于 DECISION REQUIRED 的游戏——现在予以预留（注册表
+ * 条目 + 变体配置 + 测试义务），但不交付任何项目尚未明确指定的模型（P7/P8）。Blackjack 是
+ * 无荷官的，需要它自己的隐藏/结算模型（core D7）；它不会被偷偷塞进扑克流水线中。
  */
 export const PLANNED_GAMES: readonly PlannedGameProfile[] = [
   {
@@ -79,7 +78,7 @@ export const PLANNED_GAMES: readonly PlannedGameProfile[] = [
   },
 ];
 
-/** A planned game cannot be instantiated until its protocol model is fixed — fail-closed (P7/P8). */
+/** 在其协议模型被确定之前，计划中的游戏无法被实例化——fail-closed（P7/P8）。 */
 export function createPlannedGame(id: string): never {
   const g = PLANNED_GAMES.find((p) => p.id === id);
   throw new Error(g ? `${g.label} is reserved but not yet playable: ${g.reason}` : `unknown planned game: ${id}`);

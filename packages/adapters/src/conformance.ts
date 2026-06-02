@@ -1,9 +1,9 @@
 /**
- * The single contract-conformance suite per contract (core §2.6, REQ-DEP-003). Each function
- * is run against BOTH the fake and the real adapter; both MUST pass, so the fake provably
- * matches the real contract and a green run against the fake cannot certify a wrong engine.
+ * 每个契约唯一的一致性测试套件（core §2.6，REQ-DEP-003）。每个函数都同时针对 fake
+ * 与真实适配器运行；两者都必须通过，从而可证明 fake 与真实契约一致，并保证针对 fake 的绿色测试
+ * 不会误判一个错误的引擎为正确。
  *
- * These are implementation-agnostic behavioural checks; they throw on the first violation.
+ * 这些是与实现无关的行为检查；遇到第一处违规即抛出。
  */
 
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import type { BSContract, CTContract, OBContract, VAContract } from './contracts
 const bytes = (...xs: number[]): Uint8Array => Uint8Array.from(xs);
 
 export async function runCTConformance(ct: CTContract): Promise<void> {
-  // entropy commit/reveal binds without disclosing (core §4.1, REQ-CRYPTO-002).
+  // 熵的承诺/揭示在不泄露的前提下完成绑定（core §4.1，REQ-CRYPTO-002）。
   const secret = bytes(1, 2, 3, 4);
   const commitment = await ct.entropyCommit(secret);
   assert.equal(typeof commitment, 'string');
@@ -20,7 +20,7 @@ export async function runCTConformance(ct: CTContract): Promise<void> {
   assert.equal(await ct.entropyReveal(commitment, secret), true, 'correct reveal accepts');
   assert.equal(await ct.entropyReveal(commitment, bytes(9, 9)), false, 'wrong reveal rejects');
 
-  // shuffle produces one combined key per card and a stable order commitment (INV-CT-1).
+  // 洗牌为每张牌产生一个合并密钥，并给出稳定的顺序承诺（INV-CT-1）。
   const input = {
     deckId: 'deck-0',
     partyPubKeys: ['02aa', '03bb'],
@@ -34,7 +34,7 @@ export async function runCTConformance(ct: CTContract): Promise<void> {
   assert.equal(r1.orderCommitment, r2.orderCommitment, 'shuffle is deterministic in its inputs');
   assert.equal(r1.seed, r2.seed);
 
-  // conceal/reveal opening (core §4.5/§4.6).
+  // 隐藏/揭示开启（core §4.5/§4.6）。
   const blind = bytes(5, 6, 7, 8);
   const cmt = await ct.conceal('deck-0', 17, 42, blind);
   assert.equal(await ct.verifyReveal(cmt, 42, blind), true, 'correct opening verifies');
@@ -48,7 +48,7 @@ export async function runBSConformance(bs: BSContract): Promise<void> {
   assert.equal(await bs.nodeOutpointStatus(txid, 0), 'unspent');
   assert.equal(await bs.nodeOutpointStatus('00'.repeat(32), 0), 'unknown');
 
-  // A channel opens with the fixed 1-sat bond (INV-BS-2).
+  // 通道以固定的 1 聪保证金开启（INV-BS-2）。
   const cid = await bs.channelOpen({
     participants: ['02aa', '03bb'],
     granularityK: 1000,
@@ -56,7 +56,7 @@ export async function runBSConformance(bs: BSContract): Promise<void> {
   });
   assert.ok(cid.length > 0);
 
-  // Q* whole-satoshi reconciliation conserves total and writes no fractional output (INV-BS-1).
+  // Q* 整聪对账在守恒总额的同时不写出任何带小数的输出（INV-BS-1）。
   const out = bs.reconcileQstar([1500, 2500, 1000], 1000);
   assert.ok(out.every((x) => Number.isInteger(x)), 'all outputs are whole satoshis');
   assert.equal(
@@ -72,7 +72,7 @@ export async function runVAConformance(va: VAContract): Promise<void> {
   for (let i = 0; i < records.length; i++) {
     const bundle = await va.merkleProve(records, i);
     assert.equal(await va.merkleVerify(bundle), true, `inclusion proof verifies for ${i}`);
-    // tamper → fails
+    // 篡改 → 失败
     const bad = { ...bundle, leaf: bundle.leaf.replace(/^./, (c) => (c === 'a' ? 'b' : 'a')) };
     assert.equal(await va.merkleVerify(bad), false, `tampered leaf fails for ${i}`);
   }
@@ -84,11 +84,11 @@ export async function runOBConformance(ob: OBContract): Promise<void> {
   assert.notEqual(wrapped, key, 'wrapped differs from raw key (never plaintext)');
   assert.equal(await ob.unwrap(wrapped, 'priv'), key, 'unwrap recovers the key');
 
-  // Revocation = unspent expiring output (INV-OB-2).
+  // 撤销 = 未花费的过期输出（INV-OB-2）。
   assert.equal(await ob.isRevoked('sess@100', 50), false, 'not revoked before expiry');
   assert.equal(await ob.isRevoked('sess@100', 150), true, 'revoked after expiry');
 
-  // Threshold split returns n shares.
+  // 门限拆分返回 n 份。
   const shares = await ob.thresholdSplit('00ff', 2, 3);
   assert.equal(shares.length, 3);
   assert.equal(new Set(shares).size, 3, 'shares are distinct');

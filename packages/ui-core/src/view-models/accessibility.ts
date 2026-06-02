@@ -1,7 +1,7 @@
 /**
- * Accessibility labels (REQ-APP-054). Screen-reader / non-visual text for cards, seats, and actions.
- * Card identity is conveyed by RANK + SUIT WORDS — never by colour alone — so the game is fully
- * playable without colour perception (suits "clubs/diamonds/hearts/spades", not red/black).
+ * 无障碍标签（REQ-APP-054）。用于牌、座位和动作的屏幕阅读器 / 非视觉文本。
+ * 牌的身份通过 RANK + SUIT WORDS 表达——绝不仅靠颜色——因此即便无法感知颜色，
+ * 游戏也完全可玩（花色为 "clubs/diamonds/hearts/spades"，而非红/黑）。
  */
 
 import { type Card, cardRank, cardSuit, isCard } from '@bsv-poker/protocol-types';
@@ -9,7 +9,7 @@ import { type Card, cardRank, cardSuit, isCard } from '@bsv-poker/protocol-types
 const RANK_WORDS = ['Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Jack', 'Queen', 'King', 'Ace'];
 const SUIT_WORDS = ['clubs', 'diamonds', 'hearts', 'spades'];
 
-/** e.g. "Ace of spades" — colour-independent spoken text. */
+/** 例如 "Ace of spades" —— 不依赖颜色的朗读文本。 */
 export function accessibleCardLabel(card: Card): string {
   if (!isCard(card)) throw new RangeError(`card out of range: ${card}`);
   return `${RANK_WORDS[cardRank(card)]} of ${SUIT_WORDS[cardSuit(card)]}`;

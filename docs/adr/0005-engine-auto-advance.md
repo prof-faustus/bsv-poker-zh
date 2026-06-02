@@ -1,19 +1,9 @@
-# ADR 0005 — Engine auto-advances cooperative reveal/deal phases
+# ADR 0005 — 引擎自动推进协作式揭示/发牌阶段
 
-**Status:** Accepted
+**状态：** 已接受
 
-**Context.** §19.E models deal/shuffle/board-reveal as distinct committed states, each an N-of-N
-cooperative transition with a timeout-default (core §4.6 M2). In the real protocol each is its own
-transaction. The deterministic engine, however, must be a pure function of (ruleset, deck, betting
-actions) for replay testing (P2) and the UI must not stall waiting on protocol plumbing.
+**背景。** §19.E 将发牌/洗牌/公共牌揭示建模为各自独立的已承诺状态，每一个都是带有超时默认值（核心 §4.6 M2）的 N-of-N 协作式转移。在真实协议中，每一个都是其自身的交易。然而，确定性引擎为满足回放测试（P2）必须是 (ruleset, deck, betting actions) 的纯函数，且 UI 不得因等待协议底层管道而停滞。
 
-**Decision.** The game modules drive **betting actions** explicitly and **auto-advance** the
-non-betting phases (deal, board reveals, showdown, settle) along the cooperative success path.
-The timeout-default for those phases is surfaced via `isTimeoutEligible` (the caller applies it
-only after maturity). When everyone is all-in, betting rounds auto-close and streets cascade to
-showdown.
+**决策。** 游戏模块显式驱动**下注动作**，并沿协作成功路径**自动推进**非下注阶段（发牌、公共牌揭示、摊牌、结算）。这些阶段的超时默认值通过 `isTimeoutEligible` 展示（调用方仅在到期后才应用它）。当所有人都全押时，下注轮自动关闭，各街道级联推进至摊牌。
 
-**Consequences.** The engine stays a clean pure function and replays deterministically. The
-crypto/tx layer (SDK `runHand`) wires the real entropy/shuffle/reveal/settlement transactions
-around this engine; the on-chain N-of-N reveal transactions and their recovery branches are added
-as the real node is bound (the engine's auto-advance is the cooperative happy path it represents).
+**后果。** 引擎保持为一个干净的纯函数并确定性地回放。加密/交易层（SDK `runHand`）在此引擎周围接入真实的熵/洗牌/揭示/结算交易；链上 N-of-N 揭示交易及其恢复分支将随真实节点的绑定而加入（引擎的自动推进即它所表示的协作式顺利路径）。

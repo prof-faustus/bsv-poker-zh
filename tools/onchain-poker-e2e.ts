@@ -1,13 +1,13 @@
 /**
- * On-chain POKER settlement E2E (core §6.6) against the REAL BSV node. The platform's own poker
- * templates settle a hand as real confirmed transactions:
- *   1. mine a coinbase to a key;
- *   2. FUNDING tx: spend the coinbase into an N-of-N multisig "pot" output (the funding template,
- *      bound to gid+rulesetHash) — node accepts + mines;
- *   3. SETTLEMENT tx: spend the pot (the funding multisig) to the winner via the settlement
- *      unlocking — node accepts + mines;
- *   4. confirm: the pot is spent, the winner's output is a confirmed UTXO.
- * This shows the actual poker money-flow on-chain through the real interpreter.
+ * 针对真实 BSV 节点的链上扑克结算 E2E（core §6.6）。平台自有的扑克
+ * 模板把一手牌结算为真实已确认的交易：
+ *   1. 向某个密钥挖出一个 coinbase；
+ *   2. FUNDING tx：把 coinbase 花费进一个 N-of-N 多签“底池”输出（funding 模板，
+ *      绑定到 gid+rulesetHash）——节点接受并挖入；
+ *   3. SETTLEMENT tx：通过 settlement 解锁把底池（funding 多签）花费给赢家
+ *      ——节点接受并挖入；
+ *   4. 确认：底池已被花费，赢家的输出是一个已确认的 UTXO。
+ * 这展示了通过真实 interpreter 在链上的实际扑克资金流。
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -54,9 +54,9 @@ async function main(): Promise<void> {
     stdio: 'ignore',
   });
   const node = new RealBsvNode('127.0.0.1', PORT);
-  const k0 = genKeyPair(); // coinbase owner / funder
-  const p0 = genKeyPair(); // player 0 (winner)
-  const p1 = genKeyPair(); // player 1
+  const k0 = genKeyPair(); // coinbase 所有者 / 出资方
+  const p0 = genKeyPair(); // 玩家 0（赢家）
+  const p1 = genKeyPair(); // 玩家 1
   try {
     const dl = Date.now() + 30000;
     while (!(await node.ping().catch(() => false))) {
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
     const cb = await node.generateBlock(bytesToHex(k0.pubCompressed));
     console.log(`[onchain-poker] coinbase ${cb.coinbaseTxid.slice(0, 16)}… = ${SUBSIDY}`);
 
-    // 1) FUNDING: spend the coinbase into a 2-of-2 multisig pot (the funding template).
+    // 1) FUNDING：把 coinbase 花费进一个 2-of-2 多签底池（funding 模板）。
     const pot = SUBSIDY - 1000;
     const fundingScript = fundingLocking(BIND, [p0.pubCompressed, p1.pubCompressed]);
     const fundingTx: Tx = {
@@ -86,7 +86,7 @@ async function main(): Promise<void> {
     const fundingTxid = txidWire(fundingTx, [fundSig]);
     assert.equal((await node.outpointStatus(fundingTxid, 0)).unspent, true, 'pot funded');
 
-    // 2) SETTLEMENT: spend the 2-of-2 pot to the winner (p0).
+    // 2) SETTLEMENT：把 2-of-2 底池花费给赢家（p0）。
     const payout = pot - 1000;
     const settleTx: Tx = {
       version: 1,
@@ -95,7 +95,7 @@ async function main(): Promise<void> {
       nLockTime: 0,
     };
     const settleMsg = sighashMessage(settleTx, 0, fundingScript, pot);
-    // N-of-N: both players sign the close-out (OP_0 dummy + sigs in pubkey order)
+    // N-of-N：双方玩家共同对结清签名（OP_0 占位 + 按 pubkey 顺序的签名）
     const settleSig = fundingUnlocking([sigWithType(settleMsg, p0), sigWithType(settleMsg, p1)]);
     const settleRaw = bytesToHex(serializeTxWire(settleTx, [settleSig]));
     const settleRes = await node.submitTx(settleRaw);

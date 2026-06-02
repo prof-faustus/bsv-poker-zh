@@ -1,10 +1,10 @@
 /**
- * CI pipeline (core §16, app §A14.2, REQ-BUILD-003). Stages run in order; a red stage blocks
- * merge. Stages: typecheck → lint (OP_RETURN absence) → unit+property+interpreter tests →
- * reproduce → traceability → Go vet+test. The E2E-in-image and accessibility/security stages
- * are wired by the VM bootstrap (vm/) and later phases.
+ * CI 流水线（core §16, app §A14.2, REQ-BUILD-003）。各阶段按顺序运行；任一阶段失败即阻止
+ * 合并。阶段：typecheck → lint（OP_RETURN absence）→ unit+property+interpreter 测试 →
+ * reproduce → traceability → Go vet+test。E2E-in-image 以及无障碍/安全阶段
+ * 由 VM 引导（vm/）和后续阶段接入。
  *
- * Run: `node tools/ci.ts`. Exits non-zero on the first failing stage.
+ * 运行：`node tools/ci.ts`。在第一个失败阶段以非零码退出。
  */
 
 import { spawnSync } from 'node:child_process';
@@ -49,7 +49,7 @@ function hasGo(): boolean {
 }
 
 function main(): void {
-  // requirements.yaml must exist for traceability; regenerate it first (idempotent).
+  // 可追溯性需要 requirements.yaml 存在；先重新生成它（幂等）。
   if (!existsSync(join(ROOT, 'spec/requirements.yaml'))) {
     spawnSync('node', ['tools/extract-requirements.ts'], { cwd: ROOT, stdio: 'inherit' });
   }
@@ -68,7 +68,7 @@ function main(): void {
     if (r.status !== 0) {
       console.error(`STAGE FAILED: ${stage.name} (exit ${r.status})`);
       failed = true;
-      break; // a red stage blocks the pipeline
+      break; // 任一阶段失败即阻断流水线
     }
   }
   if (failed) {

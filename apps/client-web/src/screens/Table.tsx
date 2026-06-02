@@ -1,9 +1,9 @@
 /**
- * Table screen (§A6.5) — the gameplay screen. It wires the ui-core presentational components
- * to the app-services LocalTableClient. The human acts; every action raises the signing modal
- * (§A6.7, no silent signing) before it is applied; the client auto-plays the bot and the hand
- * runs to showdown + settlement. All game logic is the real engine — this screen renders
- * view-models and emits actions only (no business logic, REQ-APP-052).
+ * Table 屏幕（§A6.5）—— 游戏对局屏幕。它将 ui-core 的展示型组件
+ * 接线到 app-services 的 LocalTableClient。人类玩家行动；每个动作在被应用前
+ * 都会弹出签名模态框（§A6.7，不静默签名）；客户端自动替机器人行动，且这手牌
+ * 一直进行到摊牌 + 结算。所有游戏逻辑都是真实引擎 —— 此屏幕仅渲染
+ * 视图模型并发射动作（无业务逻辑，REQ-APP-052）。
  */
 import React, { useMemo, useRef, useState } from 'react';
 import type { LocalTableClient } from '@bsv-poker/app-services';
@@ -29,13 +29,13 @@ import {
 export function Table(props: {
   client: LocalTableClient;
   ruleset: Ruleset;
-  /** Cash out the hero's remaining stack to the wallet, then leave. */
+  /** 将 hero 的剩余筹码套现到钱包，然后离开。 */
   onLeave: (heroStack: number) => void;
 }): React.JSX.Element {
   const { client, ruleset } = props;
   const heroSeat = client.getHeroSeat();
 
-  // Re-render tick: the client mutates internally; bump this to project the new state.
+  // 重新渲染计数：客户端在内部进行变更；递增此值以投影新状态。
   const [, setTick] = useState(0);
   const rerender = () => setTick((t) => t + 1);
 
@@ -57,7 +57,7 @@ export function Table(props: {
         resolution,
         decisionMs: ruleset.timeouts.decisionMs,
       }),
-    // state identity changes whenever the client applies an action.
+    // 每当客户端应用一个动作时，state 的标识就会改变。
     [state, heroSeat, legal, resolution, ruleset.timeouts.decisionMs, client],
   );
 

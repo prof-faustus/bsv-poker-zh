@@ -1,8 +1,8 @@
 /**
- * Practice lobby / create-local-table screen (§A6.3/§A6.4). Pick blinds/stack → start a local
- * heads-up Hold'em table vs the bot. No <form> submit — explicit onClick (REQ-UI-003). Validation
- * comes from the ui-core view-model; this screen only renders and emits. The wallet panel is shown
- * here too so the player can top up before buying in to the practice table.
+ * 练习大厅 / 创建本地牌桌屏幕（§A6.3/§A6.4）。选择盲注/筹码量 → 启动一个与机器人对战的
+ * 本地单挑 Hold'em 牌桌。非 <form> 提交 —— 使用显式 onClick（REQ-UI-003）。校验
+ * 来自 ui-core 视图模型；此屏幕只负责渲染和发射事件。钱包面板也在
+ * 此处显示，以便玩家在买入练习牌桌前充值。
  */
 import React, { useState } from 'react';
 import { WalletService, type WalletState } from '@bsv-poker/app-services';

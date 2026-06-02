@@ -1,9 +1,9 @@
 /**
- * Lobby-facing presentational components (REQ-APP-052): the WalletPanel (balance / add / withdraw
- * / history + buy-in affordability) and the VariantPicker (choose one of the five variants, seat
- * count within the variant's range, and the Omaha hi-lo toggle). Pure render + explicit handlers
- * (no <form> submit, REQ-UI-003). No business logic — amounts/affordability come from the pure
- * wallet-panel view-model; legality/funds movement happen in app-services WalletService.
+ * 面向大厅的展示型组件（REQ-APP-052）：WalletPanel（余额 / 充值 / 提现
+ * / 历史记录 + 买入可负担性）以及 VariantPicker（在五种变体中选择一种、在该变体
+ * 范围内选择座位数，以及 Omaha hi-lo 开关）。纯渲染 + 显式处理函数
+ *（不使用 <form> 提交，REQ-UI-003）。无业务逻辑——金额/可负担性来自纯粹的
+ * wallet-panel view-model；合法性/资金变动发生在 app-services WalletService 中。
  */
 import React from 'react';
 import { Chip } from './primitives.tsx';

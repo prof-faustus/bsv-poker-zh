@@ -1,49 +1,48 @@
 # indexer-go
 
-Table-transaction **indexer** for bsv-poker (BSV-only, post-Genesis).
+bsv-poker 的牌桌交易**索引器**（仅限 BSV，Genesis 升级后）。
 
-> **REQ-NET-001 (core §8.1, P3):** the indexer is a **convenience projection,
-> NEVER the source of truth**. The truth is the validated transaction graph. The
-> indexer ingests opaque protocol-transaction records and builds per-table
-> projections (ordered txid list per table id, deduplicated by txid). The
-> ordering is deterministic: any client can call `Rebuild` over the same record
-> stream and reconstruct an identical ordered set (P2, REQ-NET-007), treating the
-> served list as a hint to confirm against the canonical tx graph (app §A7.1).
+> **REQ-NET-001（core §8.1，P3）：** 索引器是一个**便利性投影，
+> 绝不是真相来源**。真相是经过验证的交易图。索引器
+> 摄取不透明的协议交易记录，并构建按牌桌划分的
+> 投影（按牌桌 id 排序的 txid 列表，按 txid 去重）。
+> 这种排序是确定性的：任何客户端都可以对相同的记录
+> 流调用 `Rebuild`，并重建出一个相同的有序集合（P2，REQ-NET-007），将
+> 所提供的列表视为一个提示，再据以对照规范交易图进行确认（app §A7.1）。
 
-Zero external dependencies — Go standard library only.
+零外部依赖 — 仅使用 Go 标准库。
 
-Per the ordered-startup rule (REQ-APP-021) the supervisor starts the indexer
-**before** the relay.
+依据有序启动规则（REQ-APP-021），监管进程在中继**之前**启动索引器。
 
-## Run
+## 运行
 
 ```
 go run . -addr 127.0.0.1:8092
 ```
 
-Flag: `-addr` loopback listen address (default `127.0.0.1:8092`).
+标志：`-addr` 回环监听地址（默认 `127.0.0.1:8092`）。
 
-## Endpoints (REQ-NET-004, core §8.4)
+## 端点（REQ-NET-004，core §8.4）
 
-| Method | Path | Purpose |
+| 方法 | 路径 | 用途 |
 |---|---|---|
-| `GET` | `/healthz` | `200` + `{"status":"ok"}` (supervisor liveness). |
-| `POST` | `/ingest` | Ingest an opaque record. Body: `{"txid","class","tableId","raw"}` (≤1 MiB). Returns `{"added":bool}` (`false` = duplicate txid for that table). |
-| `GET` | `/table/{id}` | Ordered, de-duplicated txid list for a table: `{"tableId","txids":[...]}`. |
-| `GET` | `/tables` | Sorted list of known table ids. |
+| `GET` | `/healthz` | `200` + `{"status":"ok"}`（监管进程存活检测）。 |
+| `POST` | `/ingest` | 摄取一条不透明记录。请求体：`{"txid","class","tableId","raw"}`（≤1 MiB）。返回 `{"added":bool}`（`false` = 该牌桌的重复 txid）。 |
+| `GET` | `/table/{id}` | 某牌桌的有序、已去重 txid 列表：`{"tableId","txids":[...]}`。 |
+| `GET` | `/tables` | 已知牌桌 id 的排序列表。 |
 
-## Determinism contract
+## 确定性契约
 
-- Ordering = strict first-seen insertion order; duplicate txids (per table) are dropped and keep their first position.
-- `Rebuild(tableID, records)` (pure, stateless) is the function any client uses to verify the projection independently — replaying the same record sequence yields the same ordered txid list.
-- The `raw` payload is opaque; the indexer never parses or adjudicates game logic.
+- 排序 = 严格的首次出现插入顺序；重复的 txid（按牌桌）会被丢弃并保留其首次出现的位置。
+- `Rebuild(tableID, records)`（纯函数、无状态）是任何客户端用来独立验证该投影的函数——重放相同的记录序列会产生相同的有序 txid 列表。
+- `raw` 载荷是不透明的；索引器从不解析或裁决游戏逻辑。
 
-## Tests
+## 测试
 
 ```
 go test ./...
 ```
 
-Covers dedup, deterministic ordering, per-table isolation, input validation,
-`Rebuild`-vs-live equivalence, and the `/healthz` + `/ingest` + `/table/{id}`
-HTTP surface.
+涵盖去重、确定性排序、按牌桌隔离、输入验证、
+`Rebuild` 与实时运行的等价性，以及 `/healthz` + `/ingest` + `/table/{id}`
+的 HTTP 接口面。

@@ -1,16 +1,15 @@
-// bsv-poker desktop supervisor (Tauri v2) — app spec §A3.
+// bsv-poker 桌面端监管进程（Tauri v2）—— 应用规格 §A3。
 //
-// The Rust main process supervises the local services (the embedded BSV node, the relay, and the
-// indexer) so a non-technical user double-clicks and plays (REQ-APP-020). It implements the §A3.2
-// service lifecycle, ordered startup (node → indexer → relay) and reverse-order shutdown
-// (REQ-APP-021), a BOUNDED restart policy (REQ-APP-022, Power-of-Ten no-unbounded-loop), and the
-// IPC contract (Appendix I): services.* / config.* (custody.* lands with the custody worker).
+// Rust 主进程负责监管本地服务（内嵌 BSV node、relay 和 indexer），让非技术用户双击即可游玩
+// （REQ-APP-020）。它实现了 §A3.2 服务生命周期、有序启动（node → indexer → relay）和逆序关闭
+// （REQ-APP-021）、一项有界的重启策略（REQ-APP-022，Power-of-Ten 无无界循环），以及
+// IPC 契约（附录 I）：services.* / config.*（custody.* 随托管 worker 一起落地）。
 //
-// Regtest only by default (REQ-APP-029/030); mainnet requires the explicit research flag and an
-// unmissable UI banner — the supervisor REFUSES any non-regtest network unless flagged.
+// 默认仅支持 regtest（REQ-APP-029/030）；mainnet 需要显式的研究标志和一个
+// 不容错过的 UI 横幅 —— 除非已设置标志，否则监管进程会拒绝任何非 regtest 网络。
 //
-// NOTE: requires the native toolchain (Rust + a C linker) + the Tauri CLI to build — see
-// ../README.md. It is not compiled in the spec-authoring/CI environment that lacks Rust.
+// 注意：构建需要原生工具链（Rust + 一个 C 链接器）+ Tauri CLI —— 参见
+// ../README.md。它不会在缺少 Rust 的规格撰写/CI 环境中编译。
 
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
@@ -22,16 +21,16 @@ use tauri::{Emitter, Manager, State};
 
 const RELAY_ADDR: &str = "127.0.0.1:8091";
 const INDEXER_ADDR: &str = "127.0.0.1:8092";
-const MAX_RESTARTS: u32 = 5; // bounded restart policy (REQ-APP-022)
+const MAX_RESTARTS: u32 = 5; // 有界重启策略（REQ-APP-022）
 
-// ---- Pure lifecycle policy (REQ-APP-020/021/022), unit-tested below ----
-/// Ordered startup (REQ-APP-021): the embedded node first, then the indexer, then the relay.
+// ---- 纯生命周期策略（REQ-APP-020/021/022），在下方进行单元测试 ----
+/// 有序启动（REQ-APP-021）：先内嵌 node，然后 indexer，最后 relay。
 #[allow(dead_code)]
 fn startup_order() -> [&'static str; 3] {
     ["node", "indexer", "relay"]
 }
 
-/// Reverse-order shutdown (REQ-APP-021).
+/// 逆序关闭（REQ-APP-021）。
 #[allow(dead_code)]
 fn shutdown_order() -> Vec<&'static str> {
     let mut o = startup_order().to_vec();
@@ -39,28 +38,28 @@ fn shutdown_order() -> Vec<&'static str> {
     o
 }
 
-/// Bounded restart policy (REQ-APP-022; Power-of-Ten: no unbounded loop) — retry only while
-/// attempts remain strictly below the cap.
+/// 有界重启策略（REQ-APP-022；Power-of-Ten：无无界循环）—— 仅在尝试次数
+/// 严格低于上限时才重试。
 #[allow(dead_code)]
 fn should_retry(attempt: u32, max: u32) -> bool {
     attempt < max
 }
 
-/// Exponential backoff (ms) for restart attempt `n`, capped so it cannot grow without bound.
+/// 重启尝试 `n` 的指数退避（毫秒），设有上限以使其不会无界增长。
 #[allow(dead_code)]
 fn backoff_ms(attempt: u32) -> u64 {
     (100u64.saturating_mul(1u64 << attempt.min(6))).min(5_000)
 }
 
-/// The recognized IPC command family (REQ-APP-024). An unlisted command is not dispatched.
+/// 已识别的 IPC 命令族（REQ-APP-024）。未列出的命令不会被分发。
 #[allow(dead_code)]
 fn ipc_commands() -> [&'static str; 5] {
     ["services_start", "services_stop", "services_status", "config_runtime", "config_set_network"]
 }
 
-/// Validate an inbound IPC network-switch request (REQ-APP-026 both-sides validation; REQ-APP-030
-/// guard): regtest is always allowed, mainnet only with the explicit research flag, anything else is
-/// rejected.
+/// 校验入站的 IPC 网络切换请求（REQ-APP-026 双向校验；REQ-APP-030
+/// 守卫）：regtest 始终允许，mainnet 仅在带有显式研究标志时允许，其他一律
+/// 拒绝。
 fn validate_network_switch(network: &str, mainnet_flag: bool) -> Result<(), String> {
     match network {
         "regtest" | "play-regtest" => Ok(()),
@@ -70,13 +69,13 @@ fn validate_network_switch(network: &str, mainnet_flag: bool) -> Result<(), Stri
     }
 }
 
-/// The runtime port map the UI reads (REQ-APP-027 — ports are not hardcoded in the UI).
+/// UI 读取的运行时端口映射（REQ-APP-027 —— 端口不在 UI 中硬编码）。
 fn runtime_ports() -> (u16, u16, u16) {
-    (8091, 8092, 18332) // relay, indexer, node
+    (8091, 8092, 18332) // relay、indexer、node
 }
 
-/// Per-user data subdirectory (REQ-APP-028): the SQLite store and node block/UTXO store live under
-/// the user's data directory, never a shared/global path.
+/// 每用户数据子目录（REQ-APP-028）：SQLite 存储和 node 区块/UTXO 存储位于
+/// 用户的数据目录下，绝不放在共享/全局路径中。
 #[allow(dead_code)]
 fn data_subdir(base: &str, kind: &str) -> String {
     format!("{}/bsv-poker/{}", base.trim_end_matches('/'), kind)
@@ -84,7 +83,7 @@ fn data_subdir(base: &str, kind: &str) -> String {
 
 #[derive(Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-#[allow(dead_code)] // StartNode/Fatal are modelled §A3.2 states reached once the node adapter binds
+#[allow(dead_code)] // StartNode/Fatal 是 §A3.2 中建模的状态，在 node 适配器绑定后达到
 enum LifecycleState {
     Init,
     StartNode,
@@ -122,7 +121,7 @@ impl Supervisor {
     }
 }
 
-/// Spawn one bundled service binary bound to loopback (REQ-APP-027/028, §A10.7).
+/// 启动一个绑定到 loopback 的内置服务二进制（REQ-APP-027/028，§A10.7）。
 fn spawn_service(bin: &str, addr: &str) -> Result<Child, String> {
     Command::new(bin)
         .arg("-addr")
@@ -133,8 +132,8 @@ fn spawn_service(bin: &str, addr: &str) -> Result<Child, String> {
 
 #[tauri::command]
 fn services_start(app: tauri::AppHandle, sup: State<Supervisor>) -> Result<bool, String> {
-    // Ordered startup: node → indexer → relay (node is the bonded-subsat-channel embedded node,
-    // bound by the adapter; here we supervise the indexer and relay binaries).
+    // 有序启动：node → indexer → relay（node 是绑定子聪通道的内嵌 node，
+    // 由适配器绑定；这里我们监管 indexer 和 relay 二进制）。
     *sup.lifecycle.lock().unwrap() = LifecycleState::StartIndexer;
     emit_status(&app, "indexer", "starting", None, 0);
 
@@ -180,7 +179,7 @@ fn services_start(app: tauri::AppHandle, sup: State<Supervisor>) -> Result<bool,
 
 #[tauri::command]
 fn services_stop(sup: State<Supervisor>) -> Result<bool, String> {
-    // Reverse-order shutdown: relay then indexer (REQ-APP-021).
+    // 逆序关闭：先 relay 后 indexer（REQ-APP-021）。
     if let Some(mut c) = sup.relay.lock().unwrap().take() {
         let _ = c.kill();
     }
@@ -216,7 +215,7 @@ fn config_runtime(sup: State<Supervisor>) -> serde_json::Value {
     })
 }
 
-/// Guarded network switch (REQ-APP-030): refuses non-regtest unless the research flag is set.
+/// 受守卫的网络切换（REQ-APP-030）：除非设置了研究标志，否则拒绝非 regtest。
 #[tauri::command]
 fn config_set_network(network: String, mainnet_flag: bool, sup: State<Supervisor>) -> Result<bool, String> {
     validate_network_switch(&network, mainnet_flag)?;
@@ -247,7 +246,7 @@ fn main() {
             config_set_network
         ])
         .setup(|app| {
-            // Ordered startup begins at launch; the UI gates play until READY (REQ-APP-023).
+            // 有序启动在启动时开始；UI 在达到 READY 之前禁止游玩（REQ-APP-023）。
             let _ = app.handle();
             Ok(())
         })
@@ -274,7 +273,7 @@ mod lifecycle_tests {
         assert!(should_retry(0, MAX_RESTARTS));
         assert!(should_retry(MAX_RESTARTS - 1, MAX_RESTARTS));
         assert!(!should_retry(MAX_RESTARTS, MAX_RESTARTS));
-        // The retry loop provably terminates at the cap.
+        // 重试循环可证明会在上限处终止。
         let mut attempts = 0u32;
         while should_retry(attempts, MAX_RESTARTS) {
             attempts += 1;
@@ -300,9 +299,9 @@ mod lifecycle_tests {
     #[test]
     fn network_switch_is_validated_both_sides() {
         assert!(validate_network_switch("regtest", false).is_ok());
-        assert!(validate_network_switch("mainnet", false).is_err()); // refused without flag
+        assert!(validate_network_switch("mainnet", false).is_err()); // 无标志时被拒绝
         assert!(validate_network_switch("mainnet", true).is_ok());
-        assert!(validate_network_switch("bogusnet", true).is_err()); // unrecognized rejected
+        assert!(validate_network_switch("bogusnet", true).is_err()); // 无法识别，被拒绝
     }
 
     #[test]

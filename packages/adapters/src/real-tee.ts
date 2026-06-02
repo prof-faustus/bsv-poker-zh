@@ -1,9 +1,9 @@
 /**
- * Binds the REAL `revocable-nft-tee` cloud-TEE implementation (REQ-APP-230/231/240; core §2.4
- * revocation + §17 audit) — the TEE attestation + revocable-content track. We drive its prebuilt
- * `rnft-cli` by subprocess (same pattern as the BSV node / OB): the TEE backends are enumerated and
- * the full revocable-token lifecycle (mint → member access → revoke → access denied → key burned)
- * runs against the real enclave/CVM-backed reference driver. Not a conformant fake.
+ * 绑定真实的 `revocable-nft-tee` 云端 TEE 实现（REQ-APP-230/231/240；core §2.4
+ * 撤销 + §17 审计）—— TEE 证明 + 可撤销内容这一条线。我们通过子进程驱动其预构建的
+ * `rnft-cli`（与 BSV 节点 / OB 采用相同的模式）：枚举 TEE 后端，并让完整的可撤销令牌生命周期
+ * （mint → 成员访问 → revoke → 访问被拒 → 密钥销毁）针对由真实 enclave/CVM 支撑的参考驱动运行。
+ * 这不是满足一致性的 fake。
  */
 
 import { execFileSync } from 'node:child_process';
@@ -24,7 +24,7 @@ export interface TeeLifecycle {
 }
 
 export class RealTee {
-  /** The selectable TEE attestation backends (SEV-SNP / TDX / SGX / HSM) the build pins. */
+  /** 本次构建固定可选用的 TEE 证明后端（SEV-SNP / TDX / SGX / HSM）。 */
   backends(): string[] {
     return tee(['backends'])
       .split('\n')
@@ -33,7 +33,7 @@ export class RealTee {
       .map((l) => l.slice(2).trim());
   }
 
-  /** Run the full revocable-token lifecycle through the real TEE driver and parse the outcome. */
+  /** 通过真实的 TEE 驱动运行完整的可撤销令牌生命周期，并解析其结果。 */
   lifecycle(): TeeLifecycle {
     const out = tee(['demo']);
     const tokenId = /token_id\s*:\s*([0-9a-f]+)/.exec(out)?.[1] ?? '';

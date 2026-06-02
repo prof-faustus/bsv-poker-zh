@@ -1,20 +1,19 @@
 /**
- * App shell — a small screen state machine for REAL relay-backed multiplayer plus the offline
- * practice flow:
+ * 应用外壳 —— 一个小型屏幕状态机，用于真实的、由 relay 支撑的多人对战，外加离线
+ * 练习流程：
  *
- *   Connect → Lobby → WaitingRoom → NetworkTable      (real multiplayer over the relay)
- *   Connect/Lobby → Practice (local Table vs bot)     (the existing offline engine flow)
+ *   Connect → Lobby → WaitingRoom → NetworkTable      （经由 relay 的真实多人对战）
+ *   Connect/Lobby → Practice (local Table vs bot)     （现有的离线引擎流程）
  *
- * IMPORTANT (browser-bundle scope): this app imports ONLY the browser-safe workspace packages
- * via ui-core / app-services: protocol-types (pure-TS sha256), hand-eval, engine, the five game
- * modules (via app-services createGameModule), and the relay transport (fetch/SSE in network.ts).
- * It NEVER imports crypto-mentalpoker / script-templates-ts / tx-builder / wallet-custody — those
- * use node:crypto and are the Node SDK path (§A2.3).
+ * 重要（浏览器 bundle 范围）：本应用仅经由 ui-core / app-services 导入浏览器安全的工作区
+ * package：protocol-types（纯 TS sha256）、hand-eval、engine、五个游戏
+ * 模块（经由 app-services createGameModule），以及 relay 传输（network.ts 中的 fetch/SSE）。
+ * 它绝不导入 crypto-mentalpoker / script-templates-ts / tx-builder / wallet-custody —— 那些
+ * 使用 node:crypto，属于 Node SDK 路径（§A2.3）。
  *
- * Wallet: a single WalletService (play-money, localStorage-persisted) owns the player's balance.
- * Join/Create BUY IN for the table's starting stack (blocked with a clear message if the balance
- * is too low); leaving a table CASHES OUT the remaining stack back to the wallet. Funds movement
- * is the local balance now — the live on-chain backend is wired separately on the Node side.
+ * 钱包：单个 WalletService（游戏币，由 localStorage 持久化）持有玩家的余额。
+ * 加入/创建会为牌桌的初始筹码量买入（若余额过低则以明确消息阻止）；离开牌桌会将剩余
+ * 筹码套现回钱包。资金流动目前是本地余额 —— 实时链上后端在 Node 端单独接线。
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -53,9 +52,9 @@ type Screen =
   | { kind: 'practiceTable'; client: LocalTableClient; ruleset: Ruleset };
 
 function metaFromForm(form: NetworkTableForm): TableMeta {
-  // The form carries the chosen variant + hi-lo; the relay client is variant-generic so the
-  // created TableMeta.variant flows straight through to play. (hiLo is carried for display; the
-  // app-services rulesetFromMeta currently builds high-only — see NetworkLobby note.)
+  // 表单携带所选的玩法变体 + hi-lo；relay 客户端与变体无关，因此
+  // 创建出的 TableMeta.variant 会直接贯通到对局。（hiLo 仅用于展示；
+  // app-services 的 rulesetFromMeta 目前只构建 high-only —— 见 NetworkLobby 备注。）
   return {
     name: form.name.trim(),
     variant: form.variant,
@@ -63,15 +62,15 @@ function metaFromForm(form: NetworkTableForm): TableMeta {
     bigBlind: form.bigBlind,
     startingStack: form.startingStack,
     maxSeats: form.maxSeats,
-    // hiLo is not part of app-services TableMeta's type but survives the relay's JSON round-trip;
-    // it is shown in the lobby list. NOTE: app-services rulesetFromMeta currently builds high-only
-    // (hiLo:false) on the seated side, so networked Omaha settles high-only until that reads hiLo.
+    // hiLo 不属于 app-services TableMeta 的类型，但能在 relay 的 JSON 往返中保留；
+    // 它会显示在大厅列表中。注意：app-services 的 rulesetFromMeta 目前在已入座一侧
+    // 只构建 high-only（hiLo:false），因此联网 Omaha 在其读取 hiLo 之前按 high-only 结算。
     ...(form.variant === 'omaha' && form.hiLo ? { hiLo: true } : {}),
   } as TableMeta;
 }
 
-/** localStorage-backed wallet persistence. A play-money balance MAY use localStorage (the task
- * permits it); load-bearing keys/table state must NOT — and do not — live here. */
+/** 基于 localStorage 的钱包持久化。游戏币余额可以使用 localStorage（任务
+ * 允许）；承载关键作用的密钥/牌桌状态绝不能 —— 也确实没有 —— 存放于此。 */
 const WALLET_KEY = 'bsv-poker.wallet.v1';
 const walletPersistence: WalletPersistence = {
   load(): WalletState | null {
@@ -86,7 +85,7 @@ const walletPersistence: WalletPersistence = {
     try {
       globalThis.localStorage?.setItem(WALLET_KEY, JSON.stringify(state));
     } catch {
-      /* storage unavailable — wallet still works in-memory for the session */
+      /* 存储不可用 —— 钱包在本对局内仍可在内存中工作 */
     }
   },
 };
@@ -95,7 +94,7 @@ export function App(): React.JSX.Element {
   const identity = useMemo<SessionIdentity>(() => generateIdentity(), []);
   const wallet = useMemo(() => new WalletService({ persistence: walletPersistence }), []);
 
-  // Re-render on any wallet change so balance/history stay live across the app.
+  // 任何钱包变更时重新渲染，使余额/历史在整个应用中保持实时。
   const [walletState, setWalletState] = useState<WalletState>(() => wallet.state());
   useEffect(() => wallet.onChange(setWalletState), [wallet]);
 
@@ -105,11 +104,11 @@ export function App(): React.JSX.Element {
   const [connectError, setConnectError] = useState<string | null>(null);
   const lobbyRef = useRef<LobbyClient | null>(null);
 
-  // Track the active buy-in (table id + amount) so leaving/cancelling cashes the right table.
+  // 跟踪当前活跃的买入（table id + 金额），使离开/取消时套现正确的牌桌。
   const activeTableId = useRef<string | null>(null);
   const activeBuyIn = useRef<number>(0);
 
-  // Waiting-room state (lives in App so it survives across renders while the join is in flight).
+  // 等待室状态（存放在 App 中，使其在加入进行中跨多次渲染时得以保留）。
   const [waitName, setWaitName] = useState('');
   const [waitCapacity, setWaitCapacity] = useState(2);
   const [waitPlayers, setWaitPlayers] = useState<{ id: string; pub: string }[]>([]);
@@ -122,7 +121,7 @@ export function App(): React.JSX.Element {
       setConnectError(null);
       const lobby = new LobbyClient(new RelayClient(base));
       try {
-        // listTables doubles as a connectivity check (CORS / relay reachable).
+        // listTables 兼作连通性检查（CORS / relay 可达）。
         await lobby.listTables();
         lobbyRef.current = lobby;
         setRelay(base);
@@ -140,7 +139,7 @@ export function App(): React.JSX.Element {
     (tableId: string, meta: TableMeta): void => {
       const lobby = lobbyRef.current;
       if (!lobby) return;
-      // Buy in for the table's starting stack — block (with a clear message) if too low.
+      // 为牌桌的初始筹码量买入 —— 若过低则（以明确消息）阻止。
       const check = buyInCheck(wallet.getBalance(), meta.startingStack);
       if (!check.canAfford) {
         setConnectError(check.message);
@@ -180,7 +179,7 @@ export function App(): React.JSX.Element {
       const lobby = lobbyRef.current;
       if (!lobby) return;
       const meta = metaFromForm(form);
-      // Pre-check affordability before we create a table on the relay.
+      // 在 relay 上创建牌桌之前先预检查是否买得起。
       const check = buyInCheck(wallet.getBalance(), meta.startingStack);
       if (!check.canAfford) {
         setConnectError(check.message);
@@ -203,7 +202,7 @@ export function App(): React.JSX.Element {
     [enterWaitingRoom],
   );
 
-  /** Cash the hero's remaining stack back to the wallet for the active table, then go to lobby. */
+  /** 将 hero 在当前牌桌的剩余筹码套现回钱包，然后进入大厅。 */
   const cashOutAndLeave = useCallback(
     (heroStack: number): void => {
       const id = activeTableId.current;
@@ -218,7 +217,7 @@ export function App(): React.JSX.Element {
   const cancelWaiting = useCallback((): void => {
     abortRef.current?.();
     abortRef.current = null;
-    // We never sat down — refund the full buy-in back to the wallet.
+    // 我们从未入座 —— 将全部买入退回钱包。
     wallet.cashOut(activeBuyIn.current, activeTableId.current ?? undefined);
     activeTableId.current = null;
     activeBuyIn.current = 0;
@@ -227,7 +226,7 @@ export function App(): React.JSX.Element {
 
   function startPractice(form: TableCreateForm): void {
     const ruleset = rulesetFromForm(form);
-    // Buy in for the practice table too (blocked if balance too low).
+    // 练习牌桌也要买入（若余额过低则阻止）。
     const check = buyInCheck(wallet.getBalance(), ruleset.minBuyIn);
     if (!check.canAfford) {
       setConnectError(check.message);

@@ -1,6 +1,6 @@
 /**
- * Lobby / table-create view-model (§A6.3, §A6.4) — pure validation + ruleset assembly.
- * Builds a regtest play-money NL Hold'em Ruleset from the create-table form inputs.
+ * 大厅 / 建桌 view-model（§A6.3、§A6.4）—— 纯校验 + ruleset 组装。
+ * 从建桌表单输入构建一个 regtest 模拟币 NL Hold'em Ruleset。
  */
 
 import type { Ruleset } from '@bsv-poker/protocol-types';
@@ -30,7 +30,7 @@ export function validateTableCreate(form: TableCreateForm): TableCreateValidatio
   return { ok: errors.length === 0, errors };
 }
 
-/** Assemble the heads-up NL regtest ruleset (D1 Phase-1 reference). */
+/** 组装单挑 NL regtest ruleset（D1 Phase-1 参考实现）。 */
 export function rulesetFromForm(form: TableCreateForm): Ruleset {
   return {
     variant: 'holdem',

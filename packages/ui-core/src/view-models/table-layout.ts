@@ -1,39 +1,39 @@
 /**
- * Table-layout view-model (REQ-APP-051) — PURE geometry for seating N players around an oval
- * felt table. No React, no DOM: it returns percentage coordinates the presentational layer maps
- * onto an absolutely-positioned container, so the math is unit-testable under `node --test`
- * type-stripping (no enum/namespace/param-properties).
+ * 牌桌布局 view-model（REQ-APP-051）—— 把 N 个玩家围绕椭圆形台面就座的纯几何计算。
+ * 不依赖 React、不依赖 DOM：它返回百分比坐标，由展示层映射到一个绝对定位的容器上，
+ * 因此这些数学计算可在 `node --test` 的类型剥离环境下进行单元测试
+ *（不使用 enum/namespace/param-properties）。
  *
- * Seats are placed on an ellipse. The hero (the local player's seat) is anchored at the BOTTOM
- * centre — the way a real client shows "you" — and the remaining seats fan out clockwise around
- * the rail. Coordinates are in percent of the table box (0–100) so the layout is responsive.
+ * 座位被放置在一个椭圆上。hero（本地玩家的座位）锚定在底部中央——正如真实客户端
+ * 显示“你”的方式——其余座位沿牌桌边沿顺时针展开。坐标以牌桌区域的百分比表示
+ *（0–100），因此布局是自适应的。
  */
 
 export interface SeatPosition {
-  /** Seat index this slot is for. */
+  /** 该槽位对应的座位索引。 */
   readonly seat: number;
-  /** Centre X of the seat, percent of table width (0–100). */
+  /** 座位中心 X，占牌桌宽度的百分比（0–100）。 */
   readonly xPct: number;
-  /** Centre Y of the seat, percent of table height (0–100). */
+  /** 座位中心 Y，占牌桌高度的百分比（0–100）。 */
   readonly yPct: number;
-  /** True for the bottom-centre hero anchor. */
+  /** 底部中央的 hero 锚点为 true。 */
   readonly isHero: boolean;
 }
 
 /**
- * Compute seat positions around the oval for `count` seats (2–9 supported; clamped otherwise),
- * rotating so `heroSeat` sits at the bottom centre. `seatOrder` lets a caller pass the concrete
- * seat numbers (defaults to 0..count-1) so the projection matches the engine's seat indices.
+ * 为 `count` 个座位计算它们在椭圆周围的位置（支持 2–9；超出则钳制），
+ * 并进行旋转使 `heroSeat` 位于底部中央。`seatOrder` 允许调用方传入具体的
+ * 座位编号（默认为 0..count-1），使该投影与引擎的座位索引相匹配。
  *
- * The ellipse is inset from the table box so seat cards sit ON the rail, not off the edge.
+ * 椭圆相对牌桌区域内缩，使座位卡片落在边沿之上，而不会跑到边缘之外。
  */
 export function seatPositions(args: {
   readonly count: number;
   readonly heroSeat: number;
   readonly seatOrder?: readonly number[];
-  /** Horizontal radius as a fraction of half-width (default 0.92 — near the rail). */
+  /** 水平半径，占半宽的比例（默认 0.92——靠近边沿）。 */
   readonly radiusX?: number;
-  /** Vertical radius as a fraction of half-height (default 0.92). */
+  /** 垂直半径，占半高的比例（默认 0.92）。 */
   readonly radiusY?: number;
 }): readonly SeatPosition[] {
   const count = Math.max(2, Math.min(9, Math.floor(args.count)));
@@ -44,17 +44,17 @@ export function seatPositions(args: {
   const rx = args.radiusX ?? 0.92;
   const ry = args.radiusY ?? 0.92;
 
-  // Index of the hero within the order (the slot we anchor at the bottom).
+  // hero 在 order 中的索引（我们锚定在底部的槽位）。
   const heroIdx = Math.max(0, order.indexOf(args.heroSeat));
 
-  // Angle convention: 90° (downward, screen-space) is the bottom-centre hero anchor. We walk
-  // clockwise so the player to the hero's left is the next seat round.
+  // 角度约定：90°（屏幕空间向下）是底部中央的 hero 锚点。我们顺时针推进，
+  // 使 hero 左侧的玩家成为下一个座位。
   const bottom = Math.PI / 2;
   const out: SeatPosition[] = [];
   for (let i = 0; i < count; i++) {
-    const slot = (i - heroIdx + count) % count; // 0 = hero, then clockwise
+    const slot = (i - heroIdx + count) % count; // 0 = hero，然后顺时针
     const angle = bottom + (slot * 2 * Math.PI) / count;
-    // Screen-space: +x right, +y DOWN. Centre is (50,50); radius is 50% scaled by rx/ry.
+    // 屏幕空间：+x 向右，+y 向下。中心为 (50,50)；半径为 50% 再按 rx/ry 缩放。
     const x = 50 + Math.cos(angle) * 50 * rx;
     const y = 50 + Math.sin(angle) * 50 * ry;
     const seat = order[i]!;
@@ -65,7 +65,7 @@ export function seatPositions(args: {
       isHero: seat === args.heroSeat,
     });
   }
-  // Return in seat-index order for stable rendering.
+  // 按座位索引顺序返回，以保证渲染稳定。
   return out.sort((a, b) => a.seat - b.seat);
 }
 

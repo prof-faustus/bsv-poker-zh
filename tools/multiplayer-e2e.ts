@@ -1,10 +1,10 @@
 /**
- * Real multiplayer E2E (core §8, REQ-TEST-002 cross-client agreement). Starts the relay +
- * indexer, then runs TWO independent NetworkedTableClients (Alice seat 0, Bob seat 1) that
- * exchange their entropy commit/reveal and betting actions ONLY over the relay channel, each
- * deriving state through its own engine. The test passes iff both clients converge to the
- * byte-identical final state hash — proving the relay is transport-only and the truth is the
- * client-reconstructed tx set (P2/P3).
+ * 真实多人 E2E（core §8, REQ-TEST-002 跨客户端一致）。启动中继 +
+ * 索引器，然后运行两个独立的 NetworkedTableClient（Alice 座位 0，Bob 座位 1），它们
+ * 仅通过中继通道交换各自的熵 commit/reveal 和下注动作，各自
+ * 通过自己的引擎推导状态。当且仅当两个客户端收敛到
+ * 逐字节相同的最终状态哈希时测试通过——证明中继仅作传输，真相是
+ * 客户端重建的 tx 集合（P2/P3）。
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -17,7 +17,7 @@ const ROOT = process.cwd();
 const children: ChildProcess[] = [];
 const isWin = process.platform === 'win32';
 
-// Build a standalone binary and run IT directly so kill() stops the server (no orphaned zombie).
+// 构建一个独立的二进制并直接运行它，使 kill() 能停止服务器（不留下孤儿僵尸进程）。
 function startService(dir: string, addr: string, bin: string): void {
   const exe = isWin ? `${bin}.exe` : bin;
   const b = spawnSync('go', ['build', '-o', exe, '.'], { cwd: join(ROOT, dir), stdio: 'inherit' });
@@ -30,7 +30,7 @@ async function waitHealthy(url: string, timeoutMs: number): Promise<void> {
     try {
       if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) return;
     } catch {
-      /* not up */
+      /* 尚未启动 */
     }
     if (Date.now() > deadline) throw new Error(`not healthy: ${url}`);
     await new Promise((r) => setTimeout(r, 400));
@@ -52,7 +52,7 @@ const RULES: Ruleset = {
   hiLo: false,
 };
 
-// Passive strategy: check when possible, else call, else fold — drives the hand to showdown.
+// 被动策略：能 check 就 check，否则 call，否则 fold——驱动牌局走到摊牌。
 const passive = (legal: LegalActions, seat: number): Action => {
   if (legal.check) return { kind: 'check', seat, amount: 0 };
   if (legal.call) return { kind: 'call', seat, amount: legal.call.amount };
@@ -108,7 +108,7 @@ function cleanup(): void {
     try {
       c.kill();
     } catch {
-      /* ignore */
+      /* 忽略 */
     }
   }
 }

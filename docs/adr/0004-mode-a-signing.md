@@ -1,17 +1,9 @@
-# ADR 0004 — Mode A (reconstruct-at-reveal) signing for Phase 1
+# ADR 0004 — 用于 Phase 1 的模式 A（揭示时重构）签名
 
-**Status:** Accepted (implements core D9 / §4.3)
+**状态：** 已接受（实现核心 D9 / §4.3）
 
-**Context.** Spending a combined-key `Q_j` UTXO needs a signature under `Q_j`. The spec offers Mode
-A (patent-literal: parties disclose per-card scalars at reveal, the closer sums to `w_j` and signs)
-and Mode B (threshold/no-reconstruction). Phase 1 must ship without a threshold dependency.
+**背景。** 花费一个组合密钥 `Q_j` 的 UTXO 需要在 `Q_j` 下的签名。规范提供了模式 A（专利字面：各方在揭示时披露每张牌的标量，闭合方求和得到 `w_j` 并签名）与模式 B（门限/无需重构）。Phase 1 必须在不依赖门限方案的前提下交付。
 
-**Decision.** Implement Mode A in `wallet-custody`: per-card scalars are HKDF-derived, **single-game**
-(bound to `gid`), and `reconstructAndSign` sums disclosed scalars mod n to sign the close-out. The
-software custody backend **refuses** `combineSignShare` (Mode B) so the build cannot present Mode A
-while claiming Mode B's "no whole key" property (REQ-CRYPTO-008, P8). The active mode is recorded in
-the ruleset and surfaced in the UI.
+**决策。** 在 `wallet-custody` 中实现模式 A：每张牌的标量由 HKDF 派生，**单局**有效（绑定到 `gid`），`reconstructAndSign` 将所披露的标量按 n 求模相加以对结算进行签名。软件托管后端**拒绝** `combineSignShare`（模式 B），因此该构建无法在声称具备模式 B 的"无完整密钥"属性（REQ-CRYPTO-008，P8）的同时却呈现模式 A。当前激活的模式记录在 ruleset 中并在 UI 中展示。
 
-**Consequences.** Phase 1 has a concrete, patent-faithful signing path with the consequences stated
-in ink: single-game keys, bounded hand-window exposure. Mode B (FROST/GG20 via `OB.custody`) is a
-Phase-2+ upgrade behind the same `Custody` interface.
+**后果。** Phase 1 拥有一条具体、忠于专利的签名路径，其后果白纸黑字写明：单局密钥、有界的手牌窗口暴露。模式 B（经由 `OB.custody` 的 FROST/GG20）是同一 `Custody` 接口背后的 Phase-2+ 升级项。

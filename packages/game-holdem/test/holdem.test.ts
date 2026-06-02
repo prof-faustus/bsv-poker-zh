@@ -18,9 +18,9 @@ const NL: Ruleset = {
   hiLo: false,
 };
 
-// Build a 52-card deck whose first 9 positions force a known heads-up hand:
-//   deal order (button-first): seat0=deck[0],deck[2]; seat1=deck[1],deck[3]; board=deck[4..8].
-//   seat0 = As Ah (AA), seat1 = Ks Kh (KK), board = Qd Jc 9h 4s 3h → seat0 wins (pair aces).
+// 构建一副 52 张的牌堆,其前 9 个位置强制出一手已知的单挑牌:
+//   发牌顺序(从庄家开始):seat0=deck[0],deck[2];seat1=deck[1],deck[3];公共牌=deck[4..8]。
+//   seat0 = As Ah(对 A),seat1 = Ks Kh(对 K),公共牌 = Qd Jc 9h 4s 3h → seat0 获胜(一对 A)。
 function fixedDeck(): Card[] {
   const head = ['As', 'Ks', 'Ah', 'Kh', 'Qd', 'Jc', '9h', '4s', '3h'].map(parseCard);
   const used = new Set(head);
@@ -38,17 +38,17 @@ test('full heads-up hand to showdown: AA beats KK; pot settled, stacks updated',
   const m = createHoldem({ deck: fixedDeck() });
   let s: HoldemState = m.init(NL, seats);
   assert.equal(s.phase, PHASES.BET_PREFLOP);
-  assert.equal(s.betting.toAct, 0); // button/SB acts first preflop
+  assert.equal(s.betting.toAct, 0); // 庄家/小盲在翻牌前首先行动
   assert.equal(s.betting.betToCall, 2);
 
   const play: Action[] = [
-    { kind: 'call', seat: 0, amount: 1 }, // SB completes (1 already posted)
-    { kind: 'check', seat: 1, amount: 0 }, // BB checks → preflop closes
-    { kind: 'check', seat: 1, amount: 0 }, // flop: non-button first
+    { kind: 'call', seat: 0, amount: 1 }, // 小盲补齐(已下 1)
+    { kind: 'check', seat: 1, amount: 0 }, // 大盲看牌 → 翻牌前结束
+    { kind: 'check', seat: 1, amount: 0 }, // 翻牌:非庄家先行
     { kind: 'check', seat: 0, amount: 0 },
-    { kind: 'check', seat: 1, amount: 0 }, // turn
+    { kind: 'check', seat: 1, amount: 0 }, // 转牌
     { kind: 'check', seat: 0, amount: 0 },
-    { kind: 'check', seat: 1, amount: 0 }, // river
+    { kind: 'check', seat: 1, amount: 0 }, // 河牌
     { kind: 'check', seat: 0, amount: 0 },
   ];
   for (const a of play) s = m.apply(s, a);
@@ -56,7 +56,7 @@ test('full heads-up hand to showdown: AA beats KK; pot settled, stacks updated',
   assert.equal(s.phase, PHASES.HAND_END);
   assert.equal(s.handComplete, true);
   assert.equal(s.board.length, 5);
-  // pot = 2 + 2 = 4 to seat 0
+  // 底池 = 2 + 2 = 4 归 seat 0
   assert.deepEqual(
     [...s.payouts].sort((a, b) => a.seat - b.seat),
     [{ seat: 0, amount: 4 }],
@@ -68,25 +68,25 @@ test('full heads-up hand to showdown: AA beats KK; pot settled, stacks updated',
 test('fold without reveal ends the hand uncontested (P5)', () => {
   const m = createHoldem({ deck: fixedDeck() });
   let s = m.init(NL, seats);
-  s = m.apply(s, { kind: 'fold', seat: 0, amount: 0 }); // SB folds preflop
+  s = m.apply(s, { kind: 'fold', seat: 0, amount: 0 }); // 小盲在翻牌前弃牌
   assert.equal(s.phase, PHASES.HAND_END);
   assert.equal(s.handComplete, true);
-  // pot = SB(1) + BB(2) = 3 to seat 1; no board revealed
+  // 底池 = 小盲(1) + 大盲(2) = 3 归 seat 1;不揭示公共牌
   assert.deepEqual([...s.payouts], [{ seat: 1, amount: 3 }]);
   assert.equal(s.seats.find((x) => x.seat === 1)!.stack, 101);
   assert.equal(s.seats.find((x) => x.seat === 0)!.stack, 99);
-  assert.equal(s.board.length, 0); // fold without reveal
+  assert.equal(s.board.length, 0); // 弃牌且不揭示
 });
 
 test('determinism: replaying the same actions yields byte-identical state (P2)', () => {
   const play: Action[] = [
     { kind: 'call', seat: 0, amount: 1 },
     { kind: 'check', seat: 1, amount: 0 },
-    { kind: 'bet', seat: 1, amount: 4 }, // flop bet
+    { kind: 'bet', seat: 1, amount: 4 }, // 翻牌下注
     { kind: 'call', seat: 0, amount: 4 },
-    { kind: 'check', seat: 1, amount: 0 }, // turn
+    { kind: 'check', seat: 1, amount: 0 }, // 转牌
     { kind: 'check', seat: 0, amount: 0 },
-    { kind: 'check', seat: 1, amount: 0 }, // river
+    { kind: 'check', seat: 1, amount: 0 }, // 河牌
     { kind: 'check', seat: 0, amount: 0 },
   ];
   const run = (): HoldemState => {
@@ -105,11 +105,11 @@ test('determinism: replaying the same actions yields byte-identical state (P2)',
 test('timeout-default is check when legal, else fold — never a forced wager (core §6.4)', () => {
   const m = createHoldem({ deck: fixedDeck() });
   let s = m.init(NL, seats);
-  // SB facing the BB: default-on-timeout must be FOLD (cannot check facing a bet).
+  // 小盲面对大盲:超时默认动作必须是弃牌(FOLD)(面对下注时无法看牌)。
   const t1 = m.isTimeoutEligible(s, 0);
   assert.equal(t1!.seat, 0);
   assert.equal(t1!.defaultAction.kind, 'fold');
-  // After SB completes and BB is to act with no bet to face: default is CHECK.
+  // 小盲补齐后,大盲行动且无需面对下注:默认动作是看牌(CHECK)。
   s = m.apply(s, { kind: 'call', seat: 0, amount: 1 });
   const t2 = m.isTimeoutEligible(s, 0);
   assert.equal(t2!.seat, 1);
@@ -117,8 +117,8 @@ test('timeout-default is check when legal, else fold — never a forced wager (c
 });
 
 test('multi-way (3-handed) all-in produces main + side pot; best hand sweeps (§19.B)', () => {
-  // seat2 AA > seat1 KK > seat0 QQ on a blank board. Deal order button-first (0,1,2):
-  //   c1: 0,1,2  c2: 3,4,5  board: 6..10
+  // 在空白公共牌上 seat2 对A > seat1 对K > seat0 对Q。发牌顺序从庄家开始(0,1,2):
+  //   c1: 0,1,2  c2: 3,4,5  公共牌: 6..10
   const head = ['Qs', 'Ks', 'As', 'Qh', 'Kh', 'Ah', '2c', '7d', '9h', 'Jc', '4s'].map(parseCard);
   const used = new Set(head);
   const rest: Card[] = [];
@@ -132,14 +132,14 @@ test('multi-way (3-handed) all-in produces main + side pot; best hand sweeps (§
     { seat: 2, stack: 100 },
   ];
   let s = m.init(NL, seats3);
-  // 3-handed: button=seat0 acts first preflop; SB=seat1, BB=seat2.
+  // 3 人:庄家=seat0 在翻牌前首先行动;小盲=seat1,大盲=seat2。
   assert.equal(s.betting.toAct, 0);
-  s = m.apply(s, { kind: 'raise', seat: 0, amount: 40 }); // button all-in 40
-  s = m.apply(s, { kind: 'raise', seat: 1, amount: 60 }); // SB all-in 60 (short)
-  s = m.apply(s, { kind: 'call', seat: 2, amount: 58 }); // BB calls to 60 (2 already posted)
+  s = m.apply(s, { kind: 'raise', seat: 0, amount: 40 }); // 庄家全下 40
+  s = m.apply(s, { kind: 'raise', seat: 1, amount: 60 }); // 小盲全下 60(较短)
+  s = m.apply(s, { kind: 'call', seat: 2, amount: 58 }); // 大盲跟注至 60(已下 2)
   assert.equal(s.handComplete, true);
   assert.equal(s.board.length, 5);
-  // pots conserve and seat2 (AA) sweeps main(120) + side(40) = 160
+  // 底池守恒,seat2(对A)横扫主池(120) + 边池(40) = 160
   const total = s.pots.reduce((p, x) => p + x.amount, 0);
   assert.equal(total, 160);
   assert.equal(s.seats.find((x) => x.seat === 2)!.stack, 200);
@@ -151,9 +151,9 @@ test('getLegalActions only offers legal moves for the seat on the clock', () => 
   const m = createHoldem({ deck: fixedDeck() });
   const s = m.init(NL, seats);
   const legalSB = m.getLegalActions(s, 0);
-  assert.equal(legalSB.check, false); // facing the big blind
+  assert.equal(legalSB.check, false); // 面对大盲
   assert.deepEqual(legalSB.call, { amount: 1 });
   assert.ok(legalSB.raise);
-  // not seat 1's turn
+  // 还未轮到 seat 1
   assert.deepEqual(m.getLegalActions(s, 1), { check: false, fold: false });
 });

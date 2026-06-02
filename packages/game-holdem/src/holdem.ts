@@ -1,13 +1,13 @@
 /**
- * Texas Hold'em GameModule — core §7.2 and the §19.E transition table. Phase-1 reference is
- * heads-up No-Limit on regtest (D1), but the module generalises to the 2–9 seat envelope.
+ * 德州扑克(Texas Hold'em)GameModule —— 核心 §7.2 以及 §19.E 转移表。第一阶段的参考实现是
+ * regtest 上的单挑无限注(D1),但本模块可泛化到 2–9 座位的范围。
  *
- * Determinism (P2 / REQ-ARCH-002): the module is a pure function of (ruleset, injected deck,
- * betting actions). The deck is the post-shuffle order — a RECORDED source (core §4); the
- * module never samples randomness. Card faces are engine-known for settlement but are
- * "concealed" at the UI/custody boundary (core §11.5); selective reveal and the N-of-N board
- * reveals are added by the crypto/tx layer (core §4.6, §6.6). Here the cooperative reveal
- * path auto-advances; its timeout-default is reported by isTimeoutEligible (core §6.4).
+ * 确定性(P2 / REQ-ARCH-002):本模块是 (ruleset, 注入的牌堆,
+ * 下注动作) 的纯函数。牌堆是洗牌后的顺序 —— 一个已记录(RECORDED)来源(核心 §4);本
+ * 模块从不采样随机性。牌面为引擎已知以便结算,但在 UI/托管边界处“隐藏”
+ *(核心 §11.5);选择性揭示和 N-of-N 公共牌
+ * 揭示由密码学/交易层添加(核心 §4.6,§6.6)。这里协作式揭示
+ * 路径会自动推进;其超时默认动作由 isTimeoutEligible 报告(核心 §6.4)。
  */
 
 import {
@@ -39,7 +39,7 @@ import {
   openRound,
 } from '@bsv-poker/engine';
 
-// §19.E phases.
+// §19.E 阶段。
 export const PHASES = {
   TABLE_LOCKED: 'S0_TABLE_LOCKED',
   POST_BLINDS: 'S1_POST_BLINDS',
@@ -60,20 +60,20 @@ export const PHASES = {
 } as const;
 
 export interface HoldemState extends GameState {
-  /** Internal betting context (source of truth; GameState.seats/betting project from it). */
+  /** 内部下注上下文(权威来源;GameState.seats/betting 由它投影得出)。 */
   readonly ctx: BettingCtx;
-  /** Injected post-shuffle deck (recorded source). */
+  /** 注入的洗牌后牌堆(已记录来源)。 */
   readonly deck: readonly Card[];
-  /** Engine-known hole cards per seat number; concealed at the UI boundary. */
+  /** 每个座位编号的、引擎已知的底牌;在 UI 边界处隐藏。 */
   readonly hole: Readonly<Record<number, readonly Card[]>>;
-  /** Awards computed at SETTLE (per seat gross winnings). */
+  /** 在 SETTLE 阶段计算的奖励(每个座位的毛赢额)。 */
   readonly payouts: Payouts;
 }
 
 interface HoldemConfig {
-  /** The post-shuffle deck (>= 2*seats + 5 cards). Required for a real hand. */
+  /** 洗牌后的牌堆(>= 2*seats + 5 张牌)。真实一手牌所必需。 */
   readonly deck: readonly Card[];
-  /** Button seat index into the ascending seat order (rotation across hands, §19.E S13). */
+  /** 庄家座位在升序座位顺序中的索引(跨手轮转,§19.E S13)。 */
   readonly buttonIndex?: number;
 }
 
@@ -93,7 +93,7 @@ function projectSeats(ctx: BettingCtx): SeatState[] {
     folded: s.folded,
     allIn: s.allIn,
     hasActedThisRound: s.hasActedThisRound,
-    holeSlots: [], // slot bookkeeping lives in the crypto/tx layer
+    holeSlots: [], // 槽位记账位于密码学/交易层
   }));
 }
 
@@ -111,19 +111,19 @@ function liveSeats(ctx: BettingCtx): number[] {
   return ctx.seats.filter((s) => !s.folded).map((s) => s.seat);
 }
 
-/** Heads-up: button = SB acts first preflop; non-button acts first postflop. */
+/** 单挑:庄家 = 小盲在翻牌前首先行动;非庄家在翻牌后首先行动。 */
 function seatOrder(ctx: BettingCtx): number[] {
   return ctx.seats.map((s) => s.seat).sort((a, b) => a - b);
 }
 
 function nonButton(ctx: BettingCtx, button: number): number {
-  // For heads-up / first-active-left-of-button postflop.
+  // 用于单挑 / 翻牌后庄家左侧第一个活跃座位。
   const order = seatOrder(ctx);
   const idx = order.indexOf(button);
   return order[(idx + 1) % order.length]!;
 }
 
-/** The first non-folded, non-all-in seat at or clockwise after `startSeat`. */
+/** 在 `startSeat` 处或其顺时针之后的第一个未弃牌、非全下的座位。 */
 function firstActiveFrom(ctx: BettingCtx, startSeat: number): number {
   const order = seatOrder(ctx);
   const start = order.indexOf(startSeat);
@@ -159,16 +159,16 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
     const order = [...seatInits].sort((a, b) => a.seat - b.seat);
     const seatNums = order.map((s) => s.seat);
     const N = order.length;
-    const bIdx = config.buttonIndex ?? 0; // button seat index (rotation across hands, §19.E S13)
+    const bIdx = config.buttonIndex ?? 0; // 庄家座位索引(跨手轮转,§19.E S13)
     const buttonSeat = seatNums[bIdx % N]!;
-    // Heads-up: button = SB and acts first preflop. 3+: SB = left of button, UTG acts first.
+    // 单挑:庄家 = 小盲且在翻牌前首先行动。3 人以上:小盲 = 庄家左侧,枪口位(UTG)首先行动。
     const sbIdx = N === 2 ? bIdx : bIdx + 1;
     const bbIdx = N === 2 ? bIdx + 1 : bIdx + 2;
     const preflopFirstIdx = N === 2 ? bIdx : bIdx + 3;
     const sb = seatNums[sbIdx % N]!;
     const bb = seatNums[bbIdx % N]!;
 
-    // Deal hole cards (one at a time, button-first) from the injected deck.
+    // 从注入的牌堆发底牌(一次一张,从庄家开始)。
     const hole: Record<number, Card[]> = {};
     for (const s of order) hole[s.seat] = [];
     let p = 0;
@@ -176,7 +176,7 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
       for (const s of order) hole[s.seat]!.push(deck[p++]!);
     }
 
-    // Build betting seats and post blinds.
+    // 构建下注座位并下盲注。
     const bseats: BettingSeat[] = order.map((s) => ({
       seat: s.seat,
       stack: s.stack,
@@ -211,7 +211,7 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
     ctx.lastAggressor = bb;
     ctx.toAct = firstActiveFrom(ctx, seatNums[preflopFirstIdx % N]!);
 
-    const rulesetHashHex = ''; // filled by the SDK when a real ruleset hash is bound
+    const rulesetHashHex = ''; // 在绑定真实 ruleset 哈希时由 SDK 填充
     const base: HoldemState = {
       rulesetHash: rulesetHashHex,
       gid: '',
@@ -228,15 +228,15 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
       hole,
       payouts: [],
     };
-    // store ruleset on the closure for apply()
+    // 将 ruleset 存储在闭包上供 apply() 使用
     rulesetRef = ruleset;
     return base;
   }
 
-  // Captured ruleset (the module instance plays one ruleset; matches a table).
+  // 捕获的 ruleset(模块实例只对应一个 ruleset;与一张牌桌匹配)。
   let rulesetRef: Ruleset | null = null;
 
-  /** Board card indices in the deck after the hole cards. */
+  /** 底牌之后,公共牌在牌堆中的索引。 */
   function boardSlots(state: HoldemState): { flop: Card[]; turn: Card; river: Card } {
     const n = state.ctx.seats.length;
     const start = 2 * n;
@@ -247,18 +247,18 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
     };
   }
 
-  /** Advance through reveal/showdown/settle until the next state that awaits a player action. */
+  /** 推进经过揭示/摊牌/结算,直到下一个等待玩家动作的状态。 */
   function autoAdvance(state: HoldemState): HoldemState {
     let s = state;
     for (;;) {
-      // Fold-end: only one live player → award uncontested (no reveal).
+      // 弃牌结束:只剩一个存活玩家 → 无争议地授予(不揭示)。
       if (liveSeats(s.ctx).length <= 1 && !s.handComplete) {
         s = freshState(s, s.ctx, PHASES.SETTLE);
         return settleState(s);
       }
       if (BET_PHASES.has(s.phase)) {
-        if (!isRoundClosed(s.ctx)) return s; // awaits action
-        s = nextStreet(s); // round closed → reveal + open next betting round (or showdown)
+        if (!isRoundClosed(s.ctx)) return s; // 等待动作
+        s = nextStreet(s); // 回合结束 → 揭示 + 开启下一轮下注(或摊牌)
         continue;
       }
       if (s.phase === PHASES.SHOWDOWN) {
@@ -301,12 +301,12 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
     const pots: Pot[] = computePots(
       state.ctx.seats.map((s) => ({ seat: s.seat, contrib: s.committedThisHand, folded: s.folded })),
     );
-    // seat order left-of-button for odd-chip rule.
+    // 用于奇数筹码规则的庄家左侧座位顺序。
     const order = seatOrder(state.ctx);
     const bIdx = order.indexOf(state.buttonSeat);
     const leftOfButton = [...order.slice(bIdx + 1), ...order.slice(0, bIdx + 1)];
 
-    // Comparator over seats by best 5-card high hand (hole + board). Folded seats lose.
+    // 按最佳 5 张高牌手牌(底牌 + 公共牌)比较座位的比较器。已弃牌的座位判负。
     const handValue = (seat: number) => bestHigh([...state.hole[seat]!, ...state.board]).value;
     const cmp = (a: number, b: number): -1 | 0 | 1 => {
       const fa = state.ctx.seats.find((x) => x.seat === a)!.folded;
@@ -319,7 +319,7 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
 
     const awards = new Map<number, number>();
     for (const pot of pots) {
-      // Uncontested fold-end: a board may be empty; if only one live, award directly.
+      // 无争议的弃牌结束:公共牌可能为空;若只剩一个存活座位,直接授予。
       if (pot.eligible.length === 1) {
         awards.set(pot.eligible[0]!, (awards.get(pot.eligible[0]!) ?? 0) + pot.amount);
         continue;
@@ -328,7 +328,7 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
       for (const [seat, amt] of a) awards.set(seat, (awards.get(seat) ?? 0) + amt);
     }
 
-    // Apply awards to stacks.
+    // 将奖励应用到筹码量上。
     const ctx: BettingCtx = {
       ...state.ctx,
       seats: state.ctx.seats.map((s) => ({
@@ -363,11 +363,11 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
   }
 
   function isTimeoutEligible(state: HoldemState, now: number): TimeoutResolution | null {
-    void now; // "now" is anchored height/time (core §6.4); the caller applies only after maturity.
+    void now; // “now”是锚定的高度/时间(核心 §6.4);调用方仅在成熟后才应用。
     if (!BET_PHASES.has(state.phase) || state.ctx.toAct === null) return null;
     const seat = state.ctx.toAct;
     const legal = legalActions(state.ctx, rulesetRef!, seat);
-    // Safe default: check if legal, else fold — NEVER a forced wager (core §6.4).
+    // 安全默认动作:合法则看牌,否则弃牌 —— 绝不强制下注(核心 §6.4)。
     const defaultAction: Action = legal.check
       ? { kind: 'check', seat, amount: 0 }
       : { kind: 'fold', seat, amount: 0 };
@@ -397,7 +397,7 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
     return w.toBytes();
   }
 
-  /** Stable hash of the public state (for branch binding / replay equivalence, core §6.3). */
+  /** 公共状态的稳定哈希(用于分支绑定 / 重放等价性,核心 §6.3)。 */
   function stateHash(state: HoldemState): string {
     return bytesToHex(sha256(serialize(state)));
   }
@@ -411,7 +411,7 @@ export function createHoldem(config: HoldemConfig): HoldemModule {
     isHandComplete,
     settle,
     serialize,
-    stateHash, // exposed for branch binding / replay equivalence
+    stateHash, // 暴露以用于分支绑定 / 重放等价性
   };
   return module;
 }

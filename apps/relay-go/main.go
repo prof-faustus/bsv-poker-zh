@@ -1,10 +1,10 @@
-// Command relay starts the bsv-poker Phase-1 hosted relay.
+// Command relay 启动 bsv-poker 第一阶段托管 relay。
 //
-// REQ-NET-001 (core §8.1): the relay is transport + indexing only and is NEVER
-// the source of truth. It binds to loopback and is supervised by the Tauri main
-// process (app §A3.1, §A3.2).
+// REQ-NET-001（core §8.1）：relay 仅负责传输 + 索引，绝不
+// 作为事实来源。它绑定到 loopback，并由 Tauri 主
+// 进程监管（app §A3.1、§A3.2）。
 //
-// Run: go run . -addr 127.0.0.1:8091
+// 运行：go run . -addr 127.0.0.1:8091
 package main
 
 import (
@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	// Default port 8091: 8081 is taken on the build host.
+	// 默认端口 8091：8081 在构建主机上已被占用。
 	addr := flag.String("addr", "127.0.0.1:8091", "loopback listen address host:port")
 	ttl := flag.Duration("presence-ttl", 30*time.Second, "presence heartbeat expiry window")
 	sweep := flag.Duration("sweep-interval", 10*time.Second, "presence expiry sweep interval")
@@ -37,7 +37,7 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	// Graceful shutdown on SIGINT/SIGTERM (reverse-order stop, app §A3.2).
+	// 在 SIGINT/SIGTERM 时优雅关闭（逆序停止，app §A3.2）。
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 

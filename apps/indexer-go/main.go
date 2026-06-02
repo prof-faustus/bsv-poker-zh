@@ -1,12 +1,12 @@
-// Command indexer starts the bsv-poker table-transaction indexer.
+// Command indexer 启动 bsv-poker 牌桌交易索引器。
 //
-// REQ-NET-004 (core §8.4): ingests opaque protocol-transaction records and
-// serves per-table projections.
-// REQ-NET-001 (core §8.1): convenience projection only, never the source of
-// truth. Supervised by the Tauri main process (app §A3.1, started BEFORE the
-// relay per the ordered-startup rule REQ-APP-021).
+// REQ-NET-004（core §8.4）：摄取不透明的协议交易记录并
+// 提供按牌桌划分的投影。
+// REQ-NET-001（core §8.1）：仅为便利性投影，绝不作为事实
+// 来源。由 Tauri 主进程监管（app §A3.1，按有序启动规则
+// REQ-APP-021 在 relay 之前启动）。
 //
-// Run: go run . -addr 127.0.0.1:8092
+// 运行：go run . -addr 127.0.0.1:8092
 package main
 
 import (

@@ -1,11 +1,11 @@
 /**
- * Shared presentational primitives (REQ-APP-052). Pure render of props — NO business logic,
- * no legality computation. Suits carry a letter glyph so no information is colour-only (a11y,
- * §A3.5 / core §5.5.1 no suit precedence).
+ * 共享的展示型基础组件（REQ-APP-052）。纯粹按 props 渲染——无业务逻辑，
+ * 不计算合法性。花色带有字母字形，使任何信息都不仅靠颜色表达（a11y，
+ * §A3.5 / core §5.5.1 无花色优先级）。
  *
- * <PlayingCard> renders a realistic card face (rounded white rect, rank+suit in the corners, a
- * centre pip) and <CardBack> a patterned back for concealed cards. <CardChip> is kept as a small
- * alias of <PlayingCard size="sm"> so existing call sites (modals/showdown) keep working.
+ * <PlayingCard> 渲染逼真的牌面（圆角白色矩形、四角的点数+花色、中央的花色符号），
+ * <CardBack> 为隐藏的牌渲染带花纹的背面。<CardChip> 保留为 <PlayingCard size="sm">
+ * 的简短别名，使现有调用点（modals/showdown）继续可用。
  */
 import React from 'react';
 import type { CardVM } from '../view-models/table.ts';
@@ -77,7 +77,7 @@ export function PlayingCard(props: { card: CardVM; size?: CardSize }): React.JSX
   );
 }
 
-/** Back-compat alias used by showdown/settlement panels. Small face card. */
+/** 供 showdown/settlement 面板使用的向后兼容别名。小尺寸明牌。 */
 export function CardChip(props: { card: CardVM }): React.JSX.Element {
   return <PlayingCard card={props.card} size="sm" />;
 }
@@ -104,7 +104,7 @@ export function CardBack(props: { size?: CardSize }): React.JSX.Element {
   );
 }
 
-/** A single casino chip (decorative). `value` is shown for readability. */
+/** 单枚赌场筹码（装饰性）。`value` 显示出来以便阅读。 */
 export function Chip(props: { value?: number; color?: string; size?: number }): React.JSX.Element {
   const size = props.size ?? 26;
   const color = props.color ?? '#c4122f';
@@ -131,7 +131,7 @@ export function Chip(props: { value?: number; color?: string; size?: number }): 
   );
 }
 
-/** A labelled chip stack — a chip plus an amount, for pot/bet displays. */
+/** 带标签的筹码堆——一枚筹码加一个金额，用于底池/下注显示。 */
 export function ChipStack(props: { amount: number; label?: string; color?: string }): React.JSX.Element {
   return (
     <span
@@ -157,7 +157,7 @@ export function ChipStack(props: { amount: number; label?: string; color?: strin
 }
 
 function shade(hex: string): string {
-  // Darken a #rrggbb by ~35% for the chip's lower gradient stop; fall back to the input.
+  // 把 #rrggbb 调暗约 35% 作为筹码下方的渐变停止点；失败则回退为输入值。
   if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return '#7a0c1d';
   const n = parseInt(hex.slice(1), 16);
   const r = Math.round(((n >> 16) & 255) * 0.65);

@@ -1,6 +1,6 @@
 /**
- * Player actions and betting-action kinds — core §5.4, §7.1.
- * Actions are the in-window moves; each maps to a signed transaction (core §6.1 Action).
+ * 玩家动作与下注动作类型 — core §5.4, §7.1。
+ * Action 是窗口内的操作；每个动作对应一笔已签名的交易（core §6.1 Action）。
  */
 
 export const ACTION_KINDS = [
@@ -9,27 +9,27 @@ export const ACTION_KINDS = [
   'call',
   'raise',
   'fold',
-  'draw', // five-card draw (core §7.3.3)
-  'stand', // stand pat (draw 0)
+  'draw', // 五张抽牌（core §7.3.3）
+  'stand', // 不换牌（抽 0 张）
 ] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
 
 export interface Action {
   readonly kind: ActionKind;
   readonly seat: number;
-  /** For bet/call/raise: the amount (raise = raise-TO total this round). 0 otherwise. */
+  /** 对于 bet/call/raise：金额（raise = 本轮加注至的总额）。其余情况为 0。 */
   readonly amount: number;
-  /** For draw: the set of concealed-card slot indices the player discards (0..n). */
+  /** 对于 draw：玩家弃掉的暗牌槽位索引集合（0..n）。 */
   readonly discard?: readonly number[];
 }
 
-/** Legal-action descriptor returned by BettingStructure.legalBets (core §5.4, REQ-POKER-008). */
+/** 由 BettingStructure.legalBets 返回的合法动作描述符（core §5.4, REQ-POKER-008）。 */
 export interface LegalActions {
   readonly check: boolean;
   readonly call?: { readonly amount: number };
   readonly bet?: { readonly min: number; readonly max: number };
   readonly raise?: { readonly min: number; readonly max: number };
   readonly fold: boolean;
-  /** Draw variants only. */
+  /** 仅限抽牌类玩法。 */
   readonly draw?: boolean;
 }

@@ -1,11 +1,11 @@
 /**
- * On-chain UTXO/submit E2E against the REAL embedded BSV node (core §8.4, REQ-NET-004 / REQ-DEP-004).
- * The platform mines a regtest block, then reads the REAL coinbase UTXO from the node (outpoint
- * status + value), checks the UTXO-set size, and exercises the submit path through the node's REAL
- * Script interpreter. This is the platform observing/driving genuine chain state, not a fake.
+ * 针对真实嵌入式 BSV 节点的链上 UTXO/submit E2E（core §8.4, REQ-NET-004 / REQ-DEP-004）。
+ * 平台挖一个 regtest 区块，然后从节点读取真实的 coinbase UTXO（outpoint
+ * 状态 + 金额），检查 UTXO 集合大小，并通过节点真实的
+ * Script interpreter 演练 submit 路径。这是平台在观察/驱动真正的链上状态，而非 fake。
  *
- * Full acceptance of a platform-BUILT poker tx (byte-exact sighash/script interop with bitcoinx)
- * is the final on-chain step; this proves the chain-query + submit RPCs are real and wired.
+ * 完整接受由平台构建的扑克 tx（与 bitcoinx 逐字节一致的 sighash/script 互操作）
+ * 是最后的链上步骤；本测试证明 chain-query + submit RPC 是真实且已接入的。
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -16,7 +16,7 @@ import { bytesToHex } from '@bsv-poker/protocol-types';
 
 const NODE_DIR = process.env.BSV_NODE_DIR ?? 'D:\\claude\\ACM 01\\bonded-subsat-channel';
 const PORT = Number(process.env.BSV_NODE_PORT ?? 8744);
-const REGTEST_COINBASE = 5_000_000_000; // 50 BSV regtest subsidy (node.coinbase_reward)
+const REGTEST_COINBASE = 5_000_000_000; // 50 BSV regtest 补贴（node.coinbase_reward）
 let daemon: ChildProcess | null = null;
 
 async function main(): Promise<void> {
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
     const block = await node.generateBlock(payoutPub);
     console.log(`[onchain-e2e] coinbase txid = ${block.coinbaseTxid.slice(0, 24)}…`);
 
-    // Read the REAL coinbase UTXO from the node.
+    // 从节点读取真实的 coinbase UTXO。
     const out = await node.outpointStatus(block.coinbaseTxid, 0);
     console.log(`[onchain-e2e] coinbase outpoint: unspent=${out.unspent} value=${out.value}`);
     assert.equal(out.unspent, true, 'the freshly-mined coinbase output is unspent');
@@ -48,11 +48,11 @@ async function main(): Promise<void> {
     console.log(`[onchain-e2e] node UTXO-set size = ${count}`);
     assert.ok(count >= 1, 'the UTXO set holds the coinbase');
 
-    // A spent/nonexistent outpoint reads as not-unspent.
+    // 一个已花费/不存在的 outpoint 读取为非未花费。
     const ghost = await node.outpointStatus('00'.repeat(32), 0);
     assert.equal(ghost.unspent, false, 'an unknown outpoint is not unspent');
 
-    // The submit RPC reaches the node's REAL validator (an input-less tx is rejected with a reason).
+    // submit RPC 抵达节点真实的验证器（无输入的 tx 会被拒绝并附带原因）。
     const emptyTx = '01000000' + '00' + '00' + '00000000';
     const res = await node.submitTx(emptyTx);
     console.log(`[onchain-e2e] submit(empty tx) → ok=${res.ok} reason="${res.reason}" (real validator)`);

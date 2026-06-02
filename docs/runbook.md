@@ -1,55 +1,51 @@
-# Runbook (operations)
+# 运行手册（运维）
 
-Per app spec §A15. How to build, test, run, and verify the platform.
+依据应用规范 §A15。如何构建、测试、运行和验证该平台。
 
-## Prerequisites
-- Node ≥ 24 (native TypeScript type-stripping; `node --test`).
-- pnpm 9. Go ≥ 1.24. (Rust/Tauri for the desktop shell — later phase.)
-- Installs on a TLS-inspecting host: prefix with `NODE_OPTIONS="--use-system-ca"`.
+## 前置条件
+- Node ≥ 24（原生 TypeScript 类型剥离；`node --test`）。
+- pnpm 9。Go ≥ 1.24。（桌面外壳所需的 Rust/Tauri——后续阶段。）
+- 在 TLS 检查主机上安装：前缀加上 `NODE_OPTIONS="--use-system-ca"`。
 
-## Install
+## 安装
 ```
 NODE_OPTIONS="--use-system-ca" pnpm install
 ```
 
-## The commands (root package.json)
-| Command | Purpose |
+## 命令（根 package.json）
+| 命令 | 用途 |
 |---|---|
-| `pnpm typecheck` | `tsc --strict --noEmit` across the workspace |
-| `pnpm test` | all `node --test` suites |
-| `pnpm reproduce` | regenerate every vector; non-zero on mismatch (core §14.5) |
-| `pnpm lint:opreturn` | fail if OP_RETURN (0x6a) appears in any script |
-| `pnpm trace` | requirements → code → test traceability |
-| `pnpm requirements` | regenerate `spec/requirements.yaml` from the specs |
-| `pnpm selftest` | bring the stack up + run a full hand E2E (the Phase-0 gate check) |
-| `pnpm ci` | the full pipeline (typecheck → lint → tests → reproduce → trace → go test) |
+| `pnpm typecheck` | 在整个工作区执行 `tsc --strict --noEmit` |
+| `pnpm test` | 所有 `node --test` 套件 |
+| `pnpm reproduce` | 重新生成每个向量；不匹配则非零退出（核心 §14.5） |
+| `pnpm lint:opreturn` | 若任何脚本中出现 OP_RETURN（0x6a）则失败 |
+| `pnpm trace` | 需求 → 代码 → 测试 的可追溯性 |
+| `pnpm requirements` | 从规范重新生成 `spec/requirements.yaml` |
+| `pnpm selftest` | 拉起整个栈 + 运行一手完整的端到端对局（Phase-0 门禁检查） |
+| `pnpm ci` | 完整流水线（typecheck → lint → tests → reproduce → trace → go test） |
 
-## Run the stack (self-test, no Docker)
+## 运行整个栈（自检，无需 Docker）
 ```
 node tools/selftest.ts
 ```
-Builds the Go services, starts relay (:8091) + indexer (:8092), waits for `/healthz`, runs a full
-heads-up hand, prints the transcript + state hash + payouts, tears down.
+构建各 Go 服务，启动 relay（:8091）+ indexer（:8092），等待 `/healthz`，运行一手完整的单挑手牌，打印转录 + 状态哈希 + 派彩，然后拆除。
 
-## Run the container stack
+## 运行容器栈
 ```
 docker compose -f vm/docker-compose.yml up --build
 ```
-node-regtest (:18332, placeholder pending the bonded-subsat-channel bind) · relay (:8091) ·
-indexer (:8092) · client (:5173).
+node-regtest（:18332，占位，等待 bonded-subsat-channel 绑定）· relay（:8091）· indexer（:8092）· client（:5173）。
 
-## Run the web client (dev)
+## 运行 Web 客户端（开发）
 ```
-NODE_OPTIONS="--use-system-ca" pnpm --filter @bsv-poker/client-web dev      # dev server
-NODE_OPTIONS="--use-system-ca" pnpm --filter @bsv-poker/client-web build    # static bundle → dist
+NODE_OPTIONS="--use-system-ca" pnpm --filter @bsv-poker/client-web dev      # 开发服务器
+NODE_OPTIONS="--use-system-ca" pnpm --filter @bsv-poker/client-web build    # 静态打包产物 → dist
 ```
 
-## Data directories & network
-- Regtest by default (REQ-VM-007); mainnet only behind the explicit research flag, with an
-  unmissable UI banner. Data dirs are namespaced by network so regtest/mainnet never share state.
-- The desktop supervisor binds local services to loopback by default (§A10.7).
+## 数据目录与网络
+- 默认 regtest（REQ-VM-007）；mainnet 仅位于显式的研究标志之后，并伴有一个无法忽视的 UI 横幅。数据目录按网络划分命名空间，因此 regtest/mainnet 从不共享状态。
+- 桌面监管进程默认将本地服务绑定到环回（§A10.7）。
 
-## Recovery
-- A red CI stage blocks merge — fix the failing stage (the runner stops at the first failure).
-- `reproduce` mismatch ⇒ a vector drifted; investigate the change, then `node tools/reproduce.ts
-  --write` only if the change is intentional, and commit the new vector with justification.
+## 恢复
+- 一个红色的 CI 阶段会阻止合并——修复失败的阶段（运行器在第一个失败处停止）。
+- `reproduce` 不匹配 ⇒ 某个向量发生了漂移；调查变更，然后仅在变更是有意为之时运行 `node tools/reproduce.ts --write`，并连同理由提交新向量。

@@ -1,9 +1,9 @@
 /**
- * On-chain recovery / two-exit E2E (core §6.2/§6.4, P4 — no table frozen by an absent player).
- * Every funded state has TWO exits that conflict on the same outpoint: a low-sequence
- * **timeout-default** (refund split) and a higher-sequence **cooperative** settlement. The node's
- * original-replacement rule (nSequence) lets the cooperative tx SUPERSEDE the pre-broadcast
- * timeout-default — then it confirms. This is the pre-signed-fallback mechanism on the real node.
+ * 链上恢复 / 双出口 E2E（core §6.2/§6.4, P4——牌桌不会被缺席玩家冻结）。
+ * 每个已出资状态都有两个在同一 outpoint 上冲突的出口：一个低序号的
+ * **timeout-default**（退款拆分）和一个更高序号的 **cooperative** 结算。节点的
+ * 原始替换规则（nSequence）让 cooperative tx 取代尚未广播的
+ * timeout-default——然后它被确认。这是真实节点上的预签名回退机制。
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     await node.generateBlock(bytesToHex(k0.pubCompressed));
     const fundingTxid = txidWire(fundingTx, [fundSig]);
 
-    // Build a spend of the pot with a given input sequence + outputs (both players co-sign).
+    // 用给定的输入序号 + 输出构建一笔底池花费（双方玩家共同签名）。
     const spendPot = (sequence: number, outputs: TxOutput[]): { raw: string; txid: string } => {
       const tx: Tx = { version: 1, inputs: [{ prevTxid: fundingTxid, vout: 0, sequence }], outputs, nLockTime: 0 };
       const msg = sighashMessage(tx, 0, fundingScript, pot);
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
       return { raw: bytesToHex(serializeTxWire(tx, [ss])), txid: txidWire(tx, [ss]) };
     };
 
-    // EXIT A — timeout-default (refund split), LOW sequence (replaceable), broadcast first.
+    // 出口 A —— timeout-default（退款拆分），低序号（可替换），先广播。
     const timeout = spendPot(0x00000001, [
       { satoshis: (pot - 1000) / 2, locking: p2pkh(p0.pubCompressed) },
       { satoshis: (pot - 1000) / 2, locking: p2pkh(p1.pubCompressed) },
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
     assert.equal((await node.submitTx(timeout.raw)).ok, true, 'timeout-default admitted to mempool');
     console.log(`[onchain-recovery] timeout-default ${timeout.txid.slice(0, 14)}… in mempool (seq 1)`);
 
-    // EXIT B — cooperative settlement to the winner, HIGHER sequence → REPLACES the timeout one.
+    // 出口 B —— 给赢家的 cooperative 结算，更高序号 → 替换掉 timeout 那笔。
     const coop = spendPot(0xffffffff, [{ satoshis: pot - 1000, locking: p2pkh(p0.pubCompressed) }]);
     const coopRes = await node.submitTx(coop.raw);
     console.log(`[onchain-recovery] cooperative ${coop.txid.slice(0, 14)}… submit → ok=${coopRes.ok} reason="${coopRes.reason}"`);

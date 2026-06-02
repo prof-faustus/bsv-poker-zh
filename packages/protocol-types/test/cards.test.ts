@@ -12,7 +12,7 @@ import {
 } from '../src/cards.ts';
 
 test('card encoding matches the oracle (rank*4+suit; 2=0..A=12; c,d,h,s)', () => {
-  // From the oracle output: As=51, Ts=35, 9h=30, Ac=48, 5c=12.
+  // 来自预言机输出：As=51, Ts=35, 9h=30, Ac=48, 5c=12。
   assert.equal(parseCard('As'), 51);
   assert.equal(parseCard('Ts'), 35);
   assert.equal(parseCard('9h'), 30);

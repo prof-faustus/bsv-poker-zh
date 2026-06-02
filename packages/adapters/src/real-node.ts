@@ -1,12 +1,12 @@
 /**
- * Real BSV node client (core §2.2 BS / §10.2, D6) — binds the platform's chain backend to the
- * **embedded BSV regtest node** shipped in the `bonded-subsat-channel` reference implementation
- * (the prof-faustus repo). It speaks that node daemon's newline-delimited JSON-over-TCP protocol
- * (cmd: ping / status / node.height / node.generate / shutdown).
+ * 真实的 BSV 节点客户端（core §2.2 BS / §10.2，D6）—— 将平台的链后端绑定到
+ * `bonded-subsat-channel` 参考实现（prof-faustus 仓库）中自带的**内嵌 BSV regtest 节点**。
+ * 它使用该节点守护进程的以换行符分隔的 JSON-over-TCP 协议
+ * （cmd: ping / status / node.height / node.generate / shutdown）通信。
  *
- * Node-side only (uses node:net); exported via the `@bsv-poker/adapters/real-node` subpath so it
- * never enters a browser bundle. This is the REAL adapter the conformance/integration tests run
- * against (REQ-DEP-004) — the node is run on the host (regtest only), driven from here.
+ * 仅限 Node 端（使用 node:net）；通过 `@bsv-poker/adapters/real-node` 子路径导出，从而绝不会
+ * 进入浏览器打包产物。这是一致性/集成测试所针对的真实适配器（REQ-DEP-004）—— 节点运行在宿主机上
+ * （仅 regtest），由此处驱动。
  */
 
 import { createConnection } from 'node:net';
@@ -61,7 +61,7 @@ export class RealBsvNode {
     return r.height as number;
   }
 
-  /** Mine a regtest block paying out to `payoutPubHex`; returns the coinbase txid too. */
+  /** 挖出一个 regtest 区块并将奖励支付给 `payoutPubHex`；同时返回 coinbase 的 txid。 */
   async generateBlock(
     payoutPubHex: string,
   ): Promise<{ blockHash: string; txs: number; coinbaseTxid: string }> {
@@ -70,20 +70,20 @@ export class RealBsvNode {
     return { blockHash: r.block_hash as string, txs: r.txs as number, coinbaseTxid: (r.coinbase_txid as string) ?? '' };
   }
 
-  /** Submit a raw (signed) tx; the node validates it through its REAL Script interpreter. */
+  /** 提交一笔原始（已签名）交易；节点通过其真实的 Script 解释器对其进行验证。 */
   async submitTx(rawTxHex: string): Promise<{ ok: boolean; reason: string; txid: string }> {
     const r = await this.call({ cmd: 'node.submit', raw_tx_hex: rawTxHex });
     return { ok: r.ok === true, reason: (r.reason as string) ?? '', txid: (r.txid as string) ?? '' };
   }
 
-  /** Read-only UTXO status for an outpoint (REQ-NET-004 against the real node). */
+  /** 某个 outpoint 的只读 UTXO 状态（针对真实节点的 REQ-NET-004）。 */
   async outpointStatus(txidHex: string, vout: number): Promise<{ unspent: boolean; value: number }> {
     const r = await this.call({ cmd: 'node.outpoint', txid_hex: txidHex, vout });
     if (!r.ok) throw new Error(`node.outpoint failed: ${JSON.stringify(r)}`);
     return { unspent: r.unspent === true, value: (r.value as number) ?? 0 };
   }
 
-  /** The current size of the node's UTXO set. */
+  /** 节点 UTXO 集合的当前大小。 */
   async utxoCount(): Promise<number> {
     const r = await this.call({ cmd: 'node.utxo_count' });
     if (!r.ok) throw new Error(`node.utxo_count failed: ${JSON.stringify(r)}`);
@@ -98,7 +98,7 @@ export class RealBsvNode {
     try {
       await this.call({ cmd: 'shutdown' });
     } catch {
-      /* daemon may close the socket on shutdown */
+      /* 守护进程在关闭时可能会关闭该套接字 */
     }
   }
 }

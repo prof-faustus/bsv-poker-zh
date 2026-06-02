@@ -1,7 +1,7 @@
 /**
- * Showdown / settlement view-models (REQ-APP-051; §A6.8) — pure projections.
- * Reveal of hole cards and the settlement summary are read straight from the terminal
- * HoldemState (payouts come from the engine; the UI never computes awards).
+ * 摊牌 / 结算 view-models（REQ-APP-051；§A6.8）—— 纯投影。
+ * 底牌的亮牌与结算摘要直接从终局的 HoldemState 中读取（派彩来自引擎；
+ * UI 从不计算奖励）。
  */
 
 import type { Card, Payouts } from '@bsv-poker/protocol-types';
@@ -11,7 +11,7 @@ import { cardVM, type CardVM } from './table.ts';
 export interface ShowdownSeatVM {
   readonly seat: number;
   readonly folded: boolean;
-  /** Revealed hole cards (engine-known faces; concealed reveal is a later crypto-layer path). */
+  /** 已亮出的底牌（引擎已知的牌面；隐藏式亮牌是后续 crypto 层的路径）。 */
   readonly holeCards: readonly CardVM[];
   readonly won: number;
 }
@@ -19,7 +19,7 @@ export interface ShowdownSeatVM {
 export interface ShowdownViewModel {
   readonly board: readonly CardVM[];
   readonly seats: readonly ShowdownSeatVM[];
-  /** True when the hand ended by everyone-but-one folding (no reveal needed, core P5). */
+  /** 当本手牌因除一人外全部弃牌而结束时为 true（无需亮牌，core P5）。 */
   readonly uncontested: boolean;
 }
 

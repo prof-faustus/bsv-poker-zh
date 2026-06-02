@@ -1,46 +1,23 @@
-# User guide
+# 用户指南
 
-> **Regtest / play-money.** This is research software. By default it uses a local regtest chain
-> and play-money chips with **no external monetary value**. Mainnet is reachable only behind an
-> explicit research flag, and the app shows an unmissable banner when it is active. This is not a
-> regulated gambling product.
+> **Regtest / 游戏币。** 这是研究性软件。默认情况下它使用本地 regtest 链和**无任何外部货币价值**的游戏币筹码。mainnet 仅在一个显式的研究标志之后可达，且应用在其激活时显示一个无法忽视的横幅。这不是一款受监管的博彩产品。
 
-## What it is
-A dealerless, non-custodial multiplayer poker platform on Bitcoin SV: no server holds the deck or
-decides outcomes; every game event is a signed transaction; the table is a deterministic function
-of the valid transaction set. You can **fold without revealing your cards**, and no absent or
-malicious player can freeze the table — every decision has a timeout default.
+## 它是什么
+一个运行在 Bitcoin SV 上的无荷官、非托管多人扑克平台：没有任何服务器持有牌组或决定结果；每一个游戏事件都是一笔签名交易；牌桌是有效交易集合的确定性函数。你可以**在不亮牌的情况下弃牌**，且任何缺席或恶意的玩家都无法冻结牌桌——每一个决策都有一个超时默认值。
 
-## Playing (web client)
-1. Open the web app. You'll see the **regtest** banner — that's expected.
-2. **Lobby:** create a table (variant, blinds, stacks) or join one. Joining locks your stake; if
-   the table aborts before play it refunds via a pre-signed path.
-3. **Table:** you'll see the seats, the board, the pot(s), the timer, and — importantly — the
-   **consequence of doing nothing** ("If you do nothing, you check in 30s" / "…you fold in 30s —
-   you are never forced to wager").
-4. **Act:** check / bet / call / raise / fold. The app only offers legal moves and only legal bet
-   sizes. Every action raises a **signing prompt** that states exactly what you are signing — there
-   is no silent signing.
-5. **Your cards** are decrypted locally through the custody boundary and shown only to you.
-6. **Showdown:** only contenders reveal, and only what is needed to decide the pot. Settlement is
-   deterministic; final balances are shown.
-7. You can **export the transcript** and replay the hand offline — it reconstructs byte-identically.
+## 进行游戏（Web 客户端）
+1. 打开 Web 应用。你会看到 **regtest** 横幅——这是预期的。
+2. **大厅：** 创建一张牌桌（变体、盲注、筹码量）或加入一张。加入会锁定你的注金；如果牌桌在开局前中止，它会经由预签名路径退款。
+3. **牌桌：** 你会看到座位、公共牌、底池、计时器，以及——重要的是——**什么都不做的后果**（"如果你什么都不做，30 秒后过牌" / "……30 秒后你弃牌——你从不被强制下注"）。
+4. **行动：** 过牌 / 下注 / 跟注 / 加注 / 弃牌。应用只提供合法的动作以及合法的下注额。每一个动作都会触发一个**签名提示**，准确说明你正在签署什么——不存在静默签名。
+5. **你的手牌**通过托管边界在本地解密，且只向你展示。
+6. **摊牌：** 只有争夺底池者才亮牌，且只亮判定底池所需的内容。结算是确定性的；最终余额会被展示。
+7. 你可以**导出转录**并离线回放该手牌——它会逐字节相同地重构。
 
-## Choosing a game, funds, and multiplayer
-- **Pick a variant** when you create a table: Texas Hold'em, Omaha (incl. Hi-Lo), Seven-Card
-  Stud, Five-Card Draw, or Razz — and the seat count (2 up to the variant's max). Blackjack is a
-  separate later track (its dealerless model differs from the poker shuffle).
-- **Wallet — add and remove funds.** Your wallet shows a balance; **Add funds** credits it
-  (regtest/play-money now; a real on-chain deposit is the live path), and **Withdraw** removes
-  funds to an address. Joining a table **buys in** for the table's starting stack from your
-  balance; leaving **cashes out** the remaining stack back to your wallet. Amounts are whole
-  satoshis (no fractional outputs).
-- **Multiplayer rooms.** Connect to a relay, see the **lobby** of open tables, **create** one
-  (others join from the list) or **join** an existing one. A **waiting room** shows players
-  filling the seats; when the table is full everyone is seated and the hand begins — real
-  player-vs-player mental poker over the relay. (There's also an offline practice-vs-bot mode.)
+## 选择游戏、资金与多人游戏
+- **选择一个变体**——在创建牌桌时：德州扑克（Texas Hold'em）、奥马哈（Omaha，含 Hi-Lo）、七张梭哈（Seven-Card Stud）、五张抽牌（Five-Card Draw）或 Razz——以及座位数（2 个至该变体的上限）。21 点（Blackjack）是一条单独的后续路线（其无荷官模型与扑克洗牌不同）。
+- **钱包——添加与移除资金。** 你的钱包显示一个余额；**Add funds** 为其充值（现为 regtest/游戏币；真实的链上充值是上线路径），**Withdraw** 将资金移出到一个地址。加入牌桌会从你的余额中**买入**该牌桌的起始筹码量；离开则将剩余筹码**兑出**回你的钱包。金额为整数 satoshi（无小数输出）。
+- **多人房间。** 连接到一个 relay，查看开放牌桌的**大厅**，**创建**一张（其他人从列表中加入）或**加入**一张已有的。一个**等候室**显示玩家陆续就座；当牌桌满员时所有人就座并开始这手牌——通过 relay 进行的真实玩家对玩家心智扑克（mental poker）。（还有一个离线的对机器人练习模式。）
 
-## Your keys
-Your keys live behind a custody boundary and never reach the page. In the default software custody
-this trusts your device — stated plainly. Threshold custody (no whole key in one place) and a
-hardware-enclave backend are optional later upgrades.
+## 你的密钥
+你的密钥位于一个托管边界背后，且从不到达页面。在默认的软件托管中，这信任你的设备——已明确陈述。门限托管（无任何一处持有完整密钥）和硬件飞地（hardware-enclave）后端是可选的后续升级项。

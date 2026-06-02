@@ -1,12 +1,11 @@
 /**
- * Real micro-betting channel adapter (core §2.2 BS / §5.7 / §9.4; app §A23) — binds the
- * platform's BS.channel lifecycle to the REAL `bonded-subsat-channel` reference implementation
- * by driving its CLI: open → transfer (sub-satoshi) → close (whole-satoshi Q* settlement) →
- * contested (1-sat bond forfeiture). This is the real adapter the §A23.3 integration runs
- * against (REQ-DEP-004); no fractional output is ever written on-chain (INV-BS-1) and risked
- * capital is a fixed 1 satoshi/participant (INV-BS-2).
+ * 真实的微下注通道适配器（core §2.2 BS / §5.7 / §9.4；app §A23）—— 通过驱动其 CLI，将平台的
+ * BS.channel 生命周期绑定到真实的 `bonded-subsat-channel` 参考实现：open → transfer（亚聪）→
+ * close（整聪 Q* 结算）→ contested（1 聪保证金没收）。这是 §A23.3 集成测试所针对的真实适配器
+ * （REQ-DEP-004）；链上绝不写出任何带小数的输出（INV-BS-1），承担的风险资本固定为每个参与者
+ * 1 聪（INV-BS-2）。
  *
- * Node-side only (child_process); exported via `@bsv-poker/adapters/real-channel`.
+ * 仅限 Node 端（child_process）；通过 `@bsv-poker/adapters/real-channel` 导出。
  */
 
 import { spawnSync } from 'node:child_process';
@@ -16,16 +15,16 @@ import { tmpdir } from 'node:os';
 
 export interface ChannelOpenParams {
   parties: number;
-  /** sub-satoshi granularity k. */
+  /** 亚聪粒度 k。 */
   k: number;
-  /** funded whole satoshis S. */
+  /** 注资的整聪数 S。 */
   funded: number;
-  /** anti-cheat bond per party (1 sat — INV-BS-2). */
+  /** 每个玩家的反作弊保证金（1 聪 —— INV-BS-2）。 */
   bond: number;
 }
 
 export interface CloseResult {
-  /** Per-party whole-satoshi payout (q_i + bond_i). */
+  /** 每个玩家的整聪赔付（q_i + bond_i）。 */
   payouts: number[];
   totalSettled: number;
   txSizeBytes: number;
@@ -51,7 +50,7 @@ export class RealBondedChannel {
     return r.stdout;
   }
 
-  /** Open a real bonded sub-satoshi channel (BS.channel.open). */
+  /** 开启一个真实的带保证金亚聪通道（BS.channel.open）。 */
   open(p: ChannelOpenParams): void {
     this.cli([
       'open',
@@ -63,10 +62,10 @@ export class RealBondedChannel {
     ]);
   }
 
-  /** Apply a sequence of sub-satoshi transfers [[from,to,amount],…] (BS.channel.transfer). */
+  /** 应用一系列亚聪转账 [[from,to,amount],…]（BS.channel.transfer）。 */
   transfer(ops: Array<[number, number, number]>): number {
     const scriptPath = join(mkdtempSync(join(tmpdir(), 'bsvpoker-xfer-')), 'ops.json');
-    // write the transfer script
+    // 写入转账脚本
     spawnSync('python', ['-c', `import json,sys; open(sys.argv[1],'w').write(json.dumps(${JSON.stringify(ops)}))`, scriptPath], {
       encoding: 'utf8',
     });
@@ -75,7 +74,7 @@ export class RealBondedChannel {
     return m ? Number(m[1]) : -1;
   }
 
-  /** Cooperative close with whole-satoshi Q* settlement (BS.channel.close). */
+  /** 以整聪 Q* 结算进行的合作式关闭（BS.channel.close）。 */
   close(): CloseResult {
     const out = this.cli(['close', '--state', this.statePath]);
     const payouts: number[] = [];
@@ -88,7 +87,7 @@ export class RealBondedChannel {
     return { payouts, totalSettled: total, txSizeBytes: txSize };
   }
 
-  /** Contested close: forfeit the offender's bond to the honest counterparties (BS.channel.contested). */
+  /** 争议式关闭：将违规方的保证金没收并赔付给诚实的对手方（BS.channel.contested）。 */
   contested(offender: number): string {
     return this.cli(['contested', '--state', this.statePath, '--offender', String(offender)]);
   }

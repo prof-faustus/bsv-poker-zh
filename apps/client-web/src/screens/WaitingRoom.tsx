@@ -1,7 +1,7 @@
 /**
- * Waiting room (§A7) — after Create/Join we are in `LobbyClient.joinWaitingRoom`; the joined
- * players list updates live via the onPlayers callback (driven from App). When the room fills,
- * `seated` resolves in App and we advance to the table. Pure render of the ui-core waitingRoomVM.
+ * 等待室（§A7）—— 在创建/加入之后，我们处于 `LobbyClient.joinWaitingRoom`；已加入的
+ * 玩家列表经由 onPlayers 回调（由 App 驱动）实时更新。当房间坐满时，
+ * `seated` 在 App 中兑现，我们前进到牌桌。纯渲染 ui-core 的 waitingRoomVM。
  */
 import React from 'react';
 import { waitingRoomVM } from '@bsv-poker/ui-core/view-models';

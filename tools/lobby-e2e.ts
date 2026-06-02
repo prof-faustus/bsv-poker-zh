@@ -1,10 +1,10 @@
 /**
- * Waiting-room + real multiplayer E2E (app §A6.3/§A6.5/§A7) — proves two REAL players (not a bot)
- * find a table, join the waiting room, get seated by agreement, and play a full hand
- * interactively over the relay, converging byte-for-byte (REQ-TEST-002).
+ * 等候室 + 真实多人 E2E（app §A6.3/§A6.5/§A7）——证明两名真实玩家（而非机器人）
+ * 找到一张牌桌、加入等候室、经协商就座，并通过中继交互式地打完一整手牌，
+ * 逐字节收敛一致（REQ-TEST-002）。
  *
- *   Host creates a 2-seat table → both join the waiting room → seats agreed → both run the
- *   interactive client (a scripted human acts on each turn) → identical final state.
+ *   Host 创建一张 2 座的牌桌 → 双方加入等候室 → 座位达成一致 → 双方运行
+ *   交互式客户端（一个脚本化的"人类"在每一轮行动）→ 最终状态相同。
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -35,7 +35,7 @@ async function waitHealthy(url: string, timeoutMs: number): Promise<void> {
     try {
       if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) return;
     } catch {
-      /* not up */
+      /* 尚未启动 */
     }
     if (Date.now() > deadline) throw new Error(`not healthy: ${url}`);
     await new Promise((r) => setTimeout(r, 400));
@@ -46,7 +46,7 @@ function cleanup(): void {
     try {
       c.kill();
     } catch {
-      /* ignore */
+      /* 忽略 */
     }
   }
 }
@@ -87,7 +87,7 @@ async function player(
     ruleset: seat.ruleset,
     entropy: Uint8Array.from(Array.from({ length: 32 }, (_, i) => (i * entropySeed + 3) % 251)),
   });
-  // The "human": act on every turn via the UI-facing update stream.
+  // “人类”：通过面向 UI 的更新流在每一轮行动。
   client.onUpdate((u: ClientUpdate) => {
     if (u.yourTurn && u.legal) client.submitAction(passive(u.legal, u.mySeat));
   });
@@ -107,7 +107,7 @@ async function main(): Promise<void> {
   console.log(`[lobby-e2e] host created table ${tableId} (${META.name}); now visible in the lobby:`);
   for (const t of await host.listTables()) console.log(`   - ${t.id}: ${t.meta.name} (${t.meta.maxSeats} seats)`);
 
-  // Two real players discover + join the waiting room and play.
+  // 两名真实玩家发现并加入等候室，然后开始游戏。
   const [a, b] = await Promise.all([
     player(base, { id: 'alice', pub: '02aa' }, tableId, 7),
     player(base, { id: 'bob', pub: '03bb' }, tableId, 19),

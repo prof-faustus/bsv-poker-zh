@@ -1,8 +1,8 @@
 /**
- * Reconnect / resume E2E (core §8.6/§12.3, REQ-NET-007, REQ-DATA-002/003). Two players play a
- * hand, dual-pathing each move to the indexer (canonical). A SEPARATE observer then fetches the
- * table transcript from the indexer and rebuilds the hand's final state — and it matches the
- * players' state byte-for-byte. This is exactly what a reconnecting client does to resume.
+ * 重连 / 恢复 E2E（core §8.6/§12.3, REQ-NET-007, REQ-DATA-002/003）。两名玩家打一手
+ * 牌，把每个动作双路径发送给索引器（规范来源）。随后一个独立的观察者从索引器获取
+ * 牌桌记录并重建该手牌的最终状态——它与
+ * 玩家的状态逐字节一致。这正是重连中的客户端为恢复所做的事。
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -40,7 +40,7 @@ async function waitHealthy(url: string, ms: number): Promise<void> {
     try {
       if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) return;
     } catch {
-      /* not up */
+      /* 尚未启动 */
     }
     if (Date.now() > dl) throw new Error(`not healthy: ${url}`);
     await new Promise((r) => setTimeout(r, 400));
@@ -55,7 +55,7 @@ async function player(tableId: string, id: string): Promise<string> {
   const seat = await seated;
   const client = new InteractiveNetworkedTableClient({
     relay: new RelayClient(RELAY),
-    indexer: new IndexerClient(INDEXER), // dual-path each move to the canonical store
+    indexer: new IndexerClient(INDEXER), // 把每个动作双路径发送到规范存储
     tableId,
     mySeat: seat.mySeat,
     seats: seat.seats,
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   assert.equal(a, b, 'players agree on the hand');
   console.log(`[reconnect-e2e] players' final stateHash: ${a.slice(0, 24)}…`);
 
-  // A reconnecting observer: fetch the transcript from the indexer and rebuild.
+  // 一个重连中的观察者：从索引器获取记录并重建。
   const indexer = new IndexerClient(INDEXER);
   const records = await indexer.records(tableId);
   console.log(`[reconnect-e2e] fetched ${records.length} transcript records from the indexer`);

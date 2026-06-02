@@ -1,11 +1,11 @@
 /**
- * Network lobby (§A6.3/§A6.4) — lists open tables from the relay (poll + manual refresh), lets a
- * player Join one, exposes a Create-table form with a VARIANT PICKER (any of the five variants,
- * seat count within the variant's range, and the Omaha hi-lo toggle), a Practice-vs-bot button,
- * and an always-visible WALLET panel (balance / add / withdraw / history). Pure render + explicit
- * handlers (no <form> submit, REQ-UI-003); validation/meta come from the ui-core network-lobby
- * view-model — this screen never recomputes rules. Variant labels/seat ranges come from
- * app-services VARIANT_INFO / SUPPORTED_VARIANTS.
+ * 网络大厅（§A6.3/§A6.4）—— 列出来自 relay 的开放牌桌（轮询 + 手动刷新），让
+ * 玩家加入其中一个，提供带玩法变体选择器的创建牌桌表单（五种变体任选其一、
+ * 在该变体范围内的座位数，以及 Omaha hi-lo 开关）、一个练习对战机器人按钮，
+ * 以及一个始终可见的钱包面板（余额 / 充值 / 提现 / 历史）。纯渲染 + 显式
+ * 处理函数（非 <form> 提交，REQ-UI-003）；校验/meta 来自 ui-core 的 network-lobby
+ * 视图模型 —— 此屏幕从不重新计算规则。变体标签/座位范围来自
+ * app-services 的 VARIANT_INFO / SUPPORTED_VARIANTS。
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -56,7 +56,7 @@ export function NetworkLobby(props: {
   const [startingStack, setStartingStack] = useState(100);
   const [maxSeats, setMaxSeats] = useState(2);
 
-  // Wallet form state.
+  // 钱包表单状态。
   const [addAmount, setAddAmount] = useState(100);
   const [withdrawAmount, setWithdrawAmount] = useState(0);
   const [withdrawDest, setWithdrawDest] = useState('');
@@ -81,7 +81,7 @@ export function NetworkLobby(props: {
     return () => clearInterval(id);
   }, [refresh]);
 
-  // Clamp seats into the chosen variant's range when the variant changes.
+  // 当变体改变时，将座位数夹取到所选变体的范围内。
   const changeVariant = useCallback((v: VariantId): void => {
     setVariant(v);
     const r = VARIANT_SEAT_RANGE[v];
@@ -104,7 +104,7 @@ export function NetworkLobby(props: {
         </div>
       </div>
 
-      {/* Always-visible wallet panel (header + lobby). */}
+      {/* 始终可见的钱包面板（头部 + 大厅）。 */}
       <WalletPanel
         snapshot={walletState}
         addAmount={addAmount}

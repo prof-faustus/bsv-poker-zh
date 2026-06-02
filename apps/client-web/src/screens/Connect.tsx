@@ -1,6 +1,6 @@
 /**
- * Connect screen (§A6.3) — enter the relay base URL and connect to the lobby. Explicit onClick
- * (no <form> submit, REQ-UI-003). The REGTEST/play-money banner is shown here and everywhere.
+ * Connect 屏幕（§A6.3）—— 输入 relay 基础 URL 并连接到大厅。使用显式 onClick
+ * （非 <form> 提交，REQ-UI-003）。REGTEST/游戏币横幅在此处及各处显示。
  */
 import React, { useState } from 'react';
 import { MainnetBanner } from '@bsv-poker/ui-core/components';

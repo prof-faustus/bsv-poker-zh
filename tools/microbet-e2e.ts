@@ -1,9 +1,9 @@
 /**
- * Micro-betting E2E (app §A23, REQ-WALLET-005, REQ-DEP-004) against the REAL
- * bonded-subsat-channel implementation: open a 2-party channel (k sub-units, 1-sat bond),
- * apply sub-satoshi transfers, cooperatively close with WHOLE-satoshi Q* settlement (no
- * fractional output ever — INV-BS-1), and demonstrate a contested close forfeiting the
- * offender's fixed 1-sat bond (INV-BS-2).
+ * 微下注 E2E（app §A23, REQ-WALLET-005, REQ-DEP-004），针对真实的
+ * bonded-subsat-channel 实现：开启一个 2 方通道（k 个子单位，1-sat 押金），
+ * 施加亚聪转账，以整数聪的 Q* 结算进行协作关闭（绝不出现
+ * 分数输出——INV-BS-1），并演示一次争议关闭会没收
+ * 违规方固定的 1-sat 押金（INV-BS-2）。
  */
 
 import assert from 'node:assert/strict';

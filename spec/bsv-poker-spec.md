@@ -1,1699 +1,1469 @@
-# BSV Poker Platform — Master Engineering Specification
+# BSV Poker 平台 — 主工程规范
 
-**Document status:** Part 1 of a multi-part specification. This file is written to be
-extended in place. Sections marked `[EXPAND: Part N]` are scaffolded with their required
-structure and the decisions already taken; the voluminous catalogs (per-variant state
-tables, full transaction byte schedules, exhaustive test-vector lists, the complete
-requirements register) are filled in subsequent passes. Nothing in this document is
-padding. Where a number, rule, or interface is not yet fixed, it is marked explicitly as
-`DECISION REQUIRED` or `TRACKED ASSUMPTION`, never asserted.
+**文档状态：** 多部分规范的第 1 部分。本文件按就地扩展的方式撰写。标记为 `[EXPAND: Part N]`
+的章节已搭建好其所需结构及已作出的决策；篇幅庞大的目录（各变体状态表、完整交易字节排布、
+详尽的测试向量清单、完整的需求登记册）在后续轮次中填充。本文档中没有任何内容是填充凑数的。
+凡尚未确定的数字、规则或接口，均明确标记为 `DECISION REQUIRED` 或 `TRACKED ASSUMPTION`，
+而绝不武断断言。
 
-**Document type:** Build specification for execution in Claude Code. This is a design
-artifact. It contains no application code. It defines what is to be built, the contracts
-between parts, the acceptance criteria, and the test obligations.
+**文档类型：** 供在 Claude Code 中执行的构建规范。这是一份设计产物。它不包含应用代码。
+它定义要构建什么、各部分之间的契约、验收标准以及测试义务。
 
-**Working project name:** `bsv-poker` (provisional; rename is a one-line change in §0.4).
+**项目工作名称：** `bsv-poker`（暂定；重命名是 §0.4 中的一行改动）。
 
-**Target chain:** Bitcoin SV (BSV), post-Genesis consensus only. There is no BTC code,
-no BTC assumption, and no BTC fallback anywhere in this system. Any construction that
-would require a BTC-only feature is a defect (see §6.2 for the specific post-Genesis
-consequences this imposes).
+**目标链：** Bitcoin SV（BSV），仅限 Genesis 升级后的共识。本系统中任何地方都没有 BTC 代码、
+没有 BTC 假设、也没有 BTC 回退。任何需要 BTC 专属特性的构造都属于缺陷（参见 §6.2 了解这一
+约束所带来的具体 Genesis 升级后果）。
 
-**Engineering bar:** flight-software grade — NASA NPR 7150.2 software-assurance
-practice plus the JPL "Power of Ten" coding rules, with a requirements-traceability
-matrix mapping every requirement to the code and tests that satisfy it (§13). The bar is
-a *process and a checkable set of obligations*, not a slogan. Robustness is demonstrated
-by tests that fail honestly and by reproducible evidence, not declared.
+**工程标准：** 航天软件级别 — NASA NPR 7150.2 软件保障实践，加上 JPL "Power of Ten" 编码规则，
+并配有需求可追溯性矩阵，将每条需求映射到满足它的代码与测试（§13）。该标准是*一套流程及一组
+可核查的义务*，而非一句口号。健壮性由如实失败的测试和可复现的证据来证明，而非靠声明。
 
 ---
 
-## Table of Contents
+## 目录
 
-- §0 Preamble: purpose, principles, scope, glossary, open decisions
-- §1 Product definition
-- §2 Dependency stack and integration contracts (the prof-faustus repositories)
-- §3 System architecture
-- §4 Cryptographic protocol: mental poker on BSV
-- §5 Poker domain model (rules, hand evaluation, betting, pots)
-- §6 BSV transaction and Script model
-- §7 Game state machines (framework + Texas Hold'em reference) `[EXPAND: Part 2]`
-- §8 Networking, discovery, matchmaking, anti-stall
-- §9 Wallet and key management
-- §10 Self-contained runtime ("the VM") and packaging
-- §11 Client shells: Windows (desktop) and Web
-- §12 Persistence, transcripts, audit
-- §13 Engineering standard, requirements register, traceability
-- §14 Test strategy and acceptance
-- §15 Module API / SDK contracts
-- §16 Build, CI/CD, reproducibility, release
-- §17 Phased roadmap and per-phase acceptance gates
-- §18 Threat model `[EXPAND: Part 2]`
-- §19 Appendices `[EXPAND: Part 3]`
-
----
-
-# §0 Preamble
-
-## §0.1 Purpose
-
-Build a new, production-grade, dealerless multiplayer **poker** platform on BSV that:
-
-1. runs as a single self-contained application launchable on **Windows desktop** and on the **web**, requiring no external services to play in local/regtest mode;
-2. lets players **discover and connect to each other** and sit at tables;
-3. implements **real poker** — starting with one fully playable variant and extending to the standard set through a clean game-module interface;
-4. is **dealerless and non-custodial**: no server holds the deck, no operator decides outcomes, every game event is a signed BSV transaction, and the table state is a deterministic function of the valid transaction set;
-5. composes the existing BSV primitives (the `prof-faustus` stack — §2) rather than reinventing them;
-6. is engineered to the standard in §13 and tested to the obligations in §14.
-
-This document is the contract between the design (here) and the build (Claude Code).
-
-## §0.2 Non-negotiable principles
-
-These govern every later section. A violation of any of them is a build defect, not a
-style preference.
-
-- **P1 — BSV-only.** Post-Genesis BSV consensus exclusively. No BTC code, no BTC assumptions, no Lightning-style in-script penalty constructions. See §6.2.
-- **P2 — Determinism (relative to an agreed transaction ordering).** Given an *agreed* ordering of the valid transaction set and the ruleset hash, `table_state = f(ordered_valid_txs, ruleset)`, and two honest clients with that same ordered set derive byte-identical state. The engine is deterministic *given* an ordering; it never depends on wall-clock arrival or which packet a node saw first. **What this does and does not claim (corrects RT-01 M1):** before block confirmation the global "valid tx set" is not universally agreed — mempools differ, transactions can be evicted or reorganized (§8.4). Pre-confirmation *safety* is therefore provided not by determinism alone but by the convergence machinery: dual-path propagation (§8.3), the deterministic conflict rules (§8.5), and the timeout-default branch (§6.4). Disagreements about ordering are resolved by §8.5, not by the engine. Reorg/eviction is handled by the recovery/timeout path (§6.4); value that leaves the table is final only at block confirmation (§5.7). The engine's determinism is what makes replay (§12.3) and cross-client agreement (§14.2) checkable; it is not a claim that all clients always hold the same unconfirmed set.
-- **P3 — No trusted dealer, no trusted operator.** The shuffle is distributed; the relay is transport and indexing only and is never the source of truth (§8.1).
-- **P4 — Every actionable state has two exits.** A cooperative branch (the player acts) and a timeout-default branch (the player does not). Time is an explicit protocol actor. No table can be frozen by one absent or malicious participant (§7, §6.4).
-- **P5 — Fold without reveal.** Folding surrenders claim and removes the player from contention without disclosing concealed cards. Only live contenders reveal, and only what the showdown requires (§5.6, §4.6).
-- **P6 — Zero fabrication.** Every constant traces to a source (a cited document, a measured value, or a declared `TRACKED ASSUMPTION`). No number is invented to make another number consistent. A hardcoded figure that creates internal inconsistency is a material defect.
-- **P7 — Explicit assumptions.** Every assumption appears in the spec and, where it constrains code, in the source. Hidden assumptions are treated as the most serious class of failure because they contaminate everything downstream while pretending not to exist.
-- **P8 — No overclaim.** A statement may not assert more than the construction structurally guarantees. "Revocation is an on-chain fact" is permitted only where an unspent-expiring-output mechanism actually enforces it; "trustless" is not used unconditionally — the trust surface is enumerated (§18).
-- **P9 — Tests fail inside the interpreter.** Script spends are validated through the real BSV Script interpreter with Genesis rules on. Negative tests fail inside the interpreter, not inside a hand-written guard. Signature spot-checks are not acceptable as a substitute for running the script (§14.3).
-- **P10 — Reproducible evidence.** Every reported number is regenerable from committed test vectors by a command that exits non-zero on any mismatch (§14.5).
-
-## §0.3 Scope
-
-**In scope (this program):**
-
-- The platform core (engine, crypto, transaction layer, wallet, networking, persistence).
-- Poker variants as game modules: Texas Hold'em, Omaha, Seven-Card Stud, Five-Card Draw, Razz. (Blackjack is tracked separately — §0.5 D7 — because dealerless blackjack is not the same symmetric mental-poker problem as poker and must not be smuggled in under the same model.)
-- A self-contained runtime ("the VM", §10) that bundles a local BSV node in regtest mode, the relay, and the client so the whole thing launches with no external dependency.
-- Windows desktop and web shells over one shared core (§11).
-- Player discovery and table matchmaking (§8).
-- Micro-betting integration via `bonded-subsat-channel` for sub-satoshi in-game value (§2.2), optional and behind a flag in early phases.
-
-**Out of scope for the platform program, available as later tracks (not Phase 1):**
-
-- Revocable encrypted-content NFTs (built on `overlay-broadcast`, §2.4) — a separate product track; the platform exposes the integration seam (§15.7) but ships no NFT product in the core poker phases.
-- TEE-sealed key custody — **optional**, per direction. The architecture leaves the custody interface (§9.3) pluggable so a TEE backend can be added later without changing the protocol. No phase below requires a TEE.
-- Real-money operation, KYC/AML, regulated gambling. The system is regtest-by-default; mainnet is opt-in behind an explicit research flag (§10.5). In-game tokens carry no external monetary value by default. This is not a regulated gambling product and the spec does not pretend otherwise (P8).
-- Mobile (iOS/Android) native shells. The web shell is mobile-responsive; native mobile is a later track.
-
-## §0.4 How to rename the project
-
-Project name appears as: the npm scope `@bsv-poker/*`, the Go module path
-`github.com/<owner>/bsv-poker`, the Tauri `productName`, and the VM image tag. Renaming
-is: set `PROJECT_NAME`, `NPM_SCOPE`, `GO_MODULE`, `IMAGE_TAG` in `/build/project.env`
-and run `scripts/rename.sh`. No source references the literal name outside generated
-files.
-
-## §0.5 Open decisions (override any of these; defaults are taken so the build is not blocked)
-
-These are real choices. Defaults are chosen with rationale so design can proceed (per
-the instruction to design, not to stall). Each is marked so it can be overridden in one
-place.
-
-- **D1 — First playable game.** DEFAULT: **Heads-up (2-player) No-Limit Texas Hold'em** on regtest. Rationale: Hold'em is the canonical mental-poker target (two private hole cards + shared board exercises concealment, selective reveal, and a real betting tree); heads-up removes multi-way side-pot complexity from the first milestone while still exercising the full pipeline (entropy commit/reveal, distributed shuffle, encrypted-card deal, betting FSM, showdown, settlement, timeout). Override sets `phase1.game`.
-- **D2 — Table sizes for the platform.** DEFAULT: 2–9 seats; Phase 1 fixed at 2; Phase 3 enables 6-max; Phase 4 enables 9-max. Override sets `table.maxSeats` envelope.
-- **D3 — Betting structures.** DEFAULT: No-Limit first; Pot-Limit and Fixed-Limit as betting-structure strategies behind one interface (§5.4). Override per game module.
-- **D4 — Discovery for Phase 1.** DEFAULT: a small hosted **relay** (Go) for presence + table discovery + direct message fan-out, plus a **LAN auto-discovery** mode for zero-server same-network play. Full internet P2P with NAT traversal (§8.7) is Phase 5. Rationale: a relay that is transport-only (never source of truth, P3) is the shortest path to "find other players" across the internet without compromising determinism. Override sets `discovery.mode`.
-- **D5 — "VM" interpretation.** DEFAULT: "FULL VM" = a reproducible, self-contained runtime image (container image + optional packaged VM image) bundling the local BSV node (regtest), the relay, and the client, launching end-to-end with no external services (§10). If a literal hypervisor VM image (e.g. OVA/qcow2) is required in addition to a container, that is `DECISION REQUIRED` and adds a packaging target in §16; the application architecture does not change.
-- **D6 — Reuse the prof-faustus self-contained node.** DEFAULT: reuse the embedded BSV node shipped in `bonded-subsat-channel` (it already provides a native P2P-wire node, a proof-of-work header chain selecting longest-chain-by-work, a DB-backed block/UTXO store, a conflict-detecting mempool under the original replacement rule, and an HD wallet) as the platform's local chain backend (§10.2), rather than building a new node. Override sets `chain.backend`.
-- **D7 — Blackjack.** DEFAULT: deferred to a separate track. Rationale: standard blackjack is player-vs-dealer; a dealerless blackjack needs a different settlement and concealment model than the symmetric poker shuffle and must be designed on its own terms, not forced into the poker pipeline (P7 forbids smuggling the difference). Override moves it into a phase with its own design section.
-- **D8 — Currency/stake semantics in early phases.** DEFAULT: play-money chips with **no external monetary value**, settled on regtest, so no gambling-regulatory surface exists in Phases 1–4. Override is a serious decision with legal consequences and is out of this document's authority.
-
-## §0.6 Glossary (authoritative; terms used precisely throughout)
-
-- **Mental poker** — playing a card game over a network with no trusted dealer such that the shuffle is verifiable and no coalition below the full set can learn a concealed card before reveal.
-- **Distributed/verifiable shuffle** — each player encrypts-and-permutes the deck in turn so the final order is the composition of all secret permutations and is unknown to any single player; each step can be proven a genuine permutation.
-- **Commit-reveal** — a player publishes `H(value)` first (binding without disclosing), then later reveals `value`; prevents choosing "randomness" after seeing others'.
-- **Combined public key** — for a card/element, the EC point-addition of one public key per party; the corresponding combined private key is the sum of per-party scalars. Whether it is reconstructed in one place depends on the signing mode (§4.3: Mode A reconstructs at reveal; Mode B does not). Spending the UTXO locked to the combined key is the close-out/settlement primitive, not the deal (GB2616862; §4.3).
-- **Shuffle key** — an EC point `P' = (s, ±√(s³+7))` on secp256k1 whose x-coordinate is the private key `s`, with public key `P = s·G`; gives a bidirectional point↔scalar relationship used to mix private keys inside the set (GB2616862; §4.2).
-- **Encrypted-card UTXO** — a card represented on-chain as a UTXO whose public identity is `(deck_id, card_serial, ciphertext_commitment, locking_script)` and whose face value is concealed until reveal (§4.5, §6.3).
-- **Cooperative branch / timeout-default branch** — the two exits every actionable state has (P4).
-- **Fair-play transaction** — a transaction whose locking script proves, in-script, that the private keys a party committed to actually derive the public keys and encrypted shuffle keys they used; a cheat that sends mismatched values forfeits the funds bonded to this transaction (GB2616862 §6.5.2; §4.7).
-- **Ruleset hash** — `H` of the canonical-serialized game configuration (variant, stakes, blinds/antes, timeouts, seat count, deck format). Bound into every transaction so a branch cannot be replayed against a different context (§6.3, §5.2).
-- **Relay** — transport + indexing service. Accelerates convergence and rebroadcast; never the source of truth (P3, §8.1).
-- **The VM** — the self-contained runtime image bundling node + relay + client (§10), per D5.
-- **Post-Genesis** — the BSV consensus state after the Genesis upgrade: no block-size cap, restored script capability, and specific opcode semantics that differ from BTC — notably the no-op status of `OP_CHECKLOCKTIMEVERIFY`/`OP_CHECKSEQUENCEVERIFY` (§6.2).
+- §0 序言：目的、原则、范围、术语表、未决决策
+- §1 产品定义
+- §2 依赖栈与集成契约（prof-faustus 仓库群）
+- §3 系统架构
+- §4 密码学协议：BSV 上的心智扑克
+- §5 扑克领域模型（规则、手牌评估、下注、底池）
+- §6 BSV 交易与 Script 模型
+- §7 游戏状态机（框架 + 德州扑克参考实现）`[EXPAND: Part 2]`
+- §8 网络、发现、撮合、防卡死
+- §9 钱包与密钥管理
+- §10 自包含运行时（"the VM"）与打包
+- §11 客户端外壳：Windows（桌面）与 Web
+- §12 持久化、记录誊本、审计
+- §13 工程标准、需求登记册、可追溯性
+- §14 测试策略与验收
+- §15 模块 API / SDK 契约
+- §16 构建、CI/CD、可复现性、发布
+- §17 分阶段路线图与各阶段验收关卡
+- §18 威胁模型 `[EXPAND: Part 2]`
+- §19 附录 `[EXPAND: Part 3]`
 
 ---
 
-# §1 Product definition
+# §0 序言
 
-## §1.1 What the user experiences
+## §0.1 目的
 
-A player can: install on Windows or open the web app; create or import a wallet; set or
-join a table (choosing variant, stakes, seat count, timeout profile); see the table
-(seats, whose turn, community/up cards, pot(s), their own concealed hand decrypted
-locally, timers and the exact consequence of inaction); take legal actions (check, bet,
-call, raise, fold; draw/stand where the variant has it); reach showdown or win
-uncontested; and see deterministic settlement. Every action the player takes is a signed
-transaction; the UI shows when a signature is required and what it commits to.
+在 BSV 上构建一个全新的、生产级、无荷官的多人**扑克**平台，要求：
 
-## §1.2 User-facing capabilities (REQ register seed — full IDs in §13)
+1. 作为单一自包含应用运行，可在 **Windows 桌面**和 **web** 上启动，在本地/regtest 模式下游玩无需任何外部服务；
+2. 让玩家**互相发现并连接**并入座牌桌；
+3. 实现**真正的扑克** — 从一个完全可玩的变体起步，并通过一个清晰的游戏模块接口扩展至标准变体集；
+4. **无荷官且非托管**：没有服务器持有牌堆，没有运营方决定结果，每个游戏事件都是一笔签名的 BSV 交易，牌桌状态是有效交易集的确定性函数；
+5. 组合复用已有的 BSV 原语（`prof-faustus` 栈 — §2），而非重新发明；
+6. 按 §13 的标准来工程化，并按 §14 的义务来测试。
 
-- REQ-PROD-001 Wallet create/import; key custody pluggable (§9).
-- REQ-PROD-002 Lobby: list/create/join tables; presence of other players (§8).
-- REQ-PROD-003 Ruleset + stake configuration with a displayed, hashed config (§5.2).
-- REQ-PROD-004 Table view: seats, turn, board/up cards, pot(s), balances, timers, default-on-timeout text (§11.4).
-- REQ-PROD-005 Local private-hand inspection (decrypt own cards; never expose keys to UI process beyond the custody boundary) (§9.3, §11.5).
-- REQ-PROD-006 Signing prompts that state exactly what is being signed (§11.6).
-- REQ-PROD-007 Fold-without-reveal action (P5).
-- REQ-PROD-008 Showdown reveal of only what is required (§5.6).
-- REQ-PROD-009 Deterministic settlement display + final balances (§5.7, §6).
-- REQ-PROD-010 Transcript export + deterministic offline replay (§12.3).
-- REQ-PROD-011 Reconnect/resume into a live table (§8.6).
-- REQ-PROD-012 Clear research/regtest banner; mainnet behind explicit flag (§10.5).
+本文档是设计（此处）与构建（Claude Code）之间的契约。
 
-## §1.3 Non-goals for the first release
+## §0.2 不可妥协的原则
 
-No multi-table tournaments, no rake/operator economics, no NFT marketplace, no real-money
-operation, no native mobile, no TEE requirement. The first release exists to prove the
-full pipeline end-to-end for one variant on regtest with real player discovery.
+这些原则统辖后续每一节。违反其中任何一条都属于构建缺陷，而非风格偏好。
 
----
+- **P1 — 仅限 BSV。** 专门采用 Genesis 升级后的 BSV 共识。没有 BTC 代码、没有 BTC 假设、没有 Lightning 式的脚本内罚没构造。参见 §6.2。
+- **P2 — 确定性（相对于一个已商定的交易排序）。** 给定有效交易集的一个*已商定*排序以及规则集哈希，`table_state = f(ordered_valid_txs, ruleset)`，且两个持有相同已排序交易集的诚实客户端推导出逐字节相同的状态。引擎在*给定*某个排序的前提下是确定性的；它绝不依赖于挂钟到达时间或某节点先看到哪个数据包。**这一论断主张什么、不主张什么（修正 RT-01 M1）：** 在区块确认之前，全局的"有效交易集"并非普遍达成一致 — 各内存池不同，交易可能被逐出或被重组（§8.4）。因此确认前的*安全性*并非仅靠确定性提供，而是靠收敛机制：双路径传播（§8.3）、确定性冲突规则（§8.5）以及超时默认分支（§6.4）。关于排序的分歧由 §8.5 解决，而非由引擎解决。重组/逐出由恢复/超时路径处理（§6.4）；离开牌桌的价值只有在区块确认时才最终敲定（§5.7）。引擎的确定性正是使重放（§12.3）和跨客户端一致性（§14.2）可核查的原因；它并不主张所有客户端始终持有相同的未确认交易集。
+- **P3 — 无受信荷官、无受信运营方。** 洗牌是分布式的；中继仅负责传输和索引，绝不是真相之源（§8.1）。
+- **P4 — 每个可操作状态都有两个出口。** 一个协作分支（玩家行动）和一个超时默认分支（玩家不行动）。时间是一个显式的协议参与者。任何牌桌都不能被某个缺席或恶意的参与者冻结（§7、§6.4）。
+- **P5 — 弃牌不亮牌。** 弃牌即放弃主张并将玩家移出争夺，而不披露其隐藏的牌。只有仍在争夺中的玩家才亮牌，且只亮摊牌所需的部分（§5.6、§4.6）。
+- **P6 — 零捏造。** 每个常量都可追溯到一个来源（一篇被引用的文档、一个实测值，或一条声明的 `TRACKED ASSUMPTION`）。不会为了让某个数字与另一个数字一致而编造数字。一个造成内部不一致的硬编码数值属于实质性缺陷。
+- **P7 — 显式假设。** 每条假设都出现在规范中，且凡是约束代码之处，也出现在源代码中。隐藏的假设被视为最严重的一类失败，因为它们在假装不存在的同时污染下游的一切。
+- **P8 — 不夸大主张。** 任何陈述都不得断言超出该构造在结构上所保证的范围。"撤销是一项链上事实"只有在一个未花费的过期输出机制确实强制执行它的场合才被允许；"无需信任"绝不无条件使用 — 信任面被逐项列举（§18）。
+- **P9 — 测试在解释器内部失败。** Script 花费通过启用 Genesis 规则的真实 BSV Script 解释器进行验证。否定性测试在解释器内部失败，而非在手写的守卫中失败。签名抽查不能作为运行脚本的替代（§14.3）。
+- **P10 — 可复现的证据。** 每个报告出来的数字都可由一条命令从已提交的测试向量中重新生成，且该命令在任何不匹配时以非零退出（§14.5）。
 
-# §2 Dependency stack and integration contracts
+## §0.3 范围
 
-The platform consumes the existing BSV primitives. This section defines the **contracts**
-the platform requires from each repository — the interface, the inputs/outputs, the
-invariants, and the failure modes the platform depends on. Claude Code has the
-repositories; integration wires the platform's adapter (§15) to each repo's actual API.
-Where a repo's concrete API differs from a contract symbol below, the adapter maps it;
-the platform core depends only on the contract, never on a repo's internals (this keeps
-the core testable against fakes and prevents a repo change from rippling through the
-engine).
+**纳入范围（本项目）：**
 
-## §2.1 `cardtable` — mental-poker engine and transaction-native game substrate
+- 平台核心（引擎、密码学、交易层、钱包、网络、持久化）。
+- 作为游戏模块的扑克变体：德州扑克、奥马哈、七张梭哈、五张抽牌、Razz。（21 点单独跟踪 — §0.5 D7 — 因为无荷官 21 点与扑克并非同一个对称的心智扑克问题，绝不能在同一模型下偷渡进来。）
+- 一个自包含运行时（"the VM"，§10），它打包了一个本地 regtest 模式的 BSV 节点、中继和客户端，使整个系统启动时无需任何外部依赖。
+- 在一个共享核心之上的 Windows 桌面与 web 外壳（§11）。
+- 玩家发现与牌桌撮合（§8）。
+- 通过 `bonded-subsat-channel` 集成微下注，用于游戏内的次聪价值（§2.2），在早期阶段为可选且置于开关之后。
 
-**Role:** the dealerless game substrate. Verifiable distributed shuffle, commit-reveal
-entropy, encrypted-card UTXOs, and the cooperative/timeout-default transaction state
-machine. First target game In-Between; the platform uses its *primitives*, not its game.
+**不纳入平台项目范围，作为后续轨道（非第 1 阶段）可用：**
 
-**Contract `CT` (consumed):**
+- 可撤销的加密内容 NFT（基于 `overlay-broadcast`，§2.4）— 一个独立的产品轨道；平台暴露集成接缝（§15.7），但在核心扑克阶段不交付任何 NFT 产品。
+- TEE 密封的密钥托管 — 按方向定为**可选**。架构使托管接口（§9.3）保持可插拔，以便日后可在不改动协议的情况下加入 TEE 后端。下文没有任何阶段要求 TEE。
+- 真实货币运营、KYC/AML、受监管的博彩。系统默认采用 regtest；主网需在一个显式的研究开关之后才能选择启用（§10.5）。游戏内代币默认不携带任何外部货币价值。这不是受监管的博彩产品，规范也不假装它是（P8）。
+- 移动端（iOS/Android）原生外壳。web 外壳对移动端做了响应式适配；原生移动端是后续轨道。
 
-- `CT.entropy.commit(secret) -> commitment` / `CT.entropy.reveal(commitment, secret) -> bool` — commit-reveal for shuffle randomness (§4.1).
-- `CT.shuffle.*` — the verifiable distributed shuffle over an N-party set producing combined public keys per card and the per-party encrypted shuffle keys (§4.2–§4.4).
-- `CT.card.*` — encrypted-card representation `(deck_id, card_serial, ciphertext_commitment, locking_script)`; conceal, locally-decrypt, prepare-reveal-proof, surrender-on-fold (§4.5, §4.6).
-- `CT.fsm.*` — committed game-state transitions where each state UTXO has a cooperative successor and a timeout-default successor; transcript record and offline re-verification (§7).
-- `CT.tx.*` — transaction-native event emission and the deterministic fallback graph (§6).
+## §0.4 如何重命名项目
 
-**Invariants the platform relies on (must hold or the platform's guarantees do not):**
+项目名出现于：npm scope `@bsv-poker/*`、Go 模块路径 `github.com/<owner>/bsv-poker`、Tauri 的
+`productName`，以及 VM 镜像标签。重命名方法：在 `/build/project.env` 中设置 `PROJECT_NAME`、
+`NPM_SCOPE`、`GO_MODULE`、`IMAGE_TAG`，然后运行 `scripts/rename.sh`。除生成文件之外，没有源代码
+引用该字面名称。
 
-- INV-CT-1 No single party learns the shuffle order (composition of secret permutations).
-- INV-CT-2 A concealed card is decryptable only by its holder until reveal.
-- INV-CT-3 Every game-state UTXO has exactly two valid successors (cooperative, timeout).
-- INV-CT-4 Timelocks are enforced at the transaction level, never via in-script CLTV/CSV (§6.2). *(This is a stack-wide invariant; see §6.2.)*
-- INV-CT-5 Zero fabrication / declared assumptions in its own outputs.
+## §0.5 未决决策（其中任何一项均可覆盖；为不阻塞构建而采用默认值）
 
-**Status taken as given (per the author's account):** protocol fully specified;
-non-on-chain crypto and simulation layers runnable; early build phases substantively in
-place; full multi-card game partial; first game In-Between. The platform therefore does
-**not** assume Hold'em exists in `cardtable`; the platform builds the poker variants on
-top of `CT` primitives (§5, §7).
+这些是真实的抉择。为使设计得以推进（依据"去设计、勿停滞"的指示），默认值附带理由予以选定。每一项
+都做了标记，以便可在单处覆盖。
 
-## §2.2 `bonded-subsat-channel` — sub-satoshi micro-payments + self-contained node
+- **D1 — 首个可玩游戏。** 默认：regtest 上的**单挑（2 人）无限注德州扑克**。理由：德州扑克是心智扑克的标准目标（两张私有底牌 + 共享公共牌锻炼了隐藏、选择性亮牌以及真实的下注树）；单挑在首个里程碑中去除了多人边池的复杂性，同时仍锻炼了完整流水线（熵承诺/揭示、分布式洗牌、加密牌发牌、下注 FSM、摊牌、结算、超时）。覆盖时设置 `phase1.game`。
+- **D2 — 平台的牌桌规模。** 默认：2–9 个座位；第 1 阶段固定为 2；第 3 阶段启用 6-max；第 4 阶段启用 9-max。覆盖时设置 `table.maxSeats` 包络。
+- **D3 — 下注结构。** 默认：先做无限注；底池限注和固定限注作为下注结构策略置于一个接口之后（§5.4）。可按游戏模块覆盖。
+- **D4 — 第 1 阶段的发现。** 默认：一个小型托管**中继**（Go），用于在线状态 + 牌桌发现 + 直接消息扇出，外加一个 **LAN 自动发现**模式用于零服务器的同网游玩。带 NAT 穿透的完整互联网 P2P（§8.7）是第 5 阶段。理由：一个仅做传输的中继（绝非真相之源，P3）是在互联网上"找到其他玩家"而不损害确定性的最短路径。覆盖时设置 `discovery.mode`。
+- **D5 — "VM" 的解释。** 默认："FULL VM" = 一个可复现的、自包含的运行时镜像（容器镜像 + 可选的打包 VM 镜像），打包了本地 BSV 节点（regtest）、中继和客户端，端到端启动而无需任何外部服务（§10）。如果在容器之外还需要一个真正的虚拟机管理程序 VM 镜像（如 OVA/qcow2），那属于 `DECISION REQUIRED`，并在 §16 中增加一个打包目标；应用架构不改变。
+- **D6 — 复用 prof-faustus 的自包含节点。** 默认：复用 `bonded-subsat-channel` 中随附的嵌入式 BSV 节点（它已提供一个原生 P2P-wire 节点、一条按最长工作量选择最长链的工作量证明区块头链、一个基于数据库的区块/UTXO 存储、一个在原始替换规则下检测冲突的内存池，以及一个 HD 钱包）作为平台的本地链后端（§10.2），而非构建一个新节点。覆盖时设置 `chain.backend`。
+- **D7 — 21 点。** 默认：推迟至一个独立轨道。理由：标准 21 点是玩家对荷官；无荷官 21 点所需的结算与隐藏模型不同于对称的扑克洗牌，必须按其自身的方式来设计，不能硬塞进扑克流水线（P7 禁止偷渡这一差异）。覆盖时将其移入一个带有自身设计章节的阶段。
+- **D8 — 早期阶段的货币/筹码语义。** 默认：**无外部货币价值**的游戏货币筹码，在 regtest 上结算，因此在第 1–4 阶段不存在博彩监管面。覆盖是一项带有法律后果的重大决定，超出本文档的权限范围。
 
-**Role (two distinct uses):**
+## §0.6 术语表（权威；全文精确使用这些术语）
 
-1. **Micro-betting** — sub-satoshi value movement for in-game stakes at chosen granularity `k`, with whole-satoshi on-chain settlement via the largest-remainder reconciliation `Q*`, and a fixed one-satoshi anti-cheat bond forfeited on a stale-state broadcast. Used for fine-grained chip movement off-chain in later phases (§5.7, §9.4). Optional and flag-gated in Phases 1–2.
-2. **Self-contained local node** — its embedded BSV system (native P2P-wire node, PoW header chain longest-by-work, DB-backed block/UTXO store, conflict-detecting mempool under the original replacement rule, HD wallet) is the platform's local chain backend for the VM (§10.2), per D6.
-
-**Contract `BS` (consumed):**
-
-- `BS.node.*` — start/stop a local regtest node; submit tx; query UTXO/outpoint status; observe conflicts/double-spend attempts; block/header queries (§8.4, §10.2).
-- `BS.channel.open/transfer/close/contested` — micro-payment channel lifecycle with `k`-granularity and 1-sat bond (§5.7).
-- `BS.reconcile.Qstar(microBalances) -> integerSatoshiOutputs` — deterministic largest-remainder settlement; identical on every honest party (P2).
-
-**Invariants:**
-
-- INV-BS-1 No fractional output is ever written on-chain; sub-satoshi precision lives only in off-chain accounting.
-- INV-BS-2 Risked capital is fixed (one satoshi/participant) independent of payment size/path length.
-- INV-BS-3 Timing enforced at transaction level (nLockTime/nSequence under original replacement), not in-script (§6.2).
-
-## §2.3 `verifiable-accounting` family — audit evidence and triple-entry
-
-**Role:** turn disclosed game/financial records into examinable, anchored audit evidence
-without revealing other records; optional enterprise persistence/audit (§12.4).
-
-**Contract `VA` (consumed):**
-
-- `VA.merkle.prove(records, index) -> bundle` / `VA.merkle.verify(bundle) -> bool` — Merkle inclusion against a BSV block header's `merkleroot`, terminating trust in the PoW header chain (Layer A).
-- `VA.disclose.*` — selective disclosure: return only the queried record + its path; siblings remain opaque hashes (Layer B). Privacy is the selective disclosure itself; no extra cryptography is bolted on.
-- `VA.chain.*` — PKI-root + GL key hierarchy, ECDH/spend-linked signed transaction chain, per-field disclosure (triple-entry).
-
-**Invariants and stated boundary (must be reflected, not overstated, per P8):**
-
-- INV-VA-1 Establishes only: inclusion, integrity, selective disclosure, arithmetic correctness over disclosed records.
-- INV-VA-2 Does **not** establish truth-at-origin, that an event occurred, classification correctness, population completeness, or legal enforceability. A record entered falsely at origin in otherwise-consistent books is **not** detected. The platform MUST surface this boundary wherever it presents audit output.
-- INV-VA-3 Commitments that must remain in the spend-linked graph are carried as **pushdata in a live script, not `OP_RETURN`** (§6.5).
-
-## §2.4 `overlay-broadcast` — group access control, revocation, threshold custody
-
-**Role (later track; seam exposed in core):** key-graph (Logical Key Hierarchy) broadcast
-encryption with logarithmic rekeying, on-chain session lifecycle, **revocation expressed
-as an unspent-expiring output**, and threshold key custody (FROST/GG20). The basis for
-revocable encrypted-content NFTs (a separate product, not shipped in core poker phases),
-and the home for **threshold custody of pot/winning keys** if the platform later splits
-those keys (§9.3).
-
-**Contract `OB` (consumed):**
-
-- `OB.keygraph.*` — build/rekey a key-graph; add/remove members at `O(log n)`; wrap/unwrap with authenticated key-wrap (never raw XOR).
-- `OB.session.*` — fund `k` sessions; renewal spends member output; **unspent past expiry = revoked** (the platform may not claim revocation beyond what this enforces, P8).
-- `OB.custody.threshold.*` — split a key into shares; sign/reconstruct only by a threshold; no share (or sub-threshold set) reveals anything.
-- `OB.ecies.*` / `OB.aead.*` — ECIES to a secp256k1 public key; AES-256-GCM AEAD.
-
-**Invariants:**
-
-- INV-OB-1 No key material crosses the wire in seed-isolated signalling; only positions do.
-- INV-OB-2 Revocation is an on-chain fact (unspent expiring output), decided by no operator.
-- INV-OB-3 Graded to NPR 7150.2 + Power of Ten with a requirements-traceability matrix — the platform adopts the same bar (§13).
-
-## §2.5 Patent GB2616862 — the shuffle/selection/settlement primitive (normative reference)
-
-**Role:** the cryptographic and on-chain mechanism the shuffle and settlement are built
-on. Read in full; recorded. Provides, in plain BSV Script: shuffle keys
-`P'=(s,±√(s³+7))`; per-element combined keys by point addition; selection = spend of the
-combined-key UTXO; two-round encryption (shared scalar then per-element distinct scalars)
-with reorder = the shuffle, reversed by inverse scalars at reveal; OP_RETURN stage
-commitments; and worked settlement: 2-of-2 funding multisig, nLocktime refund,
-locktime-tiered bet transactions, fair-play scripts, and an optional 2-of-3 trusted-third-party
-enforcement. Applies to N parties and a 52-card deck by extension (the patent's worked
-scripts are 2-party/3-card; scaling them is the platform's work — §6, §4).
-
-**Citation discipline (P6):** cite as **GB2616862A** (the application as published,
-2023-09-23) unless/until B-grant is independently confirmed; the v27 poker paper cites a
-"B" (granted) form not confirmed by the application document. Licensing applicant:
-nChain Licensing AG. Any deployment-licensing obligation is a business matter outside
-this document's authority and is flagged, not resolved.
-
-## §2.6 Dependency adapter principle
-
-REQ-DEP-001 The platform core depends only on the contracts `CT/BS/VA/OB` above, accessed
-through an adapter layer (§15.8). Each contract has a **fake/in-memory implementation**
-used in unit and property tests for orchestration wiring only. REQ-DEP-002 A change in any
-repo's concrete API is absorbed in its adapter; no change propagates into the engine,
-the FSMs, or the UI. REQ-DEP-003 **Fakes are bound to reality by a conformance suite
-(corrects RT-01 M4).** A single contract-conformance test suite per contract is run against
-*both* the fake and the real adapter; both MUST pass it, so the fake provably matches the
-real contract and a green run against the fake cannot certify a wrong engine. REQ-DEP-004
-The **security-critical** behaviors — distributed shuffle correctness, reveal single-use,
-fair-play forfeiture, combined-key signing — are tested against the **real** CT/crypto
-implementations (and through the real Script interpreter for the on-chain parts, P9); fakes
-are **never** permitted to stand in for the security property under test, only for
-surrounding orchestration.
+- **心智扑克（Mental poker）** — 在没有受信荷官的情况下在网络上玩纸牌游戏，使得洗牌可验证，且任何低于全体的联盟都无法在揭示前得知一张隐藏的牌。
+- **分布式/可验证洗牌** — 每个玩家依次对牌堆加密并置换，使最终顺序是所有秘密置换的复合且为任何单个玩家所不知；每一步都可被证明是一次真正的置换。
+- **承诺-揭示（Commit-reveal）** — 玩家先发布 `H(value)`（具约束力但不披露），随后再揭示 `value`；防止在看到他人的"随机数"之后再做选择。
+- **联合公钥（Combined public key）** — 对于一张牌/一个元素，是各方各一个公钥的 EC 点加法；对应的联合私钥是各方标量之和。它是否在单处被重构取决于签名模式（§4.3：Mode A 在揭示时重构；Mode B 不重构）。花费锁定到联合密钥的 UTXO 是平仓/结算原语，而非发牌（GB2616862；§4.3）。
+- **洗牌密钥（Shuffle key）** — secp256k1 上的一个 EC 点 `P' = (s, ±√(s³+7))`，其 x 坐标即私钥 `s`，公钥为 `P = s·G`；提供一种双向的点↔标量关系，用于在集合内部混合私钥（GB2616862；§4.2）。
+- **加密牌 UTXO（Encrypted-card UTXO）** — 一张牌在链上表示为一个 UTXO，其公开身份为 `(deck_id, card_serial, ciphertext_commitment, locking_script)`，其牌面值在揭示前被隐藏（§4.5、§6.3）。
+- **协作分支 / 超时默认分支** — 每个可操作状态所拥有的两个出口（P4）。
+- **公平博弈交易（Fair-play transaction）** — 一笔交易，其锁定脚本在脚本内证明某一方承诺的私钥确实可推导出他们所使用的公钥和加密洗牌密钥；发送不匹配值的作弊者将罚没绑定于此交易的资金（GB2616862 §6.5.2；§4.7）。
+- **规则集哈希（Ruleset hash）** — 游戏配置（变体、筹码、盲注/底注、超时、座位数、牌堆格式）经规范序列化后的 `H`。绑定进每一笔交易，使某分支无法在不同上下文下被重放（§6.3、§5.2）。
+- **中继（Relay）** — 传输 + 索引服务。加速收敛与重广播；绝非真相之源（P3、§8.1）。
+- **The VM** — 打包了节点 + 中继 + 客户端的自包含运行时镜像（§10），依据 D5。
+- **Post-Genesis（Genesis 升级后）** — Genesis 升级之后的 BSV 共识状态：无区块大小上限、恢复的脚本能力，以及与 BTC 不同的特定操作码语义 — 尤其是 `OP_CHECKLOCKTIMEVERIFY`/`OP_CHECKSEQUENCEVERIFY` 的空操作（no-op）状态（§6.2）。
 
 ---
 
-# §3 System architecture
+# §1 产品定义
 
-## §3.1 Layered view
+## §1.1 用户的体验
+
+玩家可以：在 Windows 上安装或打开 web 应用；创建或导入钱包；创建或加入一张牌桌（选择变体、筹码、
+座位数、超时配置）；查看牌桌（座位、轮到谁、公共牌/明牌、底池、本地解密的自己的隐藏手牌、计时器，
+以及不作为的确切后果）；采取合法行动（看牌、下注、跟注、加注、弃牌；在有的变体中抽牌/不换）；到达
+摊牌或不战而胜；并看到确定性结算。玩家采取的每个行动都是一笔签名交易；UI 会显示何时需要签名以及它
+承诺了什么。
+
+## §1.2 面向用户的能力（REQ 登记册种子 — 完整 ID 见 §13）
+
+- REQ-PROD-001 钱包创建/导入；密钥托管可插拔（§9）。
+- REQ-PROD-002 大厅：列出/创建/加入牌桌；其他玩家的在线状态（§8）。
+- REQ-PROD-003 规则集 + 筹码配置，并展示一份经哈希的配置（§5.2）。
+- REQ-PROD-004 牌桌视图：座位、轮次、公共牌/明牌、底池、余额、计时器、超时默认文案（§11.4）。
+- REQ-PROD-005 本地私有手牌查看（解密自己的牌；绝不将密钥暴露给托管边界之外的 UI 进程）（§9.3、§11.5）。
+- REQ-PROD-006 准确说明正在签署什么内容的签名提示（§11.6）。
+- REQ-PROD-007 弃牌不亮牌的行动（P5）。
+- REQ-PROD-008 摊牌时只亮所需的内容（§5.6）。
+- REQ-PROD-009 确定性结算展示 + 最终余额（§5.7、§6）。
+- REQ-PROD-010 记录誊本导出 + 确定性离线重放（§12.3）。
+- REQ-PROD-011 重连/恢复进入一张进行中的牌桌（§8.6）。
+- REQ-PROD-012 清晰的研究/regtest 横幅；主网置于显式开关之后（§10.5）。
+
+## §1.3 首个版本的非目标
+
+不做多桌锦标赛、不做抽水/运营方经济、不做 NFT 市场、不做真实货币运营、不做原生移动端、不要求 TEE。
+首个版本的存在是为了在 regtest 上以真实玩家发现端到端地证明某一个变体的完整流水线。
+
+---
+
+# §2 依赖栈与集成契约
+
+平台消费已有的 BSV 原语。本节定义平台对每个仓库所要求的**契约** — 接口、输入/输出、不变式，以及
+平台所依赖的失败模式。Claude Code 拥有这些仓库；集成工作将平台的适配器（§15）接线到每个仓库的实际
+API。当某仓库的具体 API 与下文的契约符号不同时，由适配器进行映射；平台核心只依赖契约，绝不依赖某
+仓库的内部实现（这使核心可针对伪实现进行测试，并防止某仓库的改动波及整个引擎）。
+
+## §2.1 `cardtable` — 心智扑克引擎与交易原生的游戏底座
+
+**角色：** 无荷官的游戏底座。可验证的分布式洗牌、承诺-揭示熵、加密牌 UTXO，以及协作/超时默认的
+交易状态机。首个目标游戏为 In-Between；平台使用的是它的*原语*，而非它的游戏。
+
+**契约 `CT`（被消费）：**
+
+- `CT.entropy.commit(secret) -> commitment` / `CT.entropy.reveal(commitment, secret) -> bool` — 洗牌随机性的承诺-揭示（§4.1）。
+- `CT.shuffle.*` — 对一个 N 方集合进行可验证的分布式洗牌，为每张牌产生联合公钥以及各方各自的加密洗牌密钥（§4.2–§4.4）。
+- `CT.card.*` — 加密牌表示 `(deck_id, card_serial, ciphertext_commitment, locking_script)`；隐藏、本地解密、准备揭示证明、弃牌时放弃（§4.5、§4.6）。
+- `CT.fsm.*` — 已承诺的游戏状态转换，其中每个状态 UTXO 都有一个协作后继和一个超时默认后继；记录誊本及离线重新验证（§7）。
+- `CT.tx.*` — 交易原生的事件发出以及确定性回退图（§6）。
+
+**平台所依赖的不变式（必须成立，否则平台的保证不成立）：**
+
+- INV-CT-1 没有任何单方得知洗牌顺序（秘密置换的复合）。
+- INV-CT-2 在揭示前，一张隐藏的牌只有其持有者可解密。
+- INV-CT-3 每个游戏状态 UTXO 恰有两个有效后继（协作、超时）。
+- INV-CT-4 时间锁在交易层强制执行，绝不通过脚本内的 CLTV/CSV（§6.2）。*（这是一条贯穿整个栈的不变式；参见 §6.2。）*
+- INV-CT-5 在其自身输出中零捏造 / 声明假设。
+
+**作为既定前提采纳的状态（依据作者的说明）：** 协议已完全规定；非链上的密码学与仿真层可运行；
+早期构建阶段已大体到位；完整的多牌游戏部分完成；首个游戏为 In-Between。因此平台**不**假设
+`cardtable` 中已存在德州扑克；平台在 `CT` 原语之上构建各扑克变体（§5、§7）。
+
+## §2.2 `bonded-subsat-channel` — 次聪微支付 + 自包含节点
+
+**角色（两种不同用途）：**
+
+1. **微下注** — 以所选粒度 `k` 为游戏内筹码进行次聪价值移动，通过最大余数对账 `Q*` 实现整聪链上结算，并设有一个固定的一聪反作弊保证金，在广播过期状态时被罚没。在后续阶段用于链下的细粒度筹码移动（§5.7、§9.4）。在第 1–2 阶段为可选且受开关控制。
+2. **自包含本地节点** — 其嵌入式 BSV 系统（原生 P2P-wire 节点、按最长工作量的 PoW 区块头链、基于数据库的区块/UTXO 存储、在原始替换规则下检测冲突的内存池、HD 钱包）是平台为 VM 提供的本地链后端（§10.2），依据 D6。
+
+**契约 `BS`（被消费）：**
+
+- `BS.node.*` — 启动/停止本地 regtest 节点；提交交易；查询 UTXO/outpoint 状态；观察冲突/双花尝试；区块/区块头查询（§8.4、§10.2）。
+- `BS.channel.open/transfer/close/contested` — 带 `k` 粒度和 1 聪保证金的微支付通道生命周期（§5.7）。
+- `BS.reconcile.Qstar(microBalances) -> integerSatoshiOutputs` — 确定性的最大余数结算；在每个诚实方上结果相同（P2）。
+
+**不变式：**
+
+- INV-BS-1 链上从不写入任何分数输出；次聪精度仅存在于链下账务中。
+- INV-BS-2 承担风险的资本是固定的（每个参与者一聪），与支付金额/路径长度无关。
+- INV-BS-3 时间在交易层强制执行（原始替换下的 nLockTime/nSequence），而非脚本内（§6.2）。
+
+## §2.3 `verifiable-accounting` 系列 — 审计证据与三式记账
+
+**角色：** 在不泄露其他记录的前提下，将已披露的游戏/财务记录变为可审查、可锚定的审计证据；可选的
+企业级持久化/审计（§12.4）。
+
+**契约 `VA`（被消费）：**
+
+- `VA.merkle.prove(records, index) -> bundle` / `VA.merkle.verify(bundle) -> bool` — 针对某 BSV 区块头的 `merkleroot` 的 Merkle 包含证明，将信任终止于 PoW 区块头链（A 层）。
+- `VA.disclose.*` — 选择性披露：只返回被查询的记录 + 其路径；兄弟节点保持为不透明的哈希（B 层）。隐私性就是选择性披露本身；不额外附加任何密码学。
+- `VA.chain.*` — PKI 根 + GL 密钥层级、ECDH/花费关联的签名交易链、按字段披露（三式记账）。
+
+**不变式与所声明的边界（须按 P8 如实反映，不得夸大）：**
+
+- INV-VA-1 仅确立：包含性、完整性、选择性披露、对已披露记录的算术正确性。
+- INV-VA-2 **不**确立源头真实性、某事件确实发生、分类正确性、总体完整性或法律可执行性。在其他方面一致的账簿中于源头被虚假录入的一条记录**不会**被检测到。平台在凡是呈现审计输出之处，都 MUST 显示这一边界。
+- INV-VA-3 必须保留在花费关联图中的承诺，以**活动脚本中的 pushdata 承载，而非 `OP_RETURN`**（§6.5）。
+
+## §2.4 `overlay-broadcast` — 组访问控制、撤销、门限托管
+
+**角色（后续轨道；接缝暴露在核心中）：** 带对数级重新密钥的密钥图（逻辑密钥层级）广播加密、链上
+会话生命周期、**以未花费的过期输出表达的撤销**，以及门限密钥托管（FROST/GG20）。这是可撤销加密内容
+NFT（一个独立产品，不在核心扑克阶段交付）的基础，也是平台日后若拆分底池/获胜密钥时**对底池/获胜
+密钥进行门限托管**的归宿（§9.3）。
+
+**契约 `OB`（被消费）：**
+
+- `OB.keygraph.*` — 构建/重新密钥一个密钥图；以 `O(log n)` 添加/移除成员；以经认证的密钥封装进行封装/解封（绝不用裸 XOR）。
+- `OB.session.*` — 为 `k` 个会话注资；续期会花费成员输出；**过期后未花费 = 已撤销**（平台不得就撤销主张超出此机制所强制执行的范围，P8）。
+- `OB.custody.threshold.*` — 将一个密钥拆分为份额；仅由门限进行签名/重构；任何份额（或低于门限的集合）都不泄露任何信息。
+- `OB.ecies.*` / `OB.aead.*` — 对某 secp256k1 公钥的 ECIES；AES-256-GCM AEAD。
+
+**不变式：**
+
+- INV-OB-1 在种子隔离的信令中，没有任何密钥材料过线；只有位置过线。
+- INV-OB-2 撤销是一项链上事实（未花费的过期输出），不由任何运营方决定。
+- INV-OB-3 按 NPR 7150.2 + Power of Ten 评级，配有需求可追溯性矩阵 — 平台采用同一标准（§13）。
+
+## §2.5 专利 GB2616862 — 洗牌/选取/结算原语（规范性引用）
+
+**角色：** 洗牌与结算所基于的密码学与链上机制。已通读；已记录。它以纯 BSV Script 提供：洗牌密钥
+`P'=(s,±√(s³+7))`；通过点加法得到的逐元素联合密钥；选取 = 花费联合密钥 UTXO；两轮加密（先共享标量，
+再逐元素的不同标量）配合重排序 = 洗牌，在揭示时由逆标量逆转；OP_RETURN 阶段承诺；以及实做的结算：
+2-of-2 注资多签、nLocktime 退款、locktime 分级的下注交易、公平博弈脚本，以及一个可选的 2-of-3
+受信第三方强制执行。通过推广可适用于 N 方和一副 52 张牌的牌堆（专利的实做脚本是 2 方/3 张牌的；
+将其扩展是平台的工作 — §6、§4）。
+
+**引用纪律（P6）：** 引用为 **GB2616862A**（已公开的申请文件，2023-09-23），除非/直到 B 授权被
+独立确认为止；v27 扑克论文引用了一个"B"（已授权）形式，而该形式未被申请文件所确认。许可申请人：
+nChain Licensing AG。任何部署许可义务属于超出本文档权限的商业事务，仅作标记，不予解决。
+
+## §2.6 依赖适配器原则
+
+REQ-DEP-001 平台核心只依赖上述契约 `CT/BS/VA/OB`，并通过一个适配器层访问（§15.8）。每个契约都有一个
+**伪/内存实现**，仅在单元测试和属性测试中用于编排接线。REQ-DEP-002 任何仓库具体 API 的改动都被吸收
+在其适配器中；没有改动会传播进引擎、FSM 或 UI。REQ-DEP-003 **伪实现通过一套一致性测试套件与现实绑定
+（修正 RT-01 M4）。** 每个契约都有单一的契约一致性测试套件，针对*伪实现*与真实适配器*双方*运行；二者
+都 MUST 通过它，于是伪实现可证明地匹配真实契约，而针对伪实现的绿灯运行无法认证一个错误的引擎。
+REQ-DEP-004 **安全关键**的行为 — 分布式洗牌正确性、揭示的单次使用、公平博弈罚没、联合密钥签名 —
+针对**真实的** CT/密码学实现进行测试（链上部分则通过真实的 Script 解释器，P9）；伪实现**绝不**允许
+代替被测的安全属性，只能用于周边的编排。
+
+---
+
+# §3 系统架构
+
+## §3.1 分层视图
 
 ```
 +--------------------------------------------------------------+
-|  Client shells (§11)                                         |
-|   - Web (React/TS/Vite)        - Windows desktop (Tauri)     |
-|   shared UI core; no business logic in the shell             |
+|  客户端外壳 (§11)                                            |
+|   - Web (React/TS/Vite)        - Windows 桌面 (Tauri)        |
+|   共享 UI 核心；外壳中没有业务逻辑                           |
 +--------------------------------------------------------------+
-|  Application/SDK layer (§15)  — stable module contracts      |
+|  应用/SDK 层 (§15)  — 稳定的模块契约                         |
 +--------------------------------------------------------------+
-|  Engine (deterministic core, §3.3)                           |
+|  引擎 (确定性核心, §3.3)                                     |
 |   state-engine | game-modules | betting | pots | hand-eval   |
 +----------------------+----------------------+----------------+
-|  Crypto (§4)         |  Tx/Script (§6)      |  Networking (§8)|
-|  mental poker        |  builders/templates  |  relay/P2P/sync |
+|  密码学 (§4)         |  Tx/Script (§6)      |  网络 (§8)      |
+|  心智扑克            |  builders/templates  |  relay/P2P/sync |
 +----------------------+----------------------+----------------+
-|  Adapters (§2, §15.8): CT | BS | VA | OB                     |
+|  适配器 (§2, §15.8): CT | BS | VA | OB                       |
 +--------------------------------------------------------------+
-|  Local chain backend (§10.2): bonded-subsat-channel node     |
-|  (regtest by default; mainnet opt-in flag)                   |
+|  本地链后端 (§10.2): bonded-subsat-channel node              |
+|  (默认 regtest；主网为选择启用开关)                          |
 +--------------------------------------------------------------+
-|  Persistence (§12): IndexedDB (web) / SQLite (desktop+relay) |
+|  持久化 (§12): IndexedDB (web) / SQLite (桌面+中继)          |
 +--------------------------------------------------------------+
 ```
 
-## §3.2 Components and languages
+## §3.2 组件与语言
 
-- **Engine, crypto orchestration, tx building, game modules:** TypeScript (one core that runs in the browser and inside Tauri). Rationale: a single deterministic core shared by web and desktop removes the largest class of cross-platform divergence bugs; matches the lineage's React/TS/Vite client.
-- **Relay, indexer, discovery, local-node supervision, matchmaking:** Go. Rationale: concurrency for many tables/sessions; matches the lineage's Go relay; the embedded node (D6) is Go.
-- **Script interpreter tests:** executed against the real BSV Script interpreter with Genesis rules (the one used by the chosen node/SDK), driven from the test harness (§14.3).
-- **Hand-evaluation hot path:** TypeScript with a documented, test-vector-backed algorithm (§5.3); a WASM implementation is an optional later optimization behind the same interface, only if profiling justifies it (no premature optimization — Power-of-Ten discipline).
+- **引擎、密码学编排、交易构建、游戏模块：** TypeScript（一个核心，同时运行于浏览器和 Tauri 内）。理由：由 web 与桌面共享的单一确定性核心消除了最大一类跨平台分歧 bug；与该谱系的 React/TS/Vite 客户端相匹配。
+- **中继、索引器、发现、本地节点监管、撮合：** Go。理由：面向众多牌桌/对局的并发；与该谱系的 Go 中继相匹配；嵌入式节点（D6）是 Go。
+- **Script 解释器测试：** 针对启用 Genesis 规则的真实 BSV Script 解释器（即所选节点/SDK 使用的那个）执行，由测试夹具驱动（§14.3）。
+- **手牌评估热路径：** TypeScript，配以有文档记录、有测试向量支撑的算法（§5.3）；WASM 实现是置于同一接口之后的可选的后续优化，仅在性能剖析证明有必要时才采用（不做过早优化 — Power-of-Ten 纪律）。
 
-## §3.3 The deterministic core boundary
+## §3.3 确定性核心边界
 
-REQ-ARCH-001 The engine is a pure function of inputs: `(orderedValidTxSet, ruleset) ->
-tableState`. REQ-ARCH-002 The engine performs no I/O, no networking, no time reads, and
-no randomness except via injected, recorded sources (entropy for this client's own
-commit-reveal is drawn at a defined point and recorded in the transcript). REQ-ARCH-003
-"Now" enters the engine only as an explicit parameter for timeout-eligibility evaluation
-and is derived from chain/relay-anchored heights/timestamps per §6.4, never from local
-wall-clock for consensus-affecting decisions. This boundary is what makes P2 and §14
-replay testing possible.
+REQ-ARCH-001 引擎是输入的纯函数：`(orderedValidTxSet, ruleset) -> tableState`。REQ-ARCH-002 引擎
+不执行 I/O、不联网、不读取时间，也不使用随机性，除非通过被注入且被记录的来源（本客户端自身
+承诺-揭示的熵在一个确定的点处抽取并记入记录誊本）。REQ-ARCH-003 "Now"（当下时间）只作为一个显式
+参数进入引擎以供超时资格评估，并依据 §6.4 从链/中继锚定的高度/时间戳推导得到，对于影响共识的决策绝不
+取自本地挂钟。正是这条边界使 P2 与 §14 的重放测试成为可能。
 
-## §3.4 Data-flow for one player action (normative sequence)
+## §3.4 单个玩家行动的数据流（规范性时序）
 
-1. UI requests legal actions: `engine.getLegalActions(state, seat)` (§15.2).
-2. Player chooses an action; SDK builds the corresponding transaction template (§6, §15.5).
-3. Wallet/custody signs exactly the committed bytes; signing prompt states what is signed (§9, §11.6).
-4. Action travels **two paths simultaneously** (§8.3): (a) to the local node/network as a real transaction; (b) directly to table peers via the relay/P2P for fast convergence.
-5. Each peer validates and applies the action through the same engine; conflicting attempts resolved by §8.5 deterministic rules.
-6. State advances; if the actor fails to act before the deadline, the timeout-default branch becomes valid and any peer may advance it (§6.4).
+1. UI 请求合法行动：`engine.getLegalActions(state, seat)`（§15.2）。
+2. 玩家选择一个行动；SDK 构建对应的交易模板（§6、§15.5）。
+3. 钱包/托管恰好对已承诺的字节进行签名；签名提示说明所签内容（§9、§11.6）。
+4. 行动**同时走两条路径**（§8.3）：(a) 作为真实交易发往本地节点/网络；(b) 经中继/P2P 直达牌桌对等方以快速收敛。
+5. 每个对等方通过同一引擎验证并应用该行动；冲突的尝试由 §8.5 的确定性规则解决。
+6. 状态推进；若行动者未在截止前行动，则超时默认分支变为有效，任何对等方均可推进它（§6.4）。
 
 ---
 
-# §4 Cryptographic protocol: mental poker on BSV
+# §4 密码学协议：BSV 上的心智扑克
 
-This section fixes the cryptography. It adapts GB2616862 (§2.5) to secp256k1 as used by
-BSV, and uses `cardtable` primitives (§2.1) for orchestration. All EC points are
-secp256k1; `G` is the generator; `n` the group order. Point serialization is SEC-1
-compressed 33-byte form for hashing/transmission; hash-derived keying material uses the
-32-byte x-coordinate (RFC 5869 convention). The point at infinity is excluded.
+本节确定密码学方案。它将 GB2616862（§2.5）适配到 BSV 所用的 secp256k1，并使用 `cardtable` 原语
+（§2.1）进行编排。所有 EC 点均在 secp256k1 上；`G` 是生成元；`n` 是群的阶。点序列化在哈希/传输时
+采用 SEC-1 压缩的 33 字节形式；由哈希派生的密钥材料使用 32 字节的 x 坐标（RFC 5869 约定）。无穷远点
+被排除。
 
-## §4.1 Entropy: commit-reveal (no trusted dealer)
+## §4.1 熵：承诺-揭示（无受信荷官）
 
-Each player `p` samples a high-entropy secret `r_p` from a recorded source, publishes
-`c_p = H(r_p)` (commit), and later discloses `r_p` (reveal). Combined seed
-`σ = H(r_1 ‖ … ‖ r_N)` (canonical party order, §4.4) seeds the deterministic shuffle
-parameters. REQ-CRYPTO-001 Withholding a reveal after committing triggers a deterministic
-penalty/fallback (§5.7, §6.4): timeout forfeiture or a committed fallback-seed rule, never
-an operator decision. REQ-CRYPTO-002 No player may sample or alter `r_p` after observing
-any other `r_q`; binding is by the commit hash and enforced by ordering (commits close
-before any reveal opens).
+每个玩家 `p` 从一个被记录的来源采样一个高熵秘密 `r_p`，发布 `c_p = H(r_p)`（承诺），随后披露 `r_p`
+（揭示）。联合种子 `σ = H(r_1 ‖ … ‖ r_N)`（规范方序，§4.4）为确定性洗牌参数提供种子。
+REQ-CRYPTO-001 承诺之后扣留揭示将触发一个确定性的惩罚/回退（§5.7、§6.4）：超时罚没或一条已承诺的
+回退种子规则，绝非由运营方决定。REQ-CRYPTO-002 任何玩家都不得在观察到任何其他 `r_q` 之后再采样或
+更改 `r_p`；约束由承诺哈希提供，并由排序强制执行（所有承诺在任何揭示开启之前关闭）。
 
-## §4.2 Shuffle keys and per-card keys (GB2616862)
+## §4.2 洗牌密钥与逐牌密钥（GB2616862）
 
-For each card index `j` and each player `p`, a shuffle key is the EC point
-`P'_{p,j} = (s_{p,j}, +√(s_{p,j}³ + 7) mod p_field)` with private key `s_{p,j}` = the
-x-coordinate, and public key `P_{p,j} = s_{p,j}·G`. The platform fixes the **positive**
-square-root branch (the protocol must commit to one branch; mixing branches halves the
-search space only if the branch choice leaks — §4.8). Per-card private keys are derived
-deterministically inside the custody boundary from a per-game seed bound to `(gid, j)`
-(HKDF), so a device stores one long-term key, not D per-card keys (§9.2).
+对于每个牌索引 `j` 和每个玩家 `p`，一个洗牌密钥是 EC 点
+`P'_{p,j} = (s_{p,j}, +√(s_{p,j}³ + 7) mod p_field)`，其私钥 `s_{p,j}` = x 坐标，公钥
+`P_{p,j} = s_{p,j}·G`。平台固定采用**正**平方根分支（协议必须承诺于一个分支；只有当分支选择泄露时，
+混用分支才会使搜索空间减半 — §4.8）。逐牌私钥在托管边界内部由一个绑定到 `(gid, j)` 的逐对局种子
+确定性地派生（HKDF），因此设备存储一个长期密钥，而非 D 个逐牌密钥（§9.2）。
 
-## §4.3 Combined public key, card lifecycle, and the signing-mode decision
+## §4.3 联合公钥、牌的生命周期，以及签名模式决策
 
-For card `j`, combined public key `Q_j = Σ_p P_{p,j}` (point addition); combined private
-key `w_j = Σ_p s_{p,j} mod n`. `Q_j` locks a BSV UTXO. The per-card UTXO is the ownership
-record and the state-machine anchor for that card.
+对于牌 `j`，联合公钥 `Q_j = Σ_p P_{p,j}`（点加法）；联合私钥 `w_j = Σ_p s_{p,j} mod n`。`Q_j` 锁定
+一个 BSV UTXO。逐牌 UTXO 是该牌的所有权记录和状态机锚点。
 
-**Card lifecycle (deal-to-positions; this is poker, not card-selection — corrects RT-01
-B2).** GB2616862's worked game is highest-card-wins, where a player *selects* a card by
-spending its combined-key UTXO. Poker does not deal that way. The platform uses the
-covenant-chain lifecycle `minted → drawn(position) → revealed | folded → discarded`:
+**牌的生命周期（发牌到各位置；这是扑克，而非选牌 — 修正 RT-01 B2）。** GB2616862 实做的游戏是
+高牌取胜，其中玩家通过花费某牌的联合密钥 UTXO 来*选取*一张牌。扑克并非如此发牌。平台采用约定链
+（covenant-chain）生命周期 `minted → drawn(position) → revealed | folded → discarded`：
 
-- **mint** — the 52 combined-key card UTXOs exist after the shuffle (§4.4), order unknown to any party.
-- **draw(position)** — the *deal* operation binds a concealed card UTXO to a seat/board position as a committed state transition (§6.1 Deal class). This is the poker deal; it is **not** a player "selection." Drawing is driven by the protocol's deal schedule for the variant (§7), not by a player choosing which card to spend.
-- **reveal | fold** — at showdown a drawn card is revealed (§4.6) or, on fold, surrendered without reveal (§4.6).
-- **discard** — spent into a dead-hand/closed state at hand end.
+- **mint** — 在洗牌之后存在 52 个联合密钥牌 UTXO（§4.4），其顺序为任何一方所不知。
+- **draw(position)** — *发牌*操作将一个隐藏牌 UTXO 作为一次已承诺的状态转换绑定到某座位/公共牌位置（§6.1 Deal 类）。这是扑克的发牌；它**不是**玩家的"选取"。抽牌由该变体的协议发牌时序驱动（§7），而非由玩家选择花费哪张牌。
+- **reveal | fold** — 在摊牌时，一张已抽出的牌被揭示（§4.6），或在弃牌时不亮牌地放弃（§4.6）。
+- **discard** — 在手牌结束时花费进一个死手/关闭状态。
 
-"Selection-by-spend" of `Q_j` is therefore the **close-out / settlement** primitive used at
-reveal/showdown and pot settlement (§5.7, §6.6) — **not** the deal. The terms are used with
-this distinction throughout; "selection" is never used to mean "deal."
+因此对 `Q_j` 的"通过花费来选取"是在揭示/摊牌和底池结算时所用的**平仓 / 结算**原语（§5.7、§6.6）—
+**而非**发牌。全文以这一区分使用这些术语；"选取"绝不用来表示"发牌"。
 
-**Signing-mode decision (corrects RT-01 B1 — replaces the earlier unconditional "never
-reconstructed in one place" claim, which contradicted the GB2616862 basis).** Spending a
-`Q_j`-locked UTXO needs a signature under `Q_j`, i.e. knowledge of `w_j`. Two modes, with
-consequences stated in ink:
+**签名模式决策（修正 RT-01 B1 — 取代此前那条与 GB2616862 基础相矛盾的、无条件的"绝不在单处重构"
+的主张）。** 花费一个 `Q_j` 锁定的 UTXO 需要一个 `Q_j` 下的签名，即对 `w_j` 的知晓。两种模式，其后果
+白纸黑字写明：
 
-- **Mode A — patent-literal, reconstruct-at-reveal (DEFAULT, Phase 1).** Per GB2616862
-  (Fig. 15; pages 49, 59–61): at reveal, the relevant parties disclose their per-card
-  scalars `s_{p,j}`; the party closing out sums to `w_j` and signs. **Consequences that
-  MUST be honored:** (i) disclosed scalars are reusable secret material once revealed, so
-  per-card keys are single-game and **never reused** (§9.2); (ii) funds locked to combined
-  keys are active **only for the hand window** (hours), bounding exposure (GB2616862 pages
-  39–40); (iii) the security argument is the patent's bounded-window argument — **not** "no
-  whole key ever exists." This mode reconstructs `w_j` in one place at reveal, and the spec
-  says so plainly.
-- **Mode B — no-reconstruction, threshold/multi-party signing (UPGRADE, Phase 2+).**
-  Produce the `Q_j` signature by a dealerless threshold/multi-party ECDSA so `w_j` never
-  exists whole. This is the v27 improvement; it is **not** BSVM-specific and is therefore
-  compatible with P1 (BSV-only). Pluggable via the custody backend (§9.3). Only Mode B may
-  claim the "no whole-key reconstruction" property; Mode A may not.
+- **Mode A — 专利字面、揭示时重构（默认，第 1 阶段）。** 依据 GB2616862（图 15；第 49、59–61 页）：在揭示时，相关各方披露其逐牌标量 `s_{p,j}`；平仓方求和得到 `w_j` 并签名。**MUST 被遵守的后果：**(i) 已披露的标量一经揭示即为可重复使用的秘密材料，因此逐牌密钥是单对局的且**绝不重用**（§9.2）；(ii) 锁定到联合密钥的资金**仅在手牌窗口内**（数小时）有效，从而限定了暴露（GB2616862 第 39–40 页）；(iii) 安全论证是专利的有界窗口论证 — **而非**"从不存在完整密钥"。该模式在揭示时于单处重构 `w_j`，规范对此直言不讳。
+- **Mode B — 不重构、门限/多方签名（升级，第 2 阶段及以后）。** 通过一个无荷官的门限/多方 ECDSA 产生 `Q_j` 签名，使 `w_j` 从不以完整形态存在。这是 v27 的改进；它**并非** BSVM 专属，因此与 P1（仅限 BSV）兼容。可经托管后端插拔（§9.3）。只有 Mode B 才可主张"无完整密钥重构"属性；Mode A 不可。
 
-REQ-CRYPTO-008 The build MUST NOT present Mode A while claiming Mode B's property. The
-active mode is recorded in the ruleset (§5.2) and surfaced wherever key-handling guarantees
-are shown to the player (P8). DECISION (D9): default Mode A for Phase 1; override sets
-`crypto.signingMode`.
+REQ-CRYPTO-008 构建 MUST NOT 在主张 Mode B 属性的同时呈现 Mode A。当前生效的模式被记入规则集（§5.2），
+并在凡是向玩家展示密钥处理保证之处显示出来（P8）。决策（D9）：第 1 阶段默认 Mode A；覆盖时设置
+`crypto.signingMode`。
 
-## §4.4 Distributed shuffle (two-round encryption + permute)
+## §4.4 分布式洗牌（两轮加密 + 置换）
 
-Per GB2616862 §6.2 and `CT.shuffle`: each party, in canonical order, (i) encrypts every
-element by EC scalar multiplication and (ii) permutes the order; a first round uses a
-shared scalar per party, a second round uses **distinct per-element scalars**, enabling
-later per-element (per-card) selective reveal without revealing the whole set. Reversal at
-reveal uses inverse scalars. REQ-CRYPTO-003 **Canonical party order** is the
-lexicographic order of parties' long-term public keys in 33-byte SEC-1 compressed form;
-it is computed deterministically, published as part of setup state, and is independent of
-network arrival order (this fixes the HKDF/ordering inputs so a Dolev-Yao reorderer cannot
-change derived keys). REQ-CRYPTO-004 Each shuffle stage is committed: `c_p = H(state_p ‖
-scalars_p ‖ permutation_p)`, recorded on-chain (OP_RETURN acceptable for these dead-end
-stage commitments, §6.5), enabling post-hoc dispute replay (§12.3).
+依据 GB2616862 §6.2 和 `CT.shuffle`：每一方按规范顺序，(i) 通过 EC 标量乘法对每个元素加密，并
+(ii) 置换其顺序；第一轮每方使用一个共享标量，第二轮使用**逐元素不同的标量**，从而在不揭示整个
+集合的前提下支持后续的逐元素（逐牌）选择性揭示。揭示时的逆转使用逆标量。REQ-CRYPTO-003 **规范方序**
+是各方长期公钥以 33 字节 SEC-1 压缩形式表示的字典序；它被确定性地计算、作为设置状态的一部分发布，
+且与网络到达顺序无关（这固定了 HKDF/排序的输入，使 Dolev-Yao 式的重排序者无法改变派生密钥）。
+REQ-CRYPTO-004 每个洗牌阶段都被承诺：`c_p = H(state_p ‖ scalars_p ‖ permutation_p)`，记录于链上
+（对这些死路阶段承诺，OP_RETURN 可接受，§6.5），从而支持事后的争议重放（§12.3）。
 
-## §4.5 Encrypted-card representation
+## §4.5 加密牌表示
 
-A concealed card is `(deck_id, card_serial, ciphertext_commitment, locking_script)`
-publicly; the face value is `face_j` (e.g. 6 bits: 2 suit + 4 rank) committed as
-`cmt_j = H(face_j ‖ blind_j)` and/or carried as an AEAD ciphertext keyed by material only
-the threshold set can derive (§4.6). REQ-CRYPTO-005 Mid-protocol substitution of a card's
-ciphertext/commitment is rejected by a byte-equality check across state transitions
-(§6.3) and by AEAD integrity at reveal.
+一张隐藏的牌在公开层面是 `(deck_id, card_serial, ciphertext_commitment, locking_script)`；其牌面值
+为 `face_j`（例如 6 位：2 位花色 + 4 位点数），承诺为 `cmt_j = H(face_j ‖ blind_j)`，且/或以一个由
+仅门限集合能派生的材料加密的 AEAD 密文承载（§4.6）。REQ-CRYPTO-005 协议中途对一张牌的密文/承诺的
+替换，会被跨状态转换的逐字节相等检查（§6.3）以及揭示时的 AEAD 完整性所拒绝。
 
-## §4.6 Reveal (selective, recipient-bound) and fold-without-reveal
+## §4.6 揭示（选择性、绑定接收者）与弃牌不亮牌
 
-- **Private reveal (a player's own hole card):** the holder derives enough key material to decrypt locally; other players see only that a card object moved (P5). The platform's reveal binds disclosure to the specific card and recipient so disclosed material is single-use and not replayable across cards/positions/recipients. `[EXPAND: Part 2 — the exact single-use reveal token construction the platform adopts; candidate is the consensus-timestamped single-use ECDH token bound to (gid, j, position, height, recipient-ephemeral-key); this is recorded as the leading candidate, not yet fixed — DECISION REQUIRED after reading cardtable's reveal API.]`
-- **Public reveal (board cards):** a board card is concealed under *every* party's encryption, so *producing* the reveal is an **N-of-N cooperative transition** — every party must release its decryption material — exactly like a player action, and it therefore has a **timeout-default branch** (corrects RT-01 M2): if a party withholds, the street cannot be revealed and the state resolves via the recovery path (§6.4) with bond slashing where configured (§2.2). Once produced, the published reveal material is verifiable by any observer against the commitment. A single withholder is a *liveness* failure (the hand stalls then defaults), never a confidentiality failure.
-- **Fold:** a fold transaction proves the player controls their concealed hand outputs and surrenders them to a dead-hand state **without** disclosing face values; preserves the commitments; removes the player from contention (P5; §6.3 fold script).
+- **私有揭示（玩家自己的底牌）：** 持有者派生出足够的密钥材料以在本地解密；其他玩家只看到某个牌对象发生了移动（P5）。平台的揭示将披露绑定到特定的牌和接收者，使被披露的材料是单次使用的，且无法跨牌/位置/接收者重放。`[EXPAND: Part 2 — 平台所采用的确切单次使用揭示令牌构造；候选方案是绑定到 (gid, j, position, height, recipient-ephemeral-key) 的、经共识时间戳的单次使用 ECDH 令牌；此处记录为领先候选，尚未确定 — 在阅读 cardtable 的揭示 API 之后 DECISION REQUIRED。]`
+- **公开揭示（公共牌）：** 一张公共牌被*每一*方的加密所隐藏，因此*产生*该揭示是一次 **N-of-N 协作转换** — 每一方都必须释放其解密材料 — 恰如一个玩家行动，因此它具有一个**超时默认分支**（修正 RT-01 M2）：若某一方扣留，则该街无法被揭示，状态经恢复路径解决（§6.4），并在已配置之处罚没保证金（§2.2）。一旦产生，已发布的揭示材料即可由任何观察者对照承诺进行验证。单个扣留者是一次*活性*失败（手牌卡住随后默认处理），而绝非保密性失败。
+- **弃牌：** 一笔弃牌交易证明玩家控制其隐藏手牌的输出，并将它们放弃到一个死手状态而**不**披露牌面值；保留承诺；将玩家移出争夺（P5；§6.3 弃牌脚本）。
 
-## §4.7 Fair-play enforcement (anti-cheat without a trusted third party)
+## §4.7 公平博弈强制执行（无受信第三方的反作弊）
 
-Per GB2616862 §6.5.2: each party commits, in a fair-play transaction, funds that can be
-redeemed only by demonstrating in-script that the private keys they used derive the public
-keys and the encrypted shuffle keys they sent. A party who sends mismatched values cannot
-redeem and forfeits those funds — making honest play the rational outcome without a
-referee. REQ-CRYPTO-006 The platform generates fair-play transactions after shuffle/
-encryption and before reveal; the fair-play locking script is built from the in-script
-shuffle-point-derivation and EC-point-multiplication routines (GB2616862 pages 55–60).
-REQ-CRYPTO-009 **Fair-play scaling is a measured risk, not an assumed parameter change
-(corrects RT-01 M3).** GB2616862's worked fair-play script is a long nested
-`OP_IF`/`OP_ELSE` structure for **3 elements and 2 parties**; for a 52-card deck and N
-parties the single-script proof may be very large. Post-Genesis BSV has no script-size cap,
-so it is not impossible, but the byte size, fee, and constructibility are unverified. The
-build MUST **measure** the fair-play script size for the target deck/party counts (recorded
-in §19.C) before relying on a single-script approach, and MUST implement the fallback —
-**per-card or per-batch fair-play transactions** — if a single script proves impractical.
-The spec does not assert fair-play "scales" until §19.C carries a measured byte schedule. An
-optional 2-of-3 TTP enforcement (GB2616862 §6.5.1) is available as a separate, opt-in script
-profile (§6.7); it is not used by default (P3 prefers no third party).
+依据 GB2616862 §6.5.2：每一方在一笔公平博弈交易中承诺一笔资金，该资金只有通过在脚本内证明自己
+所用私钥可推导出所发送的公钥与加密洗牌密钥，方可赎回。发送不匹配值的一方无法赎回并罚没那些资金 —
+从而在无裁判的情况下使诚实博弈成为理性结果。REQ-CRYPTO-006 平台在洗牌/加密之后、揭示之前生成公平
+博弈交易；公平博弈锁定脚本由脚本内的洗牌点派生与 EC 点乘例程构建（GB2616862 第 55–60 页）。
+REQ-CRYPTO-009 **公平博弈的扩展性是一项实测风险，而非一个假定的参数改动（修正 RT-01 M3）。**
+GB2616862 实做的公平博弈脚本是一个针对 **3 个元素和 2 方**的长嵌套 `OP_IF`/`OP_ELSE` 结构；对于
+一副 52 张牌和 N 方，单脚本证明可能非常大。Genesis 升级后的 BSV 没有脚本大小上限，因此并非不可能，
+但其字节大小、手续费和可构造性尚未验证。构建在依赖单脚本方案之前 MUST **测量**目标牌堆/方数下的
+公平博弈脚本大小（记录于 §19.C），并且若单脚本被证明不切实际，MUST 实现回退方案 — **逐牌或逐批的
+公平博弈交易**。在 §19.C 给出实测字节排布之前，规范不断言公平博弈"可扩展"。一个可选的 2-of-3 TTP
+强制执行（GB2616862 §6.5.1）作为一个独立的、选择启用的脚本配置可用（§6.7）；默认不使用（P3 倾向于
+无第三方）。
 
-## §4.8 Security parameters and stated limits (P8)
+## §4.8 安全参数与所声明的限制（P8）
 
-- REQ-CRYPTO-007 Fix one square-root branch for shuffle keys; keep the branch choice consistent and treat any protocol that would expose both branches' selection as reducing the key search space by a factor of 2 (GB2616862 pages 39–40). Funds locked to shuffle-derived keys are active only for the shuffle interaction window (hours), bounding exposure.
-- Stated limits to carry forward (not to paper over): N-of-N reveal means any single withholder halts that reveal (a liveness, not confidentiality, failure) — bounded by the timeout-default branch and bond slashing; a threshold (t, N) variant trades collusion-resistance for liveness and is an explicit later option; the protocol is non-custodial-at-reveal and no-single-dealer but is **not** unconditionally trustless — its trust surface (DDH on secp256k1; correct off-chain execution; primitive soundness; node/consensus integrity; custody backend) is enumerated in §18.
+- REQ-CRYPTO-007 为洗牌密钥固定一个平方根分支；保持分支选择一致，并将任何会暴露两个分支之选取的协议视为将密钥搜索空间减少为原来的 1/2（GB2616862 第 39–40 页）。锁定到洗牌派生密钥的资金仅在洗牌交互窗口内（数小时）有效，从而限定暴露。
+- 须继续承载的所声明限制（不得掩盖）：N-of-N 揭示意味着任何单个扣留者都会使该揭示停滞（这是活性失败，而非保密性失败）— 由超时默认分支和保证金罚没所限定；一个门限 (t, N) 变体以抗合谋性换取活性，是一个显式的后续选项；该协议在揭示处非托管且无单一荷官，但**并非**无条件无需信任 — 其信任面（secp256k1 上的 DDH；正确的链下执行；原语的健全性；节点/共识完整性；托管后端）在 §18 中逐项列举。
 
-## §4.9 Participant set per hand (corrects RT-01 m1)
+## §4.9 每手牌的参与者集合（修正 RT-01 m1）
 
-REQ-CRYPTO-010 The shuffle is N-of-N over the **currently-seated set**, and **each hand is
-a fresh N-party shuffle**: a new combined seed (§4.1), new shuffle keys (§4.2), new per-card
-combined keys (§4.3), and a new canonical party order (§4.4) are generated for every hand.
-REQ-CRYPTO-011 Sit-out and join take effect **between hands only**; the participant set is
-frozen at hand start and is an input to the canonical party order (so the order is well
-defined and identical for all). REQ-CRYPTO-012 There is **no partial reshuffle** of an
-in-progress deck and no mid-hand change to the party set; a player who disconnects mid-hand
-is handled by the timeout-default/recovery path (§6.4), not by re-deriving the deck.
+REQ-CRYPTO-010 洗牌是对**当前在座集合**的 N-of-N，且**每手牌都是一次全新的 N 方洗牌**：为每手牌
+生成一个新的联合种子（§4.1）、新的洗牌密钥（§4.2）、新的逐牌联合密钥（§4.3），以及一个新的规范方序
+（§4.4）。REQ-CRYPTO-011 离座（sit-out）和加入**仅在两手牌之间**生效；参与者集合在手牌开始时被冻结，
+并作为规范方序的一个输入（使该顺序定义良好且对所有人相同）。REQ-CRYPTO-012 对一副进行中的牌堆**不
+做部分重洗**，也不在手牌中途改变方集合；手牌中途掉线的玩家由超时默认/恢复路径处理（§6.4），而非通过
+重新派生牌堆。
 
-## §4.10 `[EXPAND: Part 2]` Full message-flow diagrams, the fixed reveal-token construction, and the per-card key-derivation schedule with test vectors.
+## §4.10 `[EXPAND: Part 2]` 完整的消息流图、已确定的揭示令牌构造，以及带测试向量的逐牌密钥派生时序。
 
 ---
 
-# §5 Poker domain model
+# §5 扑克领域模型
 
-This is game logic, independent of chain and crypto. It is large by nature; specified
-rigorously here so the FSMs (§7) and transactions (§6) bind to a precise model.
+这是游戏逻辑，独立于链与密码学。它天然庞大；在此严格规定，以便 FSM（§7）和交易（§6）绑定到一个
+精确的模型。
 
-## §5.1 Cards and deck
+## §5.1 牌与牌堆
 
-Standard 52-card French deck. Rank order high→low: A K Q J T 9 8 7 6 5 4 3 2 (Ace high);
-Ace also plays low for the wheel (A-2-3-4-5) in high-hand straights and is the lowest in
-ace-to-five low (§5.3.3). Suits {c,d,h,s} are equal in rank (no suit precedence in poker
-hand comparison). Canonical card encoding: `card = rank*4 + suit`, `rank∈0..12`
-(2=0 … A=12), `suit∈0..3` (c=0,d=1,h=2,s=3). `card_serial∈0..51`. REQ-POKER-001 The deck
-encoding is fixed and is the same one bound into the shuffle (§4) and the transaction
-schemas (§6).
+标准 52 张法式牌堆。点数从高到低排序：A K Q J T 9 8 7 6 5 4 3 2（A 为高）；在高手牌的顺子中，A 也
+可作为最低用于轮牌（wheel，A-2-3-4-5），且在 ace-to-five 低牌中为最低（§5.3.3）。花色 {c,d,h,s}
+在点数上相等（扑克手牌比较中无花色优先级）。规范牌编码：`card = rank*4 + suit`，`rank∈0..12`
+（2=0 … A=12），`suit∈0..3`（c=0,d=1,h=2,s=3）。`card_serial∈0..51`。REQ-POKER-001 牌堆编码是固定的，
+与绑定进洗牌（§4）和交易模式（§6）的编码相同。
 
-## §5.2 Ruleset and its hash
+## §5.2 规则集及其哈希
 
-A `Ruleset` fixes: variant; betting structure (NL/PL/FL); seat count; blind/ante schedule;
-bring-in (stud); min/max buy-in; bet/raise sizing rules; number of raises cap (FL); timeout
-profile (decision timeout, recovery timeout); deck format; and currency semantics (D8).
-REQ-POKER-002 `rulesetHash = H(canonicalSerialize(Ruleset))` is computed once at table
-creation, displayed to all players, and bound into every transaction (§6.3) so no branch
-can be replayed under a different ruleset. Canonical serialization is defined in §19.A
-`[EXPAND: Part 3]`.
+一个 `Ruleset` 确定：变体；下注结构（NL/PL/FL）；座位数；盲注/底注时序；bring-in（梭哈）；最小/最大
+买入；下注/加注的额度规则；加注次数上限（FL）；超时配置（决策超时、恢复超时）；牌堆格式；以及货币
+语义（D8）。REQ-POKER-002 `rulesetHash = H(canonicalSerialize(Ruleset))` 在建桌时计算一次、向所有
+玩家展示，并绑定进每一笔交易（§6.3），使任何分支都无法在不同规则集下被重放。规范序列化在 §19.A 中
+定义 `[EXPAND: Part 3]`。
 
-## §5.3 Hand evaluation (authoritative)
+## §5.3 手牌评估（权威）
 
-A 5-card poker hand is compared by category then by tie-break ranks. The evaluator returns
-a totally-ordered comparable value so that `compare(handA, handB) ∈ {-1,0,+1}` is exact and
-transitive. REQ-POKER-003 The evaluator is pure, deterministic, and backed by the
-test-vector catalog in §19.D `[EXPAND: Part 3]` (including all category boundaries, wheel
-straights, and tie/kicker edge cases).
+一手 5 张牌的扑克手牌先按类别、再按平局判定点数进行比较。评估器返回一个全序的可比较值，使得
+`compare(handA, handB) ∈ {-1,0,+1}` 精确且可传递。REQ-POKER-003 评估器是纯粹的、确定性的，并由 §19.D
+中的测试向量目录支撑 `[EXPAND: Part 3]`（包括所有类别边界、轮牌顺子，以及平局/踢脚边缘情形）。
 
-### §5.3.1 High-hand categories (high→low)
+### §5.3.1 高手牌类别（从高到低）
 
-1. Straight flush (five consecutive ranks, same suit; royal flush is the ace-high case; wheel A-2-3-4-5 is the lowest straight flush).
-2. Four of a kind (quads + 1 kicker).
-3. Full house (trips + pair; compare trips, then pair).
-4. Flush (five of one suit; compare ranks high→low).
-5. Straight (five consecutive ranks, mixed suits; wheel is lowest).
-6. Three of a kind (trips + 2 kickers).
-7. Two pair (high pair, low pair, 1 kicker).
-8. One pair (pair + 3 kickers).
-9. High card (5 ranks high→low).
+1. 同花顺（五张连续点数、同一花色；同花大顺为 A 高的情形；轮牌 A-2-3-4-5 为最低的同花顺）。
+2. 四条（四张同点 + 1 张踢脚）。
+3. 葫芦（三条 + 一对；先比三条，再比对子）。
+4. 同花（五张同一花色；点数从高到低比较）。
+5. 顺子（五张连续点数、混合花色；轮牌为最低）。
+6. 三条（三张同点 + 2 张踢脚）。
+7. 两对（高对、低对、1 张踢脚）。
+8. 一对（一对 + 3 张踢脚）。
+9. 高牌（5 个点数从高到低）。
 
-Tie-breaking compares the ordered relevant ranks lexicographically; suits never break
-ties. REQ-POKER-004 The "best 5 of 7" selection (Hold'em/Stud) enumerates the C(7,5)=21
-five-card subsets and takes the maximum by `compare`; Omaha uses the constrained selection
-in §5.3.2.
+平局判定按字典序比较有序的相关点数；花色绝不用于打破平局。REQ-POKER-004 "七选五最佳"选择
+（德州/梭哈）枚举 C(7,5)=21 个五张牌子集，按 `compare` 取最大值；奥马哈使用 §5.3.2 中的受约束
+选择。
 
-### §5.3.2 Omaha constraint
+### §5.3.2 奥马哈约束
 
-Exactly **two** of the four hole cards plus exactly **three** of the five board cards form
-the hand. REQ-POKER-005 The evaluator enumerates C(4,2)·C(5,3)=6·10=60 combinations and
-takes the maximum; this constraint is mandatory and is a frequent source of bugs if the
-generic best-of-7 is used by mistake — it is a separate, tested code path.
+恰好用四张底牌中的**两张**加上五张公共牌中的**三张**组成手牌。REQ-POKER-005 评估器枚举
+C(4,2)·C(5,3)=6·10=60 种组合并取最大值；这一约束是强制性的，若误用通用的七选五则是常见的 bug 来源 —
+它是一条独立的、经过测试的代码路径。
 
-### §5.3.3 Low-hand evaluation (Razz; hi-lo split games later)
+### §5.3.3 低手牌评估（Razz；高低分牌游戏稍后）
 
-Razz uses **ace-to-five low**: aces are low, straights and flushes do not count against
-the hand, and the best hand is the lowest five distinct ranks; the best possible is the
-wheel A-2-3-4-5 ("the bicycle"). REQ-POKER-006 Low evaluation returns a comparable where
-lower is better; pairs are penalized per ace-to-five rules; the implementation is a
-distinct, test-vectored path from high evaluation. (Eight-or-better hi-lo split, if a
-later variant needs it, qualifies a low only with five distinct ranks ≤8 — `[EXPAND: Part
-2]`.)
+Razz 使用 **ace-to-five 低牌**：A 为低，顺子和同花不计入对手牌的不利，最佳手牌是最低的五个不同点数；
+可能的最佳是轮牌 A-2-3-4-5（"the bicycle"，自行车）。REQ-POKER-006 低牌评估返回一个可比较值，越低
+越好；对子按 ace-to-five 规则被惩罚；其实现是一条与高牌评估不同的、有测试向量的路径。（八或更佳的
+高低分，如果某个后续变体需要，只有当五个不同点数 ≤8 时才合格构成低牌 — `[EXPAND: Part 2]`。）
 
-### §5.3.4 Performance note (Power-of-Ten discipline)
+### §5.3.4 性能说明（Power-of-Ten 纪律）
 
-REQ-POKER-007 The evaluator must be correct first and fast second. The reference
-implementation is straightforward enumeration with a fixed, bounded loop count (21 or 60),
-satisfying bounded-loop rules. A lookup-table/perfect-hash optimization is permitted only
-behind the same interface and only if profiling on the target shows it is needed; it must
-reproduce the reference evaluator on the entire §19.D vector set bit-for-bit.
+REQ-POKER-007 评估器必须首先正确、其次才快。参考实现是循环次数固定且有界（21 或 60）的直接枚举，
+满足有界循环规则。查找表/完美哈希优化仅在置于同一接口之后、且仅当目标平台上的性能剖析表明需要时
+才被允许；它必须在整个 §19.D 向量集上逐位复现参考评估器。
 
-## §5.4 Betting structures and the betting state machine
+## §5.4 下注结构与下注状态机
 
-REQ-POKER-008 Betting is a strategy behind one interface `BettingStructure`:
-`legalBets(state, seat) -> {check?, call?: amount, bet?: {min,max}, raise?: {min,max},
-fold}` and `applyBet(state, seat, action) -> state'`. Strategies: No-Limit (max = stack),
-Pot-Limit (max = current pot + call), Fixed-Limit (fixed small/big bet sizes, capped number
-of raises). REQ-POKER-009 The betting machine tracks: each seat's stack, committed-this-round,
-total-committed-this-hand, current bet-to-call, last full raise size (for min-raise legality),
-who is all-in, who has acted since the last aggressive action, and round-closed condition.
-REQ-POKER-010 A betting round closes when action returns to the last aggressor with all
-non-folded, non-all-in players having matched the current bet (or checked through). All-in
-for less than a full raise does **not** reopen the betting to players already acted unless
-it constitutes a full raise (standard rule; tested).
+REQ-POKER-008 下注是置于一个接口 `BettingStructure` 之后的策略：
+`legalBets(state, seat) -> {check?, call?: amount, bet?: {min,max}, raise?: {min,max}, fold}`
+以及 `applyBet(state, seat, action) -> state'`。各策略：无限注（max = 筹码量）、底池限注
+（max = 当前底池 + 跟注额）、固定限注（固定的小/大注额度，加注次数有上限）。REQ-POKER-009 下注机
+追踪：每个座位的筹码量、本轮已投入、本手已投入总额、当前需跟注额、上一次完整加注的额度（用于最小
+加注的合法性）、谁已全下、自上一次进攻性行动以来谁已行动，以及本轮关闭的条件。REQ-POKER-010 当行动
+回到上一位进攻者，且所有未弃牌、未全下的玩家都已跟上当前下注（或全程看牌过牌）时，下注一轮关闭。
+不足一次完整加注的全下**不**会对已行动过的玩家重新开放下注，除非它构成一次完整加注（标准规则；
+已测试）。
 
-## §5.5 Pots and side pots
+## §5.5 底池与边池
 
-REQ-POKER-011 The pot engine computes a **main pot** and ordered **side pots** from per-seat
-total contributions when one or more players are all-in for differing amounts. Algorithm:
-sort distinct all-in/contribution thresholds ascending; for each threshold layer, every
-player who contributed at least that layer contributes the layer increment to that pot, and
-the set of players eligible for that pot is exactly those still contending at that layer;
-remainder above the top all-in forms a pot contested only by players who matched it.
-REQ-POKER-012 Each pot is awarded independently at showdown to the best eligible hand
-(ties split with odd-chip rule §5.5.1). The algorithm is specified to the level of a
-reference implementation with a worked multi-all-in example in §19.B `[EXPAND: Part 3]`.
+REQ-POKER-011 当一个或多个玩家以不同金额全下时，底池引擎从各座位的总投入计算出一个**主池**和有序的
+**边池**。算法：将不同的全下/投入阈值升序排序；对每个阈值层，凡投入至少达到该层的每个玩家都向该池
+投入该层增量，而有资格争夺该池的玩家集合恰好是那些在该层仍在争夺者；最高全下之上的余额构成一个仅由
+跟上它的玩家争夺的池。REQ-POKER-012 每个池在摊牌时独立判给最佳的有资格手牌（平局按奇数筹码规则
+§5.5.1 拆分）。该算法被规定到参考实现的程度，并在 §19.B 中给出一个多人全下的实做示例 `[EXPAND: Part 3]`。
 
-### §5.5.1 Odd-chip and split rules
+### §5.5.1 奇数筹码与拆分规则
 
-REQ-POKER-013 On a split pot, chips divide as evenly as the chip granularity allows; the
-odd chip(s) go by a fixed deterministic rule: **DEFAULT — to the tied winner closest to the
-left of the button.** Poker hand ranking has **no suit precedence** (corrects RT-01 m3); a
-suit-based tiebreak is *only* a house rule (e.g. some stud rooms), is **defaulted OFF**, is
-carried as an explicit ruleset flag, and MUST NOT be implemented inside hand evaluation
-(§5.3) — it is a pot-award tiebreak, never a hand comparison. This is a determinism
-requirement (P2): all clients award the odd chip identically from the ruleset.
+REQ-POKER-013 在拆分底池时，筹码在筹码粒度允许的范围内尽量均分；奇数筹码按一条固定的确定性规则
+分配：**默认 — 给最靠近庄家按钮左侧的并列获胜者。** 扑克手牌排名**无花色优先级**（修正 RT-01 m3）；
+基于花色的平局判定*仅*是一条房规（例如某些梭哈牌局），**默认关闭**，作为一个显式的规则集开关承载，
+且 MUST NOT 在手牌评估（§5.3）内部实现 — 它是一种底池分配的平局判定，绝非手牌比较。这是一项确定性
+要求（P2）：所有客户端依据规则集以相同方式分配奇数筹码。
 
-## §5.6 Showdown and minimum reveal
+## §5.6 摊牌与最小亮牌
 
-REQ-POKER-014 At showdown, only contenders for a pot reveal, and reveal only what is
-needed to adjudicate. Last aggressor shows first; others may show or muck in turn; a player
-who would lose may muck without revealing if they cannot win any contested pot (standard
-"show one, show all" house variations are a ruleset flag). REQ-POKER-015 A revealed hand
-is verified against the player's concealed-card commitments (§4.5) before it can win
-(§6.3 reveal script).
+REQ-POKER-014 在摊牌时，只有某底池的争夺者亮牌，且只亮裁决所需的部分。上一位进攻者先亮牌；其他人
+可依次亮牌或盖牌（muck）；若一名玩家会输且无法赢得任何被争夺的池，他可以盖牌而不亮牌（标准的
+"亮一张则全亮"房规变体是一个规则集开关）。REQ-POKER-015 一手被亮出的牌在能够获胜之前，会对照该
+玩家的隐藏牌承诺（§4.5）进行验证（§6.3 揭示脚本）。
 
-## §5.7 Settlement and chip movement
+## §5.7 结算与筹码移动
 
-REQ-POKER-016 Hand settlement routes each pot to its winner(s) per §5.5/§5.6 and updates
-stacks. On-chain, settlement is a transaction spending the pot/stake structure to the
-winner(s) (§6.3 settlement script) or, in micro-betting mode, a `BS` channel update that
-re-divides locked value with whole-satoshi reconciliation via `Q*` (§2.2). REQ-POKER-017
-If settlement stalls (a winner unreachable, a co-signer absent), the recovery/timeout path
-(§6.4) resolves value deterministically; funds are never stranded (P4).
+REQ-POKER-016 手牌结算依据 §5.5/§5.6 将每个池路由给其获胜者并更新筹码量。在链上，结算是一笔将
+底池/筹码结构花费给获胜者的交易（§6.3 结算脚本），或在微下注模式下，是一次 `BS` 通道更新，通过
+`Q*` 以整聪对账重新划分被锁定的价值（§2.2）。REQ-POKER-017 若结算停滞（某获胜者无法触及、某共签者
+缺席），恢复/超时路径（§6.4）确定性地解决价值；资金绝不被滞留（P4）。
 
-## §5.8 `[EXPAND: Part 2]` Full per-variant rules: Hold'em (done in §7), Omaha, Seven-Card Stud (antes, bring-in, streets, up/down cards), Five-Card Draw (draw/replace), Razz (low, stud structure). Each gets a complete rules section + FSM (§7) + transaction mapping (§6).
+## §5.8 `[EXPAND: Part 2]` 完整的各变体规则：德州扑克（在 §7 完成）、奥马哈、七张梭哈（底注、bring-in、各街、明牌/暗牌）、五张抽牌（抽牌/替换）、Razz（低牌、梭哈结构）。每个变体都有一个完整的规则章节 + FSM（§7）+ 交易映射（§6）。
 
 ---
 
-# §6 BSV transaction and Script model
+# §6 BSV 交易与 Script 模型
 
-The executable skeleton. Each protocol state and legal successor maps to enforceable value
-movements and branch activations. Every transaction binds to the exact state it spends so a
-branch cannot be replayed against a different context.
+可执行骨架。每个协议状态及其合法后继都映射到可强制执行的价值移动与分支激活。每一笔交易都绑定到它
+所花费的确切状态，使某分支无法在不同的上下文下被重放。
 
-## §6.1 Transaction classes
+## §6.1 交易类别
 
-| Class | Purpose |
+| Class | 用途 |
 |---|---|
-| Funding | Lock player stakes into the table/pot structure; bind `gid` + `rulesetHash` |
-| Commitment | Anchor entropy commits and per-stage shuffle commits (§4.1, §4.4) |
-| Deal | Assign concealed card UTXOs to seats (§4.5) |
-| Action | A player's in-window move (check/bet/call/raise) |
-| Timeout | Default branch after a decision deadline (no player participation) |
-| Reveal | Disclose committed card material with proof (§4.6, §5.6) |
-| Fold | Surrender concealed hand without reveal (§4.6) |
-| Fair-play | In-script proof that committed keys match used keys (§4.7) |
-| Settlement | Route pot(s) to winner(s) (§5.7) |
-| Recovery | Longer-timeout unwind/refund for stalled sessions (§6.4) |
+| Funding | 将玩家筹码锁入牌桌/底池结构；绑定 `gid` + `rulesetHash` |
+| Commitment | 锚定熵承诺与各阶段洗牌承诺（§4.1、§4.4） |
+| Deal | 将隐藏牌 UTXO 分配给各座位（§4.5） |
+| Action | 玩家在窗口内的行动（看牌/下注/跟注/加注） |
+| Timeout | 决策截止后的默认分支（无玩家参与） |
+| Reveal | 带证明地披露已承诺的牌材料（§4.6、§5.6） |
+| Fold | 不亮牌地放弃隐藏手牌（§4.6） |
+| Fair-play | 在脚本内证明已承诺密钥与所用密钥匹配（§4.7） |
+| Settlement | 将底池路由给获胜者（§5.7） |
+| Recovery | 针对停滞对局的较长超时解绑/退款（§6.4） |
 | Table mgmt | TABLE_CREATE/JOIN/LOCK/ABORT/CLOSE |
 
-(Wire names are implementation detail; these are conceptual classes.)
+（线缆名称属于实现细节；这些是概念性类别。）
 
-## §6.2 Post-Genesis BSV Script constraints (CRITICAL — P1, and a correction)
+## §6.2 Genesis 升级后的 BSV Script 约束（关键 — P1，以及一处修正）
 
-REQ-TX-001 **`OP_CHECKLOCKTIMEVERIFY` (CLTV) and `OP_CHECKSEQUENCEVERIFY` (CSV) are no-ops
-on post-Genesis BSV** and MUST NOT be used to enforce timing. A script relying on them
-enforces nothing. This corrects any earlier/generic design (including the platform's own
-architecture lineage) that listed CLTV/CSV among required opcodes. REQ-TX-002 Where timing
-is needed (decision timeouts, recovery windows, refund maturity), enforce it at the
-**transaction level** using `nLockTime` and the input `nSequence` field under the original
-transaction-replacement rule — mechanisms that operate on the transaction as a whole and
-remain meaningful post-Genesis. REQ-TX-003 Combined with the economic bond-forfeiture
-incentive where applicable (§2.2), transaction-level timing is sufficient for the
-cooperative/timeout branch model (P4). REQ-TX-004 The opcode palette the platform uses is
-limited to primitives that mean something post-Genesis: signature checks
-(`OP_CHECKSIG`/`OP_CHECKSIGVERIFY`/`OP_CHECKMULTISIG`), hash/equality
-(`OP_SHA256`/`OP_HASH160`/`OP_HASH256`/`OP_EQUAL`/`OP_EQUALVERIFY`), conditionals
-(`OP_IF`/`OP_ELSE`/`OP_ENDIF`/`OP_VERIFY`), and the numeric/stack ops needed for the
-fair-play EC routines (`OP_MUL`/`OP_ADD`/`OP_MOD`/`OP_DUP`/`OP_SWAP`/`OP_ROT`/
-`OP_TOALTSTACK`/`OP_FROMALTSTACK`/`OP_2DUP`/`OP_NOTEQUAL`, etc., as in GB2616862 pages
-55–60).
+REQ-TX-001 **`OP_CHECKLOCKTIMEVERIFY`（CLTV）和 `OP_CHECKSEQUENCEVERIFY`（CSV）在 Genesis 升级后的
+BSV 上是空操作（no-op）**，且 MUST NOT 用于强制时间。依赖它们的脚本什么都不强制。这修正了任何
+早先的/通用的设计（包括平台自身的架构谱系）将 CLTV/CSV 列入所需操作码的做法。REQ-TX-002 凡需要计时
+之处（决策超时、恢复窗口、退款成熟），在**交易层**使用 `nLockTime` 和输入的 `nSequence` 字段，
+在原始交易替换规则下强制执行 — 这些机制作用于整笔交易，且在 Genesis 升级后仍有意义。REQ-TX-003
+在适用之处结合经济性的保证金罚没激励（§2.2），交易层计时足以支撑协作/超时分支模型（P4）。
+REQ-TX-004 平台所用的操作码集合仅限于在 Genesis 升级后仍有意义的原语：签名检查
+（`OP_CHECKSIG`/`OP_CHECKSIGVERIFY`/`OP_CHECKMULTISIG`）、哈希/相等
+（`OP_SHA256`/`OP_HASH160`/`OP_HASH256`/`OP_EQUAL`/`OP_EQUALVERIFY`）、条件
+（`OP_IF`/`OP_ELSE`/`OP_ENDIF`/`OP_VERIFY`），以及公平博弈 EC 例程所需的数值/栈操作
+（`OP_MUL`/`OP_ADD`/`OP_MOD`/`OP_DUP`/`OP_SWAP`/`OP_ROT`/`OP_TOALTSTACK`/`OP_FROMALTSTACK`/`OP_2DUP`/`OP_NOTEQUAL`
+等，如 GB2616862 第 55–60 页）。
 
-## §6.3 Branch binding (anti-replay)
+## §6.3 分支绑定（防重放）
 
-REQ-TX-005 Every transaction binds, at minimum: `gid` (game id), `rulesetHash`, round
-number, state hash, acting seat (where relevant), economic state, board/up cards,
-concealed-commitment references, and a successor-state commitment. This prevents
-cross-state replay and stale-branch misuse. State carried across card-state transitions is
-checked byte-for-byte (e.g. the card ciphertext slot equality, §4.5) so substitution fails
-the script.
+REQ-TX-005 每一笔交易至少绑定：`gid`（游戏 id）、`rulesetHash`、轮次号、状态哈希、行动座位（相关时）、
+经济状态、公共牌/明牌、隐藏承诺引用，以及一个后继状态承诺。这防止跨状态重放和过期分支的滥用。跨牌
+状态转换所承载的状态被逐字节检查（例如牌密文槽位的相等性，§4.5），使替换无法通过脚本。
 
-## §6.4 Timeout and recovery (transaction-level)
+## §6.4 超时与恢复（交易层）
 
-REQ-TX-006 Two timeout layers: a short **decision timeout** (default-on-inaction for a
-specific action — for poker the safe default is check if checking is legal, else
-fold/forfeit; never a forced wager, which would create asymmetric exploitable risk) and a
-longer **recovery timeout** (withheld reveal, stalled settlement, lost quorum) that unlocks
-or redistributes value from the last valid committed state. REQ-TX-007 "Now" for these is
-derived from chain/relay-anchored height/time (§3.3 / §8), not local wall-clock for
-consensus-affecting decisions. REQ-TX-008 A **pre-signed fallback graph** is signed before
-play for: table-abort refund, no-quorum unwind, deck-build timeout, deal timeout, action
-timeout default, showdown/reveal timeout forfeit, settlement timeout, table-closure refund.
-After the relevant maturity, value reverts through an already-authorized path — by script
-graph design, not goodwill.
+REQ-TX-006 两层超时：一个短的**决策超时**（针对某个特定行动的不作为默认 — 对扑克而言，安全的默认是
+若看牌合法则看牌，否则弃牌/放弃；绝非强制下注，因为那会造成不对称的可利用风险）以及一个较长的
+**恢复超时**（扣留揭示、停滞结算、丧失法定人数），它从最后一个有效的已承诺状态解锁或重新分配价值。
+REQ-TX-007 这些所用的"Now"取自链/中继锚定的高度/时间（§3.3 / §8），对于影响共识的决策不取本地挂钟。
+REQ-TX-008 一个**预签名回退图**在开局前被签署，用于：建桌中止退款、无法定人数解绑、建牌堆超时、发牌
+超时、行动超时默认、摊牌/揭示超时罚没、结算超时、建桌关闭退款。在相关成熟之后，价值经一条已被授权的
+路径回退 — 靠脚本图设计，而非善意。
 
-## §6.5 Commitment carriage: OP_RETURN vs pushdata
+## §6.5 承诺承载：OP_RETURN 对比 pushdata
 
-REQ-TX-009 Dead-end commitments that need only be anchored (shuffle stage commits,
-ruleset-hash anchoring) MAY use `OP_RETURN` (per GB2616862). REQ-TX-010 Commitments that
-must remain inside the spend-linked, chainable transaction graph (e.g. audit/triple-entry
-links via `VA`, §2.3) MUST be carried as **pushdata in a live script, not `OP_RETURN`**.
-The distinction is functional, not stylistic.
+REQ-TX-009 只需被锚定的死路承诺（洗牌阶段承诺、规则集哈希锚定）MAY 使用 `OP_RETURN`（依据
+GB2616862）。REQ-TX-010 必须保留在花费关联、可链接交易图中的承诺（例如经 `VA` 的审计/三式记账链接，
+§2.3）MUST 以**活动脚本中的 pushdata 承载，而非 `OP_RETURN`**。这一区分是功能性的，而非风格性的。
 
-## §6.6 Script templates (scaled from GB2616862's 2-party worked examples)
+## §6.6 脚本模板（从 GB2616862 的 2 方实做示例扩展而来）
 
-The platform requires the following template families. GB2616862 gives 2-party/3-card
-worked scripts; the platform parameterizes them for N parties and the deck size. Each
-template is specified to byte-schedule level in §19.C `[EXPAND: Part 3]`; the structure:
+平台需要以下模板族。GB2616862 给出了 2 方/3 张牌的实做脚本；平台将它们参数化以适配 N 方和牌堆大小。
+每个模板在 §19.C 中规定到字节排布级别 `[EXPAND: Part 3]`；其结构为：
 
-- **Funding template** — N-of-N (or threshold) multisig over player buy-ins; binds `gid`+`rulesetHash`; companion refund (nLockTime maturity) pre-signed.
-- **Per-card selection/close-out lock** — UTXO locked to combined key `Q_j` (§4.3); its spend is the close-out/settlement primitive (not the deal). Signed per the active signing mode (§4.3): Mode A reconstructs `w_j` at reveal and signs; Mode B uses threshold/multi-party signing with no whole-key reconstruction.
-- **Concealed-card custody** — assignment to seat; fold-surrender path; reveal path; reclaim-on-timeout path, all conditioned by signatures and the state checks of §6.3 (timing at tx level, §6.2).
-- **Reveal-or-timeout** — one branch accepts a valid reveal opening before maturity (hash-opening check `H(face‖blind)=cmt`); the other reverts/forfeits after maturity (nLockTime).
-- **Fold** — proves control of concealed outputs, transfers to dead-hand, preserves commitments (no face disclosure).
-- **Pot/settlement** — pays winner(s) on valid winning proof + signatures; or cooperative-signature distribution; or timeout refund branch.
-- **Fair-play** — the in-script shuffle-point-derivation + EC-point-multiplication proof (GB2616862 pages 55–60); redeemable only if committed keys derive used keys; forfeited otherwise. Scaling beyond the patent's 3-element example is a measured risk (REQ-CRYPTO-009): a single 52-card N-party script may be impractical; the fallback is per-card/per-batch fair-play transactions, decided by the §19.C measurement.
-- **Optional 2-of-3 TTP** — opt-in profile adding a partially-trusted third signer for dispute-only intervention (GB2616862 §6.5.1); off by default.
+- **Funding 模板** — 对玩家买入的 N-of-N（或门限）多签；绑定 `gid`+`rulesetHash`；伴随的退款（nLockTime 成熟）已预签名。
+- **逐牌选取/平仓锁** — 锁定到联合密钥 `Q_j` 的 UTXO（§4.3）；其花费是平仓/结算原语（而非发牌）。按当前生效的签名模式签名（§4.3）：Mode A 在揭示时重构 `w_j` 并签名；Mode B 使用门限/多方签名，无完整密钥重构。
+- **隐藏牌托管** — 分配到座位；弃牌放弃路径；揭示路径；超时回收路径，全部以签名和 §6.3 的状态检查为条件（计时在交易层，§6.2）。
+- **揭示或超时** — 一个分支在成熟前接受一次有效的揭示开启（哈希开启检查 `H(face‖blind)=cmt`）；另一个在成熟后回退/罚没（nLockTime）。
+- **Fold** — 证明对隐藏输出的控制，转移到死手，保留承诺（不披露牌面）。
+- **底池/结算** — 在有效获胜证明 + 签名下向获胜者付款；或协作签名分配；或超时退款分支。
+- **Fair-play** — 脚本内的洗牌点派生 + EC 点乘证明（GB2616862 第 55–60 页）；只有当已承诺密钥可推导出所用密钥时方可赎回；否则被罚没。扩展超出专利的 3 元素示例是一项实测风险（REQ-CRYPTO-009）：单个 52 张牌 N 方脚本可能不切实际；回退方案是逐牌/逐批的公平博弈交易，由 §19.C 的测量决定。
+- **可选 2-of-3 TTP** — 一个选择启用的配置，添加一个部分受信的第三签名者用于仅限争议的介入（GB2616862 §6.5.1）；默认关闭。
 
-REQ-TX-011 Each template ships with: a positive test (valid spend accepted by the
-interpreter), a battery of negative tests (each supposed-to-fail case fails **inside** the
-interpreter, P9), and a measured wire-byte size recorded as a reproducible vector (P10).
+REQ-TX-011 每个模板都随附：一个肯定性测试（有效花费被解释器接受）、一组否定性测试（每个本应失败的
+情形在解释器**内部**失败，P9），以及一个作为可复现向量记录的实测线缆字节大小（P10）。
 
-## §6.7 Signing of combined-key UTXOs (per the §4.3 mode decision)
+## §6.7 联合密钥 UTXO 的签名（依据 §4.3 的模式决策）
 
-REQ-TX-012 Spending a `Q_j`-locked UTXO requires a signature valid under `Q_j`, produced
-per the active signing mode (§4.3), surfaced via the pluggable custody backend (§9.3):
+REQ-TX-012 花费一个 `Q_j` 锁定的 UTXO 需要一个在 `Q_j` 下有效的签名，按当前生效的签名模式（§4.3）
+产生，并经可插拔的托管后端显示（§9.3）：
 
-- **Mode A (DEFAULT, Phase 1):** the closing party reconstructs `w_j = Σ_p s_{p,j}` from
-  the scalars disclosed at reveal and signs. This closes the Phase-1 signing question with a
-  concrete, patent-faithful construction — no threshold cryptography is required to ship
-  Phase 1. The Mode-A consequences (single-game keys, bounded hand-window exposure) from
-  §4.3 apply and are enforced in §9.2.
-- **Mode B (UPGRADE, Phase 2+):** a dealerless threshold/multi-party ECDSA (an `OB.custody`
-  FROST/GG20 backend is the candidate) produces the signature with no whole-key
-  reconstruction.
+- **Mode A（默认，第 1 阶段）：** 平仓方从揭示时披露的标量重构 `w_j = Σ_p s_{p,j}` 并签名。这以一个具体的、忠于专利的构造结清了第 1 阶段的签名问题 — 交付第 1 阶段无需任何门限密码学。来自 §4.3 的 Mode A 后果（单对局密钥、有界手牌窗口暴露）适用，并在 §9.2 中强制执行。
+- **Mode B（升级，第 2 阶段及以后）：** 一个无荷官的门限/多方 ECDSA（一个 `OB.custody` FROST/GG20 后端是候选）在无完整密钥重构的情况下产生签名。
 
-In both modes the output signature MUST verify at `OP_CHECKSIG` and be indistinguishable
-from an ordinary signature at verification. `[EXPAND: Part 2 — the Mode-B construction is
-fixed only after reading cardtable's signing API; recorded candidate is dealerless threshold
-ECDSA. Mode A requires no such dependency and is fully specified here.]`
+在两种模式中，输出签名 MUST 在 `OP_CHECKSIG` 处通过验证，且在验证时与一个普通签名无法区分。
+`[EXPAND: Part 2 — Mode-B 构造仅在阅读 cardtable 的签名 API 之后才确定；记录的候选是无荷官门限
+ECDSA。Mode A 不需要这样的依赖，且在此已完整规定。]`
 
-## §6.8 `[EXPAND: Part 3]` Full byte schedules, sighash/`SIGHASH` flag choices per template, and the complete pre-signed fallback-graph transaction set.
+## §6.8 `[EXPAND: Part 3]` 完整的字节排布、每个模板的 sighash/`SIGHASH` 标志选择，以及完整的预签名回退图交易集。
 
 ---
 
-# §7 Game state machines (framework + Texas Hold'em reference)
+# §7 游戏状态机（框架 + 德州扑克参考实现）
 
-## §7.1 FSM framework
+## §7.1 FSM 框架
 
-REQ-FSM-001 A game module implements `GameModule`:
-`init(ruleset, seats) -> GameState`, `getLegalActions(state, seat) -> Action[]`,
-`apply(state, action) -> GameState`, `isTimeoutEligible(state, now) -> {seat, defaultAction}?`,
-`isHandComplete(state) -> bool`, `settle(state) -> Payouts`, plus serialization. The engine
-(§3.3) drives modules; modules contain **no** I/O, networking, time, or randomness (P2).
-Every state node enumerates its legal successors including the timeout-default (P4).
+REQ-FSM-001 一个游戏模块实现 `GameModule`：
+`init(ruleset, seats) -> GameState`、`getLegalActions(state, seat) -> Action[]`、
+`apply(state, action) -> GameState`、`isTimeoutEligible(state, now) -> {seat, defaultAction}?`、
+`isHandComplete(state) -> bool`、`settle(state) -> Payouts`，外加序列化。引擎（§3.3）驱动各模块；
+模块中**不**包含 I/O、网络、时间或随机性（P2）。每个状态节点都枚举其合法后继，包括超时默认（P4）。
 
-## §7.2 Texas Hold'em (Phase-1 reference; heads-up first)
+## §7.2 德州扑克（第 1 阶段参考实现；先做单挑）
 
-Phases of a hand (each a committed state; each actionable phase has cooperative + timeout
-exits): post blinds → deal 2 concealed hole cards/seat → preflop betting → reveal flop (3
-board) → flop betting → reveal turn (1 board) → turn betting → reveal river (1 board) →
-river betting → showdown (minimum reveal §5.6) → settle (§5.7) → next hand (button moves).
-Heads-up specifics (button posts small blind and acts first preflop, second postflop) are
-encoded in the betting order. REQ-FSM-002 The full Hold'em state-transition table — every
-state, trigger, guard, successor, and timeout-default — is specified in §19.E `[EXPAND:
-Part 2]`; the prose flow here is normative for the phase order and the two-exit rule.
+一手牌的各阶段（每个都是一个已承诺状态；每个可操作阶段都有协作 + 超时出口）：下盲注 → 每座位发 2 张
+隐藏底牌 → 翻前下注 → 揭示翻牌（3 张公共牌）→ 翻牌圈下注 → 揭示转牌（1 张公共牌）→ 转牌圈下注 →
+揭示河牌（1 张公共牌）→ 河牌圈下注 → 摊牌（最小亮牌 §5.6）→ 结算（§5.7）→ 下一手牌（按钮移动）。
+单挑的具体规则（按钮位下小盲并在翻前先行动、翻后后行动）编码在下注顺序中。REQ-FSM-002 完整的德州扑克
+状态转换表 — 每个状态、触发、守卫、后继和超时默认 — 在 §19.E 中规定 `[EXPAND: Part 2]`；此处的散文
+流程对于阶段顺序与两出口规则具有规范性。
 
-## §7.3 Other variants (FSMs)
+## §7.3 其他变体（FSM）
 
-All variants reuse the §7.1 `GameModule` interface and the two-exit rule (P4). Each is
-specified as its rules, the **mental-poker primitives it uses** (up-card vs down-card
-reveals, the draw operation), and a transition table or an explicit delta from the Hold'em
-table (§19.E). New requirements continue the `REQ-FSM-*` series.
+所有变体复用 §7.1 的 `GameModule` 接口和两出口规则（P4）。每个变体规定为其规则、**它所用的心智扑克
+原语**（明牌对比暗牌的揭示、抽牌操作），以及一个转换表或一个相对德州扑克表（§19.E）的显式增量。
+新需求延续 `REQ-FSM-*` 系列。
 
-### §7.3.0 Up-cards, down-cards, and the draw — the three new primitives
+### §7.3.0 明牌、暗牌与抽牌 — 三个新原语
 
-REQ-FSM-003 A **down-card** is dealt by the `draw(position)` operation (§4.3) and then
-**privately revealed to its holder only** (§4.6 private reveal). An **up-card** (stud/razz)
-is dealt by the same `draw(position)` operation and then **immediately publicly revealed**
-by an **N-of-N cooperative reveal** (§4.6 public reveal, with the timeout-default of
-RT-01 M2). REQ-FSM-004 The **draw** operation (five-card draw) is: the player surrenders a
-chosen subset of their concealed card UTXOs to a dead-hand state **without revealing them**
-(a partial fold, §4.6) and is dealt the same number of fresh concealed card UTXOs from the
-still-undealt portion of the shuffled deck (§4.3 `draw`). The discarded cards are never
-revealed; the replacements are private-revealed to the drawer only. REQ-FSM-005 Because
-stud/razz expose up-cards, **betting order is determined by the exposed board**, not by the
-button (see each variant); this is a distinct ordering function in the engine and is tested
-separately.
+REQ-FSM-003 一张**暗牌**由 `draw(position)` 操作（§4.3）发出，随后**仅私下揭示给其持有者**
+（§4.6 私有揭示）。一张**明牌**（梭哈/razz）由同一个 `draw(position)` 操作发出，随后由一次
+**N-of-N 协作揭示**（§4.6 公开揭示，带 RT-01 M2 的超时默认）**立即公开揭示**。REQ-FSM-004
+**抽牌**操作（五张抽牌）是：玩家将其隐藏牌 UTXO 中所选的一个子集放弃到一个死手状态而**不揭示它们**
+（一次部分弃牌，§4.6），并从已洗牌堆中尚未发出的部分被发以相同数量的全新隐藏牌 UTXO（§4.3 `draw`）。
+被丢弃的牌从不揭示；替换牌仅私下揭示给抽牌者。REQ-FSM-005 由于梭哈/razz 露出明牌，**下注顺序由露出的
+牌面决定**，而非由按钮决定（见各变体）；这在引擎中是一个独立的排序函数，并单独测试。
 
-### §7.3.1 Omaha (and Pot-Limit Omaha)
+### §7.3.1 奥马哈（及底池限注奥马哈）
 
-**Rules.** Structurally identical to Texas Hold'em (§19.E): blinds, four betting streets
-(preflop/flop/turn/river), a shared five-card board revealed 3-1-1. **Differences:** each
-seat is dealt **four** concealed hole cards (not two), and at showdown the hand is formed
-from **exactly two hole + exactly three board** (§5.3.2, REQ-POKER-005 — the C(4,2)·C(5,3)=60
-evaluation, verified in §19.D). The common betting structure is **Pot-Limit** (PLO; §5.4),
-though NL/FL Omaha are selectable per ruleset (D3). REQ-FSM-006 Omaha is the Hold'em FSM
-(§19.E) with two overrides: (i) `DEAL_HOLE` draws **4** concealed cards per seat; (ii)
-`SHOWDOWN` uses the Omaha-constrained evaluator. No other state changes.
+**规则。** 结构上与德州扑克相同（§19.E）：盲注、四条下注街（翻前/翻牌/转牌/河牌）、一个按 3-1-1
+揭示的五张共享公共牌。**差异：** 每座位发**四**张隐藏底牌（而非两张），且在摊牌时手牌由**恰好两张
+底牌 + 恰好三张公共牌**组成（§5.3.2、REQ-POKER-005 — C(4,2)·C(5,3)=60 的评估，在 §19.D 中验证）。
+常见的下注结构是**底池限注**（PLO；§5.4），不过 NL/FL 奥马哈可按规则集选择（D3）。REQ-FSM-006 奥马哈
+是德州扑克 FSM（§19.E）加两处覆盖：(i) `DEAL_HOLE` 每座位抽 **4** 张隐藏牌；(ii) `SHOWDOWN` 使用
+奥马哈受约束的评估器。没有其他状态改变。
 
-**FSM delta from §19.E (heads-up; generalises to multi-way exactly as Hold'em does):**
+**相对 §19.E 的 FSM 增量（单挑；按与德州扑克完全相同的方式推广到多人）：**
 
-| §19.E state | Omaha override |
+| §19.E 状态 | 奥马哈覆盖 |
 |---|---|
-| S3 DEAL_HOLE | draw **4** concealed cards/seat (not 2); commitments recorded as in §4.5 |
-| S11 SHOWDOWN | evaluate by Omaha exactly-2+3 (§5.3.2); everything else (min reveal, verification vs commitments) identical |
+| S3 DEAL_HOLE | 每座位抽 **4** 张隐藏牌（而非 2 张）；承诺按 §4.5 记录 |
+| S11 SHOWDOWN | 按奥马哈恰好 2+3 评估（§5.3.2）；其余一切（最小亮牌、对照承诺的验证）相同 |
 
-REQ-FSM-007 **Omaha Hi-Lo (Omaha-8)** is a later variant: it adds an ace-to-five
-eight-or-better *low* split (§5.3.3) awarding half each pot to the best qualifying low (five
-distinct ranks ≤ 8); the low evaluator and the pot-split-into-high-and-low are a distinct,
-test-vectored path and are not in the Phase-3 Omaha module unless `ruleset.hiLo` is set.
+REQ-FSM-007 **奥马哈高低分（Omaha-8）**是一个后续变体：它增加一个 ace-to-five 八或更佳的*低牌*分割
+（§5.3.3），将每个池的一半判给最佳的合格低牌（五个不同点数 ≤ 8）；低牌评估器以及将底池分割为高与低
+是一条独立的、有测试向量的路径，且除非设置了 `ruleset.hiLo`，否则不在第 3 阶段的奥马哈模块中。
 
-### §7.3.2 Seven-Card Stud (high)
+### §7.3.2 七张梭哈（高）
 
-**Rules.** No community cards, no blinds. Every player posts an **ante**. Cards per player
-across five betting rounds ("streets"):
+**规则。** 无公共牌、无盲注。每个玩家都下一个**底注（ante）**。跨五轮下注（"街"）每个玩家的牌：
 
-- **3rd street:** two down + one up (the "door card"). The **lowest up-card** (by rank,
-  ties broken by a fixed suit order used **only** for the bring-in selection, declared in
-  the ruleset — this is a forced-bet selector, not hand-evaluation suit precedence, cf.
-  RT-01 m3) posts the **bring-in**. Betting at the small-bet level.
-- **4th street:** one up. From here on, the **highest exposed (board) hand acts first**
-  (REQ-FSM-005). In Fixed-Limit, an open pair on 4th street allows either bet level.
-- **5th street:** one up. Big-bet level from here.
-- **6th street:** one up.
-- **7th street ("the river"):** one down.
-- **Showdown:** best **5 of 7** (§5.3, REQ-POKER-004).
+- **第三街：** 两张暗牌 + 一张明牌（"门牌"）。**最低的明牌**（按点数，平局由一个**仅**用于 bring-in 选取的固定花色顺序打破，在规则集中声明 — 这是一个强制下注选取器，而非手牌评估的花色优先级，参见 RT-01 m3）下 **bring-in**。在小注级别下注。
+- **第四街：** 一张明牌。从此往后，**露出（牌面）最高的手牌先行动**（REQ-FSM-005）。在固定限注中，第四街上的明对（open pair）允许任一下注级别。
+- **第五街：** 一张明牌。从此为大注级别。
+- **第六街：** 一张明牌。
+- **第七街（"河牌"）：** 一张暗牌。
+- **摊牌：** 七选五最佳（§5.3、REQ-POKER-004）。
 
-Typical structure is **Fixed-Limit** (D3). REQ-FSM-008 With 8 players, 7 cards each would
-need 56 > 52; if the deck is exhausted before 7th street, the final card is dealt as a
-**single shared community up-card** (N-of-N reveal) used by all remaining players —
-otherwise the practical table max is 7. The seated-set/no-reshuffle rule (§4.9) still
-applies per hand.
+典型结构是**固定限注**（D3）。REQ-FSM-008 在 8 名玩家时，每人 7 张牌需要 56 > 52；若在第七街之前
+牌堆耗尽，则最后一张牌作为一张**单一共享的公共明牌**（N-of-N 揭示）发出，供所有剩余玩家使用 —
+否则实际牌桌上限为 7。在座集合/不重洗规则（§4.9）仍按每手牌适用。
 
-**FSM (one hand; "BET\_n" rounds have cooperative round-close + per-actor timeout-default
-of check/fold per §6.4):**
+**FSM（一手牌；"BET\_n" 各轮有协作的本轮关闭 + 依据 §6.4 的每行动者看牌/弃牌超时默认）：**
 
-| State | Entry | Deal / reveal | Betting / order | Cooperative successor | Timeout-default |
+| State | 进入 | 发牌 / 揭示 | 下注 / 顺序 | 协作后继 | 超时默认 |
 |---|---|---|---|---|---|
-| S0 ANTE | seats funded | — | all post ante | S1 SHUFFLE | RECOVERY (abort refund) |
-| S1 SHUFFLE | from S0 | entropy commit + shuffle stages (§4.1/§4.4) | — | S2 THIRD | RECOVERY |
-| S2 THIRD | from S1 | draw 2 down (private) + 1 up (N-of-N reveal) per seat | bring-in = lowest up-card; small-bet betting | round-close → S3; folds reduce field | timeout → bring-in default-post / others check-fold |
-| S3 FOURTH | from S2 | draw 1 up (N-of-N reveal) | highest board first; small bet (open pair → either) | round-close → S4 | timeout → check/fold |
-| S4 FIFTH | from S3 | draw 1 up | highest board first; big bet | round-close → S5 | timeout → check/fold |
-| S5 SIXTH | from S4 | draw 1 up | highest board first; big bet | round-close → S6 | timeout → check/fold |
-| S6 SEVENTH | from S5 | draw 1 **down** (private) | highest board first; big bet | round-close → S7; fold → FOLD\_END | timeout → check/fold |
-| S7 SHOWDOWN | from S6 | min reveal (§5.6); verify vs commitments | last aggressor shows first | S8 SETTLE | RECOVERY (reveal timeout forfeit) |
-| S8 SETTLE | S7/FOLD\_END | — | best 5-of-7; side pots §19.B | S9 HAND\_END | RECOVERY |
-| FOLD\_END | one live player remains | award uncontested, no reveal (P5) | — | S8 SETTLE | — |
-| S9 HAND\_END | from S8 | re-seat sit-out/join (§4.9) | — | S0 ANTE (next) / TABLE\_CLOSE | TABLE\_CLOSE |
+| S0 ANTE | 座位已注资 | — | 全体下底注 | S1 SHUFFLE | RECOVERY（中止退款） |
+| S1 SHUFFLE | 从 S0 | 熵承诺 + 洗牌阶段（§4.1/§4.4） | — | S2 THIRD | RECOVERY |
+| S2 THIRD | 从 S1 | 每座位抽 2 张暗牌（私有）+ 1 张明牌（N-of-N 揭示） | bring-in = 最低明牌；小注下注 | 本轮关闭 → S3；弃牌减少人数 | 超时 → bring-in 默认下注 / 其他人看牌-弃牌 |
+| S3 FOURTH | 从 S2 | 抽 1 张明牌（N-of-N 揭示） | 牌面最高者先行；小注（明对 → 任一） | 本轮关闭 → S4 | 超时 → 看牌/弃牌 |
+| S4 FIFTH | 从 S3 | 抽 1 张明牌 | 牌面最高者先行；大注 | 本轮关闭 → S5 | 超时 → 看牌/弃牌 |
+| S5 SIXTH | 从 S4 | 抽 1 张明牌 | 牌面最高者先行；大注 | 本轮关闭 → S6 | 超时 → 看牌/弃牌 |
+| S6 SEVENTH | 从 S5 | 抽 1 张**暗牌**（私有） | 牌面最高者先行；大注 | 本轮关闭 → S7；弃牌 → FOLD\_END | 超时 → 看牌/弃牌 |
+| S7 SHOWDOWN | 从 S6 | 最小亮牌（§5.6）；对照承诺验证 | 上一位进攻者先亮牌 | S8 SETTLE | RECOVERY（揭示超时罚没） |
+| S8 SETTLE | S7/FOLD\_END | — | 七选五最佳；边池 §19.B | S9 HAND\_END | RECOVERY |
+| FOLD\_END | 仅剩一名存活玩家 | 不战而胜判给，不亮牌（P5） | — | S8 SETTLE | — |
+| S9 HAND\_END | 从 S8 | 重新入座离座/加入（§4.9） | — | S0 ANTE（下一手）/ TABLE\_CLOSE | TABLE\_CLOSE |
 
-### §7.3.3 Five-Card Draw
+### §7.3.3 五张抽牌
 
-**Rules.** Blinds (or antes per ruleset). Each seat dealt **5 concealed** cards. One
-betting round; then the **draw** (each player, in turn, discards 0–5 cards and draws the
-same number of fresh concealed cards — REQ-FSM-004); then a second betting round; then
-showdown of the **5 cards held** (§5.3). NL/PL/FL selectable (D3). REQ-FSM-009 The draw
-must preserve concealment: discards go to dead-hand **without reveal**, replacements are
-drawn from the still-undealt shuffled deck and private-revealed to the drawer only; the
-number drawn is public (it is observable game information) but the card identities are not.
+**规则。** 盲注（或按规则集为底注）。每座位发 **5 张隐藏**牌。一轮下注；然后**抽牌**（每个玩家依次
+丢弃 0–5 张牌并抽取相同数量的全新隐藏牌 — REQ-FSM-004）；然后第二轮下注；然后对**手中持有的 5 张牌**
+摊牌（§5.3）。NL/PL/FL 可选（D3）。REQ-FSM-009 抽牌必须保持隐藏性：丢弃的牌**不亮牌**地进入死手，
+替换牌从尚未发出的已洗牌堆中抽取并仅私下揭示给抽牌者；抽的张数是公开的（这是可观察的游戏信息），
+但牌的身份不公开。
 
-**FSM (heads-up reference):**
+**FSM（单挑参考）：**
 
-| State | Entry | Deal / reveal | Betting | Cooperative successor | Timeout-default |
+| State | 进入 | 发牌 / 揭示 | 下注 | 协作后继 | 超时默认 |
 |---|---|---|---|---|---|
-| S0 BLINDS | seats funded | — | post blinds | S1 SHUFFLE | RECOVERY |
-| S1 SHUFFLE | from S0 | entropy + shuffle stages | — | S2 DEAL | RECOVERY |
-| S2 DEAL | from S1 | draw 5 concealed/seat (private) | — | S3 BET1 | RECOVERY (deal timeout) |
-| S3 BET1 | from S2 | — | first round | round-close → S4; fold → FOLD\_END | check/fold |
-| S4 DRAW | from S3 | each in turn: discard 0–5 (dead-hand, no reveal) + draw replacements (private) | — | S5 BET2 | timeout → **stand pat** (draw 0) |
-| S5 BET2 | from S4 | — | second round | round-close → S6; fold → FOLD\_END | check/fold |
-| S6 SHOWDOWN | from S5 | min reveal (§5.6); verify vs commitments | last aggressor first | S7 SETTLE | RECOVERY (reveal timeout) |
-| S7 SETTLE | S6/FOLD\_END | — | best-5; side pots §19.B | S8 HAND\_END | RECOVERY |
-| FOLD\_END | one live player | award uncontested, no reveal | — | S7 SETTLE | — |
-| S8 HAND\_END | from S7 | re-seat (§4.9); button moves | — | S0 BLINDS / TABLE\_CLOSE | TABLE\_CLOSE |
+| S0 BLINDS | 座位已注资 | — | 下盲注 | S1 SHUFFLE | RECOVERY |
+| S1 SHUFFLE | 从 S0 | 熵 + 洗牌阶段 | — | S2 DEAL | RECOVERY |
+| S2 DEAL | 从 S1 | 每座位抽 5 张隐藏牌（私有） | — | S3 BET1 | RECOVERY（发牌超时） |
+| S3 BET1 | 从 S2 | — | 第一轮 | 本轮关闭 → S4；弃牌 → FOLD\_END | 看牌/弃牌 |
+| S4 DRAW | 从 S3 | 每人依次：丢弃 0–5 张（死手，不亮牌）+ 抽取替换牌（私有） | — | S5 BET2 | 超时 → **不换牌（stand pat）**（抽 0 张） |
+| S5 BET2 | 从 S4 | — | 第二轮 | 本轮关闭 → S6；弃牌 → FOLD\_END | 看牌/弃牌 |
+| S6 SHOWDOWN | 从 S5 | 最小亮牌（§5.6）；对照承诺验证 | 上一位进攻者先 | S7 SETTLE | RECOVERY（揭示超时） |
+| S7 SETTLE | S6/FOLD\_END | — | 五张最佳；边池 §19.B | S8 HAND\_END | RECOVERY |
+| FOLD\_END | 仅剩一名存活玩家 | 不战而胜判给，不亮牌 | — | S7 SETTLE | — |
+| S8 HAND\_END | 从 S7 | 重新入座（§4.9）；按钮移动 | — | S0 BLINDS / TABLE\_CLOSE | TABLE\_CLOSE |
 
-REQ-FSM-010 The S4 DRAW timeout-default is **stand pat** (draw zero) — the safe default
-that forfeits no information and no equity beyond declining to improve.
+REQ-FSM-010 S4 DRAW 的超时默认是**不换牌（stand pat）**（抽零张）— 这是安全的默认，除了放弃改善之外
+不放弃任何信息和任何权益。
 
-### §7.3.4 Razz (Seven-Card Stud low)
+### §7.3.4 Razz（七张梭哈低牌）
 
-**Rules.** Seven-Card Stud **structure** (ante; streets 3–7; two down, four up, one down;
-best 5 of 7) but the **lowest** hand wins by **ace-to-five low** (§5.3.3, REQ-POKER-006;
-straights and flushes do not count, aces are low, best is the wheel A-2-3-4-5 — verified in
-§19.D). Order reversals versus stud-high:
+**规则。** 采用七张梭哈**结构**（底注；第 3–7 街；两张暗、四张明、一张暗；七选五最佳），但由
+**ace-to-five 低牌**决定**最低**手牌取胜（§5.3.3、REQ-POKER-006；顺子和同花不计入，A 为低，最佳是
+轮牌 A-2-3-4-5 — 在 §19.D 中验证）。相对梭哈高牌的顺序反转：
 
-- **3rd street bring-in = the HIGHEST up-card** (high is bad in lowball; ties by the same
-  declared forced-bet suit order, not hand-eval suit precedence).
-- **4th–7th streets: the LOWEST (best) exposed board acts first.**
+- **第三街 bring-in = 最高的明牌**（在低牌玩法中高即为坏；平局由同一个声明的强制下注花色顺序决定，而非手牌评估的花色优先级）。
+- **第四到第七街：露出最低（最佳）牌面者先行动。**
 
-REQ-FSM-011 Razz is the §7.3.2 stud FSM with three overrides: (i) bring-in selector = highest
-up-card; (ii) post-3rd betting order = best (lowest) exposed low first; (iii) showdown
-evaluator = ace-to-five low (§5.3.3). No open-pair big-bet rule applies (it is meaningless
-for low). The 8-player exhaustion rule (REQ-FSM-008) applies identically.
+REQ-FSM-011 Razz 是 §7.3.2 的梭哈 FSM 加三处覆盖：(i) bring-in 选取器 = 最高明牌；(ii) 第三街之后的
+下注顺序 = 露出最佳（最低）低牌者先；(iii) 摊牌评估器 = ace-to-five 低牌（§5.3.3）。不适用明对大注
+规则（它对低牌毫无意义）。8 名玩家耗尽规则（REQ-FSM-008）以相同方式适用。
 
-**FSM delta from §7.3.2 (stud):** identical state graph S0–S9; replace the bring-in selector,
-the acting-order function, and the showdown evaluator as in REQ-FSM-011.
+**相对 §7.3.2（梭哈）的 FSM 增量：** 状态图 S0–S9 相同；按 REQ-FSM-011 替换 bring-in 选取器、行动顺序
+函数和摊牌评估器。
 
 ---
 
-# §8 Networking, discovery, matchmaking, anti-stall
+# §8 网络、发现、撮合、防卡死
 
-## §8.1 Roles
+## §8.1 角色
 
-REQ-NET-001 The **relay** is transport + indexing only; it is never the source of truth
-(P3). It accelerates convergence, rebroadcasts, indexes table transactions, schedules
-timeout notices, and assembles transcripts. The truth is the validated transaction graph,
-reconstructed identically by each client (P2).
+REQ-NET-001 **中继**仅负责传输 + 索引；它绝非真相之源（P3）。它加速收敛、重广播、索引牌桌交易、
+调度超时通知，并汇编记录誊本。真相是经验证的交易图，由每个客户端以相同方式重建（P2）。
 
-## §8.2 Two-tier model
+## §8.2 两层模型
 
-REQ-NET-002 Tier A (discovery): presence and address gossip — Phase 1 via the hosted relay
-and a LAN auto-discovery mode (D4); Phase 5 adds a Bitcoin-style version/verack/getaddr/addr
-peer layer. Tier B (game-object propagation): table-scoped inventory/object relay
-(inv/getdata/object) with per-table channels for fast convergence (Bitmessage-style),
-Phase 1 via the relay's table-scoped fan-out.
+REQ-NET-002 A 层（发现）：在线状态与地址 gossip — 第 1 阶段经托管中继和一个 LAN 自动发现模式（D4）；
+第 5 阶段增加一个 Bitcoin 式的 version/verack/getaddr/addr 对等层。B 层（游戏对象传播）：牌桌范围的
+inventory/object 中继（inv/getdata/object），每桌一个通道以快速收敛（Bitmessage 式），第 1 阶段经
+中继的牌桌范围扇出实现。
 
-## §8.3 Dual-path propagation
+## §8.3 双路径传播
 
-REQ-NET-003 Every action is sent simultaneously (a) to the node/network as a real
-transaction (canonical path: mempool presence, double-spend observability, eventual
-confirmation) and (b) directly to table peers via the relay/P2P (speed path: fast local
-state convergence, propagation-delay tolerance). The speed path never overrides the
-canonical path; conflicts resolve by §8.5.
+REQ-NET-003 每个行动同时发送 (a) 作为真实交易发往节点/网络（规范路径：内存池存在、双花可观察性、
+最终确认）以及 (b) 经中继/P2P 直达牌桌对等方（速度路径：快速的本地状态收敛、传播延迟容忍）。速度
+路径绝不覆盖规范路径；冲突由 §8.5 解决。
 
-## §8.4 Node/chain interface
+## §8.4 节点/链接口
 
-REQ-NET-004 Via `BS.node` (§2.2): broadcast tx; query outpoint/UTXO status; observe
-double-spend-attempt status; header/block queries; mempool conflict signals under the
-original replacement rule. The platform tracks its own table-level rebroadcast and peer
-visibility and can resubmit missing transactions (mempool contents can change; the table
-system does not rely on mempool memory alone).
+REQ-NET-004 经 `BS.node`（§2.2）：广播交易；查询 outpoint/UTXO 状态；观察双花尝试状态；区块头/区块
+查询；原始替换规则下的内存池冲突信号。平台追踪自身的牌桌级重广播和对等方可见性，并能重新提交缺失的
+交易（内存池内容可能改变；牌桌系统不仅仅依赖内存池的记忆）。
 
-## §8.5 Deterministic conflict resolution
+## §8.5 确定性冲突解决
 
-REQ-NET-005 For each actionable phase there is exactly one spendable phase-right
-(state UTXO). Two conflicting actions for the same phase cannot both be valid: the accepted
-successor is the one referenced by the next accepted state transition; later conflicting
-attempts are invalid relative to the accepted path. REQ-NET-006 Where a deterministic local
-tie-break is needed before phase close, the rule is fixed (DEFAULT: first valid transaction
-referenced by a threshold of peers; final tie-break by lexicographic txid). A double-spend
-attempt is made strategically useless by the timeout-default branch (an absent/conflicting
-actor is defaulted/folded; the hand proceeds).
+REQ-NET-005 对每个可操作阶段，恰好存在一个可花费的阶段权（状态 UTXO）。同一阶段的两个冲突行动不能
+同时有效：被接受的后继是被下一个被接受的状态转换所引用的那个；较晚的冲突尝试相对于被接受的路径无效。
+REQ-NET-006 凡在阶段关闭前需要确定性本地平局判定之处，该规则是固定的（默认：被一个阈值数量的对等方
+所引用的第一笔有效交易；最终平局判定按字典序 txid）。双花尝试由超时默认分支使其在策略上无用（缺席/
+冲突的行动者被默认处理/弃牌；手牌继续进行）。
 
-## §8.6 Reconnect/resume
+## §8.6 重连/恢复
 
-REQ-NET-007 A client can request the transcript gap from a peer/relay and rebuild current
-state deterministically from the valid transaction set; resuming changes nothing about the
-truth, only this client's view (P2).
+REQ-NET-007 客户端可向某个对等方/中继请求记录誊本的缺口，并从有效交易集确定性地重建当前状态；恢复
+不改变任何关于真相的内容，只改变本客户端的视图（P2）。
 
-## §8.7 `[EXPAND: Part 2/5]` Full relay wire protocol, presence/heartbeat, matchmaking/lobby semantics, NAT traversal and internet P2P (Phase 5), anti-cheat heuristics layered atop the cryptographic guarantees.
+## §8.7 `[EXPAND: Part 2/5]` 完整的中继线缆协议、在线状态/心跳、撮合/大厅语义、NAT 穿透与互联网 P2P（第 5 阶段），以及叠加在密码学保证之上的反作弊启发式。
 
 ---
 
-# §9 Wallet and key management
+# §9 钱包与密钥管理
 
-## §9.1 Roles
+## §9.1 角色
 
-The wallet is a game-protocol agent, not only a payment wallet: holds signing keys; derives
-per-game/per-card keys; signs transactions and off-chain protocol messages; locally decrypts
-concealed cards; interprets table state; presents signing prompts.
+钱包是一个游戏协议代理，而不仅是一个支付钱包：持有签名密钥；派生逐对局/逐牌密钥；签署交易和链下
+协议消息；本地解密隐藏的牌；解读牌桌状态；呈现签名提示。
 
-## §9.2 Key hierarchy
+## §9.2 密钥层级
 
-REQ-WALLET-001 One long-term secp256k1 key per player inside the custody boundary; per-game
-and per-card scalars derived deterministically via HKDF bound to `(gid, j)` (§4.2), so the
-device stores one key, derivation is deterministic and auditable from `(sk, gid, j)`, and
-old-game keys reveal nothing about current games. REQ-WALLET-002 Distinct key sets for
-distinct jobs (signing vs. card-encryption vs. session), least authority by construction.
+REQ-WALLET-001 托管边界内每个玩家一个长期 secp256k1 密钥；逐对局和逐牌标量经绑定到 `(gid, j)` 的
+HKDF 确定性派生（§4.2），因此设备存储一个密钥，派生从 `(sk, gid, j)` 出发是确定性且可审计的，且
+旧对局密钥不泄露任何关于当前对局的信息。REQ-WALLET-002 不同的工作使用不同的密钥集（签名 vs 牌加密
+vs 会话），按构造做到最小权限。
 
-## §9.3 Custody boundary (pluggable; TEE optional)
+## §9.3 托管边界（可插拔；TEE 可选）
 
-REQ-WALLET-003 A `Custody` interface abstracts where keys live and signing happens:
-`derive`, `sign`, `decryptToViewer`, `combineSignShare`. Backends: (DEFAULT) software
-custody with keys held in the wallet process and never exposed to the UI/shell beyond the
-viewer path; (UPGRADE) `OB.custody` threshold (FROST/GG20) so no whole key exists in one
-place; (LATER, OPTIONAL) a hardware-TEE backend — added without changing the protocol. No
-phase requires a TEE (per direction). REQ-WALLET-004 Whole-key handling follows the active
-signing mode (§4.3): in **Mode A** (Phase-1 default) the combined private key `w_j` is
-reconstructed by the closing party at reveal, and the custody backend MUST therefore treat
-all per-card scalars as **single-game** secret material that is never reused across games
-(enforced by the HKDF binding to `gid`, REQ-WALLET-001) and MUST hold combined-key-locked
-funds only for the bounded hand window; in **Mode B** the threshold backend produces the
-`Q_j` signature with no whole-key reconstruction. The custody interface exposes
-`combineSignShare` for Mode B and `reconstructAndSign` (scoped, single-game, audited) for
-Mode A.
+REQ-WALLET-003 一个 `Custody` 接口抽象密钥所在之处和签名发生之处：`derive`、`sign`、
+`decryptToViewer`、`combineSignShare`。后端：（默认）软件托管，密钥保存在钱包进程内且绝不暴露给
+查看器路径之外的 UI/外壳；（升级）`OB.custody` 门限（FROST/GG20），使任何完整密钥都不在单处存在；
+（后续、可选）一个硬件 TEE 后端 — 在不改动协议的情况下加入。没有任何阶段要求 TEE（按方向）。
+REQ-WALLET-004 完整密钥的处理遵循当前生效的签名模式（§4.3）：在 **Mode A**（第 1 阶段默认）中，联合
+私钥 `w_j` 由平仓方在揭示时重构，因此托管后端 MUST 将所有逐牌标量视为**单对局**秘密材料，绝不跨对局
+重用（由 HKDF 绑定到 `gid` 强制执行，REQ-WALLET-001），并 MUST 仅在有界的手牌窗口内持有联合密钥
+锁定的资金；在 **Mode B** 中，门限后端在无完整密钥重构的情况下产生 `Q_j` 签名。托管接口为 Mode B
+暴露 `combineSignShare`，为 Mode A 暴露 `reconstructAndSign`（受限范围、单对局、经审计）。
 
-## §9.4 Micro-betting custody
+## §9.4 微下注托管
 
-REQ-WALLET-005 In micro-betting mode, channel keys and the 1-sat bond are managed via `BS`
-(§2.2); the wallet presents channel open/transfer/close/contested as signing actions with
-explicit prompts.
+REQ-WALLET-005 在微下注模式中，通道密钥和 1 聪保证金经 `BS` 管理（§2.2）；钱包将通道
+open/transfer/close/contested 作为带显式提示的签名行动呈现。
 
 ---
 
-# §10 Self-contained runtime ("the VM") and packaging
+# §10 自包含运行时（"the VM"）与打包
 
-## §10.1 Goal (D5)
+## §10.1 目标（D5）
 
-REQ-VM-001 A reproducible, self-contained runtime that launches the whole stack — local BSV
-node (regtest), relay, and client — with **no external services**, on Windows and on the
-web (the web client connects to a bundled/local or hosted relay+node depending on mode).
-"Believe the banner": regtest by default; mainnet opt-in behind an explicit research flag
-(§10.5).
+REQ-VM-001 一个可复现的、自包含的运行时，在 Windows 上和 web 上启动整个栈 — 本地 BSV 节点
+（regtest）、中继和客户端 — 而**无需任何外部服务**（web 客户端根据模式连接到一个打包/本地或托管的
+中继+节点）。"相信横幅"：默认 regtest；主网需在一个显式的研究开关之后选择启用（§10.5）。
 
-## §10.2 Components in the image
+## §10.2 镜像中的组件
 
-REQ-VM-002 (a) The embedded BSV node from `bonded-subsat-channel` (D6) in regtest:
-native P2P-wire node, PoW header chain (longest-by-work), DB-backed block/UTXO store,
-conflict-detecting mempool (original replacement rule), HD wallet. (b) The Go relay/indexer
-(§8). (c) The client (web build served locally; desktop via Tauri, §11). (d) A
-one-command bootstrap that brings the stack up, runs self-tests, and prints a transcript.
+REQ-VM-002 (a) 来自 `bonded-subsat-channel`（D6）的嵌入式 BSV 节点，处于 regtest：原生 P2P-wire 节点、
+PoW 区块头链（按最长工作量）、基于数据库的区块/UTXO 存储、检测冲突的内存池（原始替换规则）、HD 钱包。
+(b) Go 中继/索引器（§8）。(c) 客户端（web 构建在本地提供服务；桌面经 Tauri，§11）。(d) 一个一条命令的
+引导程序，它把栈启动起来、运行自检并打印一份记录誊本。
 
-## §10.3 Packaging targets
+## §10.3 打包目标
 
-REQ-VM-003 Primary: a container image (reproducible build, §16) bundling node+relay+client,
-plus a `docker run`/compose one-liner that yields a playable stack. REQ-VM-004 Desktop: a
-Windows installer (Tauri) that either embeds or supervises a local node+relay process so a
-non-technical user double-clicks and plays. REQ-VM-005 If a literal hypervisor VM image
-(OVA/qcow2) is additionally required (D5), it is an extra packaging artifact built from the
-same composition — `DECISION REQUIRED`; the application does not change.
+REQ-VM-003 主要：一个容器镜像（可复现构建，§16），打包节点+中继+客户端，外加一个产出可玩栈的
+`docker run`/compose 一行命令。REQ-VM-004 桌面：一个 Windows 安装程序（Tauri），它要么嵌入要么监管
+一个本地节点+中继进程，使非技术用户双击即可游玩。REQ-VM-005 如果还额外需要一个真正的虚拟机管理程序
+VM 镜像（OVA/qcow2）（D5），它是从同一组合构建的一个额外打包产物 — `DECISION REQUIRED`；应用不改变。
 
-## §10.4 Reproducibility
+## §10.4 可复现性
 
-REQ-VM-006 The image build is reproducible (pinned toolchains, locked dependencies, recorded
-hashes). The stack's self-test and reproduce commands (§14.5) run inside the image in CI.
+REQ-VM-006 镜像构建可复现（固定工具链、锁定依赖、记录哈希）。栈的自检和 reproduce 命令（§14.5）在 CI
+中于镜像内部运行。
 
-## §10.5 Mainnet flag
+## §10.5 主网开关
 
-REQ-VM-007 Mainnet is reachable only behind an explicit, named research-code flag; the UI
-shows an unmissable banner; default everywhere is regtest. Real funds are never touched
-without the flag (mirrors the lineage's discipline; P8).
+REQ-VM-007 主网只有在一个显式的、具名的研究代码开关之后才可达；UI 显示一个无法忽视的横幅；各处默认
+皆为 regtest。没有该开关，真实资金绝不被触及（与该谱系的纪律一致；P8）。
 
-## §10.6 `[EXPAND: Part 2]` Exact compose topology, ports, volumes, health checks, and the desktop supervision model.
+## §10.6 `[EXPAND: Part 2]` 确切的 compose 拓扑、端口、卷、健康检查，以及桌面监管模型。
 
 ---
 
-# §11 Client shells: Windows (desktop) and Web
+# §11 客户端外壳：Windows（桌面）与 Web
 
-## §11.1 One core, two shells
+## §11.1 一个核心，两个外壳
 
-REQ-UI-001 A single TypeScript/React UI core (state, components, view-models) runs in the
-browser (web) and inside **Tauri** for the Windows desktop binary. Rationale: Tauri yields a
-small native binary, uses the system webview, and supervises local processes (node/relay)
-cleanly; Electron is the fallback only if a Tauri limitation is hit (recorded, not assumed).
-No business logic lives in the shell — it calls the engine/SDK (§15).
+REQ-UI-001 单一的 TypeScript/React UI 核心（状态、组件、视图模型）运行于浏览器（web）以及为 Windows
+桌面二进制而运行的 **Tauri** 内。理由：Tauri 产出一个小巧的原生二进制、使用系统 webview，并干净地
+监管本地进程（节点/中继）；Electron 仅在遇到 Tauri 的某项限制时才作为回退（被记录，而非被假定）。
+外壳中没有业务逻辑 — 它调用引擎/SDK（§15）。
 
-## §11.2 Browser storage rule
+## §11.2 浏览器存储规则
 
-REQ-UI-002 The web shell persists via IndexedDB (keys, table state, transcripts); it MUST
-NOT rely on `localStorage`/`sessionStorage` for anything load-bearing. Desktop persists via
-SQLite (§12).
+REQ-UI-002 web 外壳经 IndexedDB 持久化（密钥、牌桌状态、记录誊本）；它 MUST NOT 依赖
+`localStorage`/`sessionStorage` 来承载任何关键内容。桌面经 SQLite 持久化（§12）。
 
-## §11.3 No HTML `<form>` submit semantics in React
+## §11.3 React 中不用 HTML `<form>` 提交语义
 
-REQ-UI-003 Interactions use explicit handlers (onClick/onChange), never `<form>` submit, to
-avoid navigation/refresh side effects in the embedded webview.
+REQ-UI-003 交互使用显式处理器（onClick/onChange），绝不用 `<form>` 提交，以避免嵌入式 webview 中的
+导航/刷新副作用。
 
-## §11.4 Screens
+## §11.4 屏幕
 
-Lobby (list/create/join, presence); Table (seats, turn indicator, board/up cards, pot(s),
-balances, timers with explicit default-on-timeout text, action controls); Hand inspection
-(local decrypt of own cards); Signing prompt (states exactly what is signed); Result/settlement;
-Reconnect/recovery status; Transcript/replay viewer. REQ-UI-004 The UI hides protocol
-complexity but never hides consequences (e.g. "If you do nothing, you check in 30s"; "If
-reveal is not completed by the deadline, recovery begins"; "This round is committed and
-cannot be altered").
+大厅（列出/创建/加入、在线状态）；牌桌（座位、轮次指示、公共牌/明牌、底池、余额、带显式超时默认文案
+的计时器、行动控件）；手牌查看（本地解密自己的牌）；签名提示（准确说明所签内容）；结果/结算；
+重连/恢复状态；记录誊本/重放查看器。REQ-UI-004 UI 隐藏协议复杂性，但绝不隐藏后果（例如"若你什么都
+不做，30 秒后你将看牌"；"若揭示未在截止前完成，恢复将开始"；"本轮已承诺且无法更改"）。
 
-## §11.5 Viewer/decryption boundary
+## §11.5 查看器/解密边界
 
-REQ-UI-005 Card decryption goes through the custody boundary (§9.3); the rendered face exists
-only in the controlled viewer path. (Screen-capture hardening and watermarking are an
-OPTIONAL later track via OS facilities; not required in core phases; if added, claimed only
-as partial mitigation, P8.)
+REQ-UI-005 牌的解密经过托管边界（§9.3）；渲染出的牌面只存在于受控的查看器路径中。（屏幕截图加固和
+水印是经 OS 设施的可选后续轨道；核心阶段不要求；若加入，只作为部分缓解来主张，P8。）
 
-## §11.6 Signing UX
+## §11.6 签名 UX
 
-REQ-UI-006 Every signing prompt shows the action, the amounts, the pot/state it affects, and
-the exact bytes/intent being signed; no silent signing.
+REQ-UI-006 每个签名提示都显示行动、金额、它所影响的底池/状态，以及正在被签署的确切字节/意图；不做
+静默签名。
 
-## §11.7 `[EXPAND: Part 2]` Full screen specs, component inventory, state shapes, and accessibility/localization.
+## §11.7 `[EXPAND: Part 2]` 完整的屏幕规格、组件清单、状态形态，以及无障碍/本地化。
 
 ---
 
-# §12 Persistence, transcripts, audit
+# §12 持久化、记录誊本、审计
 
-## §12.1 Stores
+## §12.1 存储
 
-REQ-DATA-001 Web: IndexedDB. Desktop + relay: SQLite. Stored: tables, players, transactions,
-card lineage, timeouts, proofs, transcripts, local encrypted hand data.
+REQ-DATA-001 Web：IndexedDB。桌面 + 中继：SQLite。存储内容：牌桌、玩家、交易、牌的来历、超时、证明、
+记录誊本、本地加密的手牌数据。
 
-## §12.2 Transcript
+## §12.2 记录誊本
 
-REQ-DATA-002 A transcript is the ordered set of valid table transactions plus the
-commit/reveal material needed to re-derive state. It is exportable.
+REQ-DATA-002 一份记录誊本是有效牌桌交易的有序集合，加上重新派生状态所需的承诺/揭示材料。它可导出。
 
-## §12.3 Deterministic replay
+## §12.3 确定性重放
 
-REQ-DATA-003 A replay tool reconstructs the entire hand from a transcript and a ruleset hash,
-producing byte-identical state and a verified outcome offline; any divergence is a defect
-(P2). Disputes (a claimed shuffle stage, a withheld reveal, a claimed outcome) resolve by
-replay against the committed hashes (§4.4, §6.3).
+REQ-DATA-003 一个重放工具从一份记录誊本和一个规则集哈希重建整手牌，在离线情况下产生逐字节相同的
+状态和一个经验证的结果；任何分歧都是缺陷（P2）。争议（一个被主张的洗牌阶段、一次被扣留的揭示、一个
+被主张的结果）通过对照已承诺的哈希进行重放来解决（§4.4、§6.3）。
 
-## §12.4 Audit integration (optional)
+## §12.4 审计集成（可选）
 
-REQ-DATA-004 Via `VA` (§2.3): produce a selective-disclosure bundle proving a specific
-figure (e.g. a settlement amount) is genuine and anchored, revealing nothing else; the
-platform surfaces `VA`'s stated boundary (INV-VA-2) wherever it shows audit output.
+REQ-DATA-004 经 `VA`（§2.3）：产生一个选择性披露包，证明某个特定数字（例如一个结算金额）是真实且
+锚定的，而不泄露其他任何内容；平台在凡是展示审计输出之处显示 `VA` 所声明的边界（INV-VA-2）。
 
 ---
 
-# §13 Engineering standard, requirements register, traceability
+# §13 工程标准、需求登记册、可追溯性
 
-## §13.1 Standard
+## §13.1 标准
 
-REQ-ENG-001 The program is built to **NASA NPR 7150.2** software-assurance practice and to
-**an adaptation of the JPL "Power of Ten" rules appropriate to a garbage-collected runtime
-— not literal compliance (corrects RT-01 M5).** The original rules target C in embedded
-safety-critical contexts; in TypeScript/Go the mapping is explicit:
+REQ-ENG-001 本项目按 **NASA NPR 7150.2** 软件保障实践以及 **JPL "Power of Ten" 规则的、适配于
+垃圾回收运行时的一个改编版 — 而非字面意义的合规（修正 RT-01 M5）** 来构建。原始规则针对嵌入式
+安全关键场景中的 C；在 TypeScript/Go 中的映射是显式的：
 
-- **Adopted as-is:** restrict control flow to simple constructs / no recursion in consensus
-  and script paths; bound every loop in consensus paths with a fixed, provable upper bound;
-  use runtime assertions (design-by-contract) on engine boundaries; check every return/error
-  value; keep functions small and single-purpose; treat all warnings as errors
-  (`tsc --strict`, Go `vet` + `-Werror`-equivalent).
-- **Adapted:** "limit data scope" → no untyped `any` in the core, exhaustive `switch`
-  handling with compile-time exhaustiveness, strict null checks; "limit the preprocessor" →
-  restrict macro-like metaprogramming/codegen and document any that remains.
-- **Not applicable in a GC runtime (stated, not silently dropped):** Rule 3 (no dynamic
-  memory allocation after initialization) and the raw-pointer/aliasing restrictions have no
-  literal meaning under garbage collection. In their place the core uses bounded, pre-sized
-  working structures in the hot consensus path and avoids unbounded allocation inside that
-  path; this is an *adaptation*, and the document does not claim Rule 3 compliance.
+- **原样采纳：** 将控制流限制为简单构造 / 在共识与脚本路径中不用递归；用一个固定的、可证明的上界来限定共识路径中的每个循环；在引擎边界使用运行时断言（契约式设计）；检查每个返回/错误值；保持函数小而单一用途；将所有警告视为错误（`tsc --strict`、Go `vet` + `-Werror` 等价物）。
+- **改编：** "限制数据作用域" → 核心中不用无类型的 `any`、带编译期穷尽性的穷尽 `switch` 处理、严格空值检查；"限制预处理器" → 限制类宏的元编程/代码生成，并记录任何残留者。
+- **在 GC 运行时中不适用（明确声明，而非悄然丢弃）：** 规则 3（初始化后不做动态内存分配）以及裸指针/别名限制在垃圾回收下没有字面意义。取而代之，核心在热共识路径中使用有界、预先定大小的工作结构，并避免在该路径内部进行无界分配；这是一种*改编*，本文档不主张规则 3 合规。
 
-The headline is therefore "NPR 7150.2 assurance practice + a documented Power-of-Ten
-adaptation," never "Power-of-Ten compliant."
+因此标题是 "NPR 7150.2 保障实践 + 一个有文档记录的 Power-of-Ten 改编"，绝非 "Power-of-Ten 合规"。
 
-## §13.2 Requirements register
+## §13.2 需求登记册
 
-REQ-ENG-002 Every `REQ-*` ID in this document is an entry in a machine-readable register
-(`/spec/requirements.yaml`) with: id, text, owning section, owning module, satisfying
-source files, satisfying tests, status. The register is generated/validated in CI.
+REQ-ENG-002 本文档中的每个 `REQ-*` ID 都是一份机器可读登记册（`/spec/requirements.yaml`）中的一项，
+包含：id、文本、所属章节、所属模块、满足它的源文件、满足它的测试、状态。该登记册在 CI 中生成/验证。
 
-## §13.3 Traceability matrix
+## §13.3 可追溯性矩阵
 
-REQ-ENG-003 A requirements-traceability matrix maps every requirement → code → test. CI
-fails if any requirement has no satisfying test, or any consensus-path source file is not
-traced to a requirement. (Mirrors `overlay-broadcast`'s practice, INV-OB-3.)
+REQ-ENG-003 一个需求可追溯性矩阵将每条需求 → 代码 → 测试相映射。若任何需求没有满足它的测试，或任何
+共识路径源文件未被追溯到某条需求，CI 失败。（与 `overlay-broadcast` 的实践一致，INV-OB-3。）
 
-## §13.4 Boundary-in-source
+## §13.4 边界写入源码
 
-REQ-ENG-004 Every stated boundary/limit (P7/P8) is asserted in the source — e.g. the audit
-boundary (INV-VA-2), the N-of-N liveness limit (§4.8), the regtest-default (§10.5) — so no
-future change silently papers over it.
+REQ-ENG-004 每条所声明的边界/限制（P7/P8）都在源码中被断言 — 例如审计边界（INV-VA-2）、N-of-N 活性
+限制（§4.8）、regtest 默认（§10.5）— 使任何未来的改动都不会悄然把它掩盖过去。
 
-## §13.5 `[EXPAND: Part 3]` The full requirements register seeded from every `REQ-*` in this document, with owners and test IDs.
+## §13.5 `[EXPAND: Part 3]` 由本文档中每个 `REQ-*` 播种而成的完整需求登记册，附负责人与测试 ID。
 
 ---
 
-# §14 Test strategy and acceptance
+# §14 测试策略与验收
 
-## §14.1 Levels
+## §14.1 层级
 
-REQ-TEST-001 Unit (pure functions: hand-eval, pots, betting, serialization — against §19.D/B
-vectors); property-based (invariants: pot conservation, determinism `f(tx,ruleset)`,
-shuffle composition, reveal single-use); integration (engine + adapters with fakes for
-CT/BS/VA/OB orchestration); **interpreter-level script tests** (§14.3); end-to-end (full
-hand on regtest through the VM, §14.4); adversarial (§14.6).
+REQ-TEST-001 单元（纯函数：手牌评估、底池、下注、序列化 — 对照 §19.D/B 向量）；基于属性
+（不变式：底池守恒、确定性 `f(tx,ruleset)`、洗牌复合、揭示单次使用）；集成（引擎 + 适配器，用伪实现
+做 CT/BS/VA/OB 编排）；**解释器级脚本测试**（§14.3）；端到端（经 VM 在 regtest 上跑完整一手牌，
+§14.4）；对抗性（§14.6）。
 
-## §14.2 Determinism tests
+## §14.2 确定性测试
 
-REQ-TEST-002 Replay equivalence: a transcript replays to byte-identical state on independent
-runs and across platforms (web/desktop). Cross-client agreement: two engines given the same
-valid tx set + ruleset hash agree exactly.
+REQ-TEST-002 重放等价：一份记录誊本在独立运行以及跨平台（web/桌面）时重放为逐字节相同的状态。跨客户端
+一致：给定相同有效交易集 + 规则集哈希的两个引擎完全一致。
 
-## §14.3 Interpreter-level script tests (P9)
+## §14.3 解释器级脚本测试（P9）
 
-REQ-TEST-003 Every script template spend (positive and negative) is executed through the
-**real BSV Script interpreter with Genesis rules on**. Negative tests MUST fail **inside**
-the interpreter, not in a wrapper guard. Signature spot-checks are explicitly disallowed as
-a substitute. This covers all of §6.6 (funding, selection, custody, reveal-or-timeout, fold,
-settlement, fair-play, optional TTP).
+REQ-TEST-003 每个脚本模板花费（肯定性与否定性）都通过**启用 Genesis 规则的真实 BSV Script 解释器**
+执行。否定性测试 MUST 在解释器**内部**失败，而非在一个包装守卫中失败。签名抽查被明确禁止作为替代。
+这覆盖 §6.6 的全部（funding、selection、custody、reveal-or-timeout、fold、settlement、fair-play、
+可选 TTP）。
 
-## §14.4 End-to-end
+## §14.4 端到端
 
-REQ-TEST-004 A scripted full heads-up Hold'em hand (D1) runs through the VM (§10) on regtest:
-setup → shuffle → deal → betting streets → showdown/settlement, plus the failure injections
-in §14.6, all producing reproducible transcripts.
+REQ-TEST-004 一个脚本化的完整单挑德州扑克手牌（D1）经 VM（§10）在 regtest 上运行：设置 → 洗牌 →
+发牌 → 各下注街 → 摊牌/结算，外加 §14.6 中的故障注入，全部产生可复现的记录誊本。
 
-## §14.5 Reproducible vectors (P10)
+## §14.5 可复现向量（P10）
 
-REQ-TEST-005 `reproduce` regenerates every committed vector (hand-eval results, pot splits,
-script wire-byte sizes, transcript hashes) and exits non-zero on any mismatch. CI runs it
-inside the VM image.
+REQ-TEST-005 `reproduce` 重新生成每个已提交向量（手牌评估结果、底池拆分、脚本线缆字节大小、记录誊本
+哈希），并在任何不匹配时以非零退出。CI 在 VM 镜像内部运行它。
 
-## §14.6 Adversarial suite
+## §14.6 对抗性套件
 
-REQ-TEST-006 Disconnect at every phase; stale/duplicate action; timeout races; withheld
-reveal; conflicting spends; mempool eviction + resubmission; fair-play violation (mismatched
-keys) → forfeiture; attempted card-substitution → interpreter rejection; out-of-turn action;
-under-min raise; all-in side-pot correctness; odd-chip determinism. Each maps to a `REQ-*`
-and a deterministic expected outcome.
+REQ-TEST-006 在每个阶段掉线；过期/重复行动；超时竞态；扣留揭示；冲突花费；内存池逐出 + 重新提交；
+公平博弈违规（密钥不匹配）→ 罚没；尝试替换牌 → 解释器拒绝；不按顺序行动；低于最小的加注；全下边池
+正确性；奇数筹码确定性。每一项都映射到一个 `REQ-*` 和一个确定性的预期结果。
 
-## §14.7 Acceptance gate definition
+## §14.7 验收关卡定义
 
-REQ-TEST-007 A phase is accepted only when: all its requirements are traced to passing tests;
-`reproduce` is green inside the VM; the adversarial cases for that phase pass; and the E2E for
-that phase runs clean. No phase advances on a green-looking test that does not exercise the
-behavior (P9 spirit).
+REQ-TEST-007 一个阶段只有在以下情况下才被验收：其所有需求都被追溯到通过的测试；`reproduce` 在 VM
+内部为绿；该阶段的对抗性用例通过；且该阶段的 E2E 干净运行。任何阶段都不会因为一个看似为绿但未锻炼
+该行为的测试而推进（P9 精神）。
 
 ---
 
-# §15 Module API / SDK contracts
+# §15 模块 API / SDK 契约
 
-Stable contracts between layers; each is versioned with explicit error semantics and
-canonical serialization (no silent ambiguity between optimistic local state and enforceable
-committed state).
+层与层之间的稳定契约；每个都有版本，带显式的错误语义和规范序列化（乐观本地状态与可强制执行的已承诺
+状态之间没有静默的歧义）。
 
-## §15.1 Session/Lobby — `createTable(ruleset, stakeConfig, players)`, `joinTable(id, identity)`, `startTable(id)`, `listTables()`, `presence()`.
-## §15.2 State engine — `deriveState(transcript, ruleset)`, `getLegalActions(state, seat)`, `apply(state, action)`, `isTimeoutEligible(state, now)`, `validateTransition(state, tx)`.
-## §15.3 Ruleset — `validate(ruleset)`, `hash(ruleset)`, `resolveDefaultAction(stateType, seat)`.
-## §15.4 Crypto/deck — `commitEntropy`, `revealEntropy`, `runShuffle`, `combinedKey(j)`, `dealConcealed`, `prepareReveal`, `verifyReveal`, `surrenderOnFold` (over `CT`/GB2616862; §4).
-## §15.5 Transaction builder — `buildFunding`, `buildAction`, `buildTimeout`, `buildReveal`, `buildFold`, `buildFairPlay`, `buildSettlement`, `buildRecovery`, plus `presignFallbackGraph` (§6).
-## §15.6 Wallet/custody — `derive`, `sign`, `combineSignShare`, `decryptToViewer`, `signProtocolMessage`, `selectFundingInputs` (§9).
-## §15.7 NFT/access seam (later) — `OB`-backed `accessSession`, `revokeByExpiry`, `wrapContentKey` (not shipped in core poker phases; seam only).
-## §15.8 Dependency adapters — `CTAdapter`, `BSAdapter`, `VAAdapter`, `OBAdapter`, each with a fake for tests (§2.6).
-## §15.9 Chain — `broadcast(tx)`, `outpointStatus`, `txStatus`, `headers`, `conflicts` (over `BS.node`; §8.4).
-## §15.10 `[EXPAND: Part 2]` Full type signatures, error enums, and canonical serialization rules.
+## §15.1 会话/大厅 — `createTable(ruleset, stakeConfig, players)`、`joinTable(id, identity)`、`startTable(id)`、`listTables()`、`presence()`。
+## §15.2 状态引擎 — `deriveState(transcript, ruleset)`、`getLegalActions(state, seat)`、`apply(state, action)`、`isTimeoutEligible(state, now)`、`validateTransition(state, tx)`。
+## §15.3 规则集 — `validate(ruleset)`、`hash(ruleset)`、`resolveDefaultAction(stateType, seat)`。
+## §15.4 密码学/牌堆 — `commitEntropy`、`revealEntropy`、`runShuffle`、`combinedKey(j)`、`dealConcealed`、`prepareReveal`、`verifyReveal`、`surrenderOnFold`（基于 `CT`/GB2616862；§4）。
+## §15.5 交易构建器 — `buildFunding`、`buildAction`、`buildTimeout`、`buildReveal`、`buildFold`、`buildFairPlay`、`buildSettlement`、`buildRecovery`，外加 `presignFallbackGraph`（§6）。
+## §15.6 钱包/托管 — `derive`、`sign`、`combineSignShare`、`decryptToViewer`、`signProtocolMessage`、`selectFundingInputs`（§9）。
+## §15.7 NFT/访问接缝（后续）— `OB` 支撑的 `accessSession`、`revokeByExpiry`、`wrapContentKey`（不在核心扑克阶段交付；仅接缝）。
+## §15.8 依赖适配器 — `CTAdapter`、`BSAdapter`、`VAAdapter`、`OBAdapter`，每个都带一个用于测试的伪实现（§2.6）。
+## §15.9 链 — `broadcast(tx)`、`outpointStatus`、`txStatus`、`headers`、`conflicts`（基于 `BS.node`；§8.4）。
+## §15.10 `[EXPAND: Part 2]` 完整的类型签名、错误枚举，以及规范序列化规则。
 
 ---
 
-# §16 Build, CI/CD, reproducibility, release
+# §16 构建、CI/CD、可复现性、发布
 
-REQ-BUILD-001 Monorepo layout:
+REQ-BUILD-001 Monorepo 布局：
 ```
-/spec            (this document, requirements.yaml, traceability)
+/spec            (本文档、requirements.yaml、可追溯性)
 /packages
-  /protocol-types         (shared TS types: cards, ruleset, actions, state, tx)
-  /engine                 (deterministic core: state, betting, pots)
-  /hand-eval              (high + low evaluators; §5.3; vectors)
-  /game-holdem ...        (one package per variant module; §7)
-  /crypto-mentalpoker     (shuffle/reveal orchestration over CT/GB2616862; §4)
-  /script-templates-ts    (template builders; §6.6)
-  /tx-builder             (§6, §15.5)
-  /wallet-custody         (§9; software + threshold backends)
-  /adapters               (CT/BS/VA/OB adapters + fakes; §2.6, §15.8)
-  /sdk                    (§15 stable surface)
-  /ui-core                (React components/view-models; §11)
+  /protocol-types         (共享的 TS 类型：牌、规则集、行动、状态、交易)
+  /engine                 (确定性核心：状态、下注、底池)
+  /hand-eval              (高 + 低 评估器；§5.3；向量)
+  /game-holdem ...        (每个变体模块一个包；§7)
+  /crypto-mentalpoker     (基于 CT/GB2616862 的洗牌/揭示编排；§4)
+  /script-templates-ts    (模板构建器；§6.6)
+  /tx-builder             (§6、§15.5)
+  /wallet-custody         (§9；软件 + 门限后端)
+  /adapters               (CT/BS/VA/OB 适配器 + 伪实现；§2.6、§15.8)
+  /sdk                    (§15 稳定表面)
+  /ui-core                (React 组件/视图模型；§11)
 /apps
-  /client-web             (Vite web app)
-  /client-desktop         (Tauri wrapper)
-  /relay-go               (transport/index/discovery; §8)
-  /indexer-go             (table tx indexing/projections)
-/vm                       (compose, image build, bootstrap, self-test; §10)
+  /client-web             (Vite web 应用)
+  /client-desktop         (Tauri 包装)
+  /relay-go               (传输/索引/发现；§8)
+  /indexer-go             (牌桌交易索引/投影)
+/vm                       (compose、镜像构建、引导、自检；§10)
 /tests
   /unit /property /integration /interpreter /e2e /adversarial
 ```
-REQ-BUILD-002 Reproducible builds: pinned toolchains, locked lockfiles, recorded artifact
-hashes. REQ-BUILD-003 CI stages: typecheck (`tsc --strict`, Go `vet`/`-Werror`-equivalent),
-lint (Power-of-Ten ruleset), unit+property, interpreter tests (Genesis rules), integration,
-build VM image, E2E inside image, `reproduce`, traceability check. A red stage blocks merge.
-REQ-BUILD-004 Releases: Windows installer (Tauri, signed), web bundle, VM/container image,
-all from the same commit with recorded hashes; auto-update for desktop is a later track.
+REQ-BUILD-002 可复现构建：固定工具链、锁定的 lockfile、记录的产物哈希。REQ-BUILD-003 CI 各阶段：
+类型检查（`tsc --strict`、Go `vet`/`-Werror` 等价物）、lint（Power-of-Ten 规则集）、单元+属性、
+解释器测试（Genesis 规则）、集成、构建 VM 镜像、镜像内部 E2E、`reproduce`、可追溯性检查。红色阶段
+阻止合并。REQ-BUILD-004 发布物：Windows 安装程序（Tauri，已签名）、web 包、VM/容器镜像，全部出自同一
+提交并记录哈希；桌面的自动更新是后续轨道。
 
 ---
 
-# §17 Phased roadmap and per-phase acceptance gates
+# §17 分阶段路线图与各阶段验收关卡
 
-Each phase ends at a checkable gate (§14.7). Phases deliver the smallest thing that genuinely
-exercises more of the architecture, never a demo that skips the hard part.
+每个阶段都终止于一个可核查的关卡（§14.7）。各阶段交付能真正锻炼更多架构的最小事物，绝非跳过难点的
+演示。
 
-- **Phase 0 — Foundations wiring.** Adapters + fakes for CT/BS/VA/OB; protocol-types; the VM brings up node(regtest)+relay+empty client; `reproduce` green; traceability skeleton live. Gate: VM launches end-to-end, self-test passes, CI all green.
-- **Phase 1 — First playable (D1: heads-up NL Hold'em, regtest, with discovery).** Entropy commit/reveal; distributed shuffle; encrypted-card deal; full preflop→river betting FSM; minimum-reveal showdown; settlement; decision + recovery timeouts; fold-without-reveal; relay+LAN discovery; web + Windows shells; transcript+replay. Gate: §14.4 E2E + the Phase-1 adversarial subset pass; all Phase-1 REQs traced to passing tests; interpreter tests green for the templates used.
-- **Phase 2 — Robustness + fair-play + multi-way.** Fair-play transactions (§4.7) enforced and interpreter-tested; full pre-signed fallback graph (§6.4); side pots + multi-way showdown (§5.5); 6-max (D2); reconnect/resume. Gate: full adversarial suite (§14.6) passes for Hold'em multi-way.
-- **Phase 3 — More variants.** Omaha, Seven-Card Stud, Five-Card Draw, Razz as modules (§7.3, §5.8) with hand-eval (§5.3) vectors; betting structures PL/FL (§5.4). Gate: each variant's E2E + adversarial + vectors green.
-- **Phase 4 — Micro-betting + audit.** `bonded-subsat-channel` micro-betting (§5.7) with `Q*` settlement; `verifiable-accounting` selective-disclosure audit bundles (§12.4) with boundary surfaced. Gate: channel contested-state tests; audit bundle verifies independently.
-- **Phase 5 — Internet P2P + matchmaking + hardening.** Tier-A peer discovery + NAT traversal (§8.7); matchmaking/lobby at scale; performance; security review; desktop auto-update. Gate: cross-network play; load tests; review actioned.
-- **Later tracks (not gated here):** revocable-content NFTs (`overlay-broadcast` seam, §15.7); TEE custody backend (§9.3); Blackjack (D7); mobile; mainnet productionization (only with the §10.5 flag and the legal surface addressed outside this document).
-
----
-
-# §18 Threat model
-
-Each threat lists the **mechanism that bounds it** and an **honest residual risk** (P8).
-"Bounded" never means "eliminated." Threats are grouped; IDs are `THR-*`.
-
-## §18.1 Economic threats
-
-- **THR-ECON-1 Stale-state broadcast (publish an old, more-favourable channel/table state).** Bound: in micro-betting, the fixed one-satoshi bond is forfeited to honest parties on a stale broadcast (§2.2, INV-BS-2), so cheating's expected value is negative; in on-chain table settlement, a superseded state cannot spend the current state's UTXO (§8.5). Residual: an attacker who values griefing above one satoshi can still burn their bond to disrupt; bond size is a tunable, not a proof of deterrence.
-- **THR-ECON-2 Settlement manipulation (claim a pot one did not win).** Bound: settlement spends require a valid winning proof verified against concealed-card commitments (§5.6, §6.6 settlement template) and signatures; an unproven claim fails inside the interpreter (P9). Residual: depends on the soundness of the reveal/commitment binding (§4.5–§4.6) and, in Mode A, on the bounded-window key argument (§4.3).
-- **THR-ECON-3 Refusing to settle after losing (withhold a needed signature / scalar).** Bound: the pre-signed fallback graph and recovery timeout (§6.4) move value through an already-authorised path after maturity; the loser cannot strand the pot. Residual: a recovery delay (the timeout window) is imposed on the honest winner; the window is a UX/security trade.
-- **THR-ECON-4 Griefing / slow-rolling (acting only at the deadline to waste time).** Bound: decision timeouts with default-on-inaction (§6.4) cap per-action delay; repeat offenders can be deprioritised by the relay's lobby reputation (§8.7, later). Residual: within the timeout budget, an attacker can still maximise delay; mitigated only by tuning timeouts.
-
-## §18.2 Fairness threats
-
-- **THR-FAIR-1 Shuffle bias (skew the deck order).** Bound: the verifiable distributed shuffle composes every party's secret permutation, so no single party fixes the order (INV-CT-1); commit-reveal entropy (§4.1) stops late entropy selection. Residual: a *full* coalition of all parties could agree the order — but then there is no honest player to defraud; security degrades gracefully with coalition size up to N−1.
-- **THR-FAIR-2 Marked cards / mismatched keys (use keys that do not match what was committed).** Bound: fair-play transactions prove in-script that committed keys derive used keys; a mismatch forfeits bonded funds (§4.7). Residual: depends on the fair-play script being correct and on its scaling solution (REQ-CRYPTO-009 / RT-01 M3) being in place; until §19.C measures it, this control is specified but not proven at deck scale.
-- **THR-FAIR-3 Square-root-branch leakage (halve the key search space).** Bound: fix one branch and keep the choice consistent (REQ-CRYPTO-007); funds are short-lived (§4.3 Mode A window). Residual: a factor-2 reduction if the branch choice leaks; still computationally infeasible within the hand window, but stated, not dismissed.
-- **THR-FAIR-4 Collusion at reveal (Mode A scalar reuse).** Bound: per-card scalars are single-game and never reused (REQ-WALLET-004); combined-key funds live only for the hand. Residual: within a single game, colluding players already see each other's revealed cards (inherent to any mental-poker coalition); Mode B removes the whole-key-reconstruction exposure entirely for those who need it.
-
-## §18.3 Liveness threats
-
-- **THR-LIVE-1 Withheld reveal (player or board).** Bound: every reveal — including each board street — is an N-of-N cooperative transition with a timeout-default (§4.6, RT-01 M2); recovery resolves value, bond slashing applies where configured. Residual: the hand stalls for the timeout window before defaulting; a determined withholder converts a likely loss into a forced timeout, never a theft.
-- **THR-LIVE-2 Dropped quorum (a party disconnects mid-hand).** Bound: the timeout-default/recovery path (§6.4); no partial reshuffle is attempted (REQ-CRYPTO-012). Residual: the hand is voided/settled by fallback, not continued with a substitute; the table proceeds to the next hand with the then-seated set (§4.9).
-- **THR-LIVE-3 Mempool eviction / non-propagation.** Bound: the platform tracks table-level rebroadcast and can resubmit; it does not rely on mempool memory alone (§8.4). Residual: propagation delays can slow convergence; the speed path (§8.3) mitigates UX but not the underlying network.
-
-## §18.4 Client and key threats
-
-- **THR-CLIENT-1 Key extraction from the wallet/device.** Bound: the custody boundary (§9.3); Mode B threshold custody so no whole key exists in one place; optional TEE backend later. Residual: software custody (the Phase-1 default) trusts the local device; compromise of the device compromises that player's keys — stated plainly; the platform does not claim device-compromise resistance in Phase 1.
-- **THR-CLIENT-2 Hand-view leakage (screen capture, malware reading the decrypted face).** Bound: decryption only through the controlled viewer path (§11.5). Residual: a compromised client can leak its own player's view; this is unpreventable by protocol and is claimed only as partial mitigation (screen hardening is an optional later track).
-- **THR-CLIENT-3 Malicious relay.** Bound: the relay is transport/indexing only and is never the source of truth (P3, §8.1); clients derive state independently and detect a lying relay by reconstructing from the valid transaction set. Residual: a malicious relay can degrade liveness (drop/delay messages) and attempt eclipse; mitigated by the canonical network path (§8.3) and, in Phase 5, by the peer layer (§8.7).
-
-## §18.5 Protocol threats
-
-- **THR-PROTO-1 Replay of a branch against a different state.** Bound: every transaction binds `gid`, `rulesetHash`, round, state hash, and successor commitment (§6.3); a replayed branch fails the binding check in the interpreter. Residual: none beyond the soundness of the hash binding.
-- **THR-PROTO-2 Double-spend / conflicting action.** Bound: one spendable phase-right per phase; conflicting attempts cannot both be valid; deterministic conflict rules (§8.5) and the timeout-default make a double-spend strategically useless. Residual: pre-confirmation ordering disagreement, resolved by §8.5; final only at confirmation.
-- **THR-PROTO-3 Reorg of unconfirmed table transactions.** Bound: gameplay treats confirmation as final settlement for value leaving the table; in-hand state re-derives from the agreed ordering and is protected by the recovery path (§6.4). Residual: a deep reorg could invalidate an unconfirmed settlement; value that has left the table waits for confirmation depth (a ruleset parameter).
-
-## §18.6 The complete trust surface (P8 — nothing is "trustless" beyond this)
-
-A correct, honest player who runs an uncompromised client trusts exactly:
-
-1. **The discrete-logarithm / DDH hardness on secp256k1** (shuffle, keys, signatures).
-2. **Correct off-chain execution by the protocol participants** of the steps not enforced on-chain (the on-chain parts are enforced by the interpreter; the off-chain orchestration is trusted to follow the spec, and deviations are caught by fair-play, commitments, and replay where they touch chain state — but pure off-chain misbehaviour that never touches chain is bounded only by the timeout/economic mechanisms).
-3. **Soundness of the primitives:** HKDF, the AEAD (AES-256-GCM), SHA-256/double-SHA-256, ECDSA, and (Mode B) the threshold scheme.
-4. **Node and BSV consensus integrity:** that the local/connected node enforces post-Genesis consensus and that proof-of-work secures the header chain.
-5. **Custody-backend integrity at the configured tier:** software (device trust), threshold (no whole key), or TEE (hardware enclave) — whichever is configured (§9.3).
-
-Outside this list, the platform does not ask for trust. The word "trustless" is not used
-unconditionally anywhere; where prose uses "non-custodial" or similar it refers to the
-specific property enforced (no operator holds the deck or decides outcomes), bounded by
-this surface.
+- **第 0 阶段 — 基础接线。** CT/BS/VA/OB 的适配器 + 伪实现；protocol-types；VM 把节点(regtest)+中继+空客户端启动起来；`reproduce` 为绿；可追溯性骨架就位。关卡：VM 端到端启动、自检通过、CI 全绿。
+- **第 1 阶段 — 首个可玩（D1：单挑 NL 德州扑克、regtest、带发现）。** 熵承诺/揭示；分布式洗牌；加密牌发牌；完整的翻前→河牌下注 FSM；最小亮牌摊牌；结算；决策 + 恢复超时；弃牌不亮牌；中继+LAN 发现；web + Windows 外壳；记录誊本+重放。关卡：§14.4 E2E + 第 1 阶段对抗性子集通过；所有第 1 阶段 REQ 被追溯到通过的测试；所用模板的解释器测试为绿。
+- **第 2 阶段 — 健壮性 + 公平博弈 + 多人。** 公平博弈交易（§4.7）被强制执行并经解释器测试；完整的预签名回退图（§6.4）；边池 + 多人摊牌（§5.5）；6-max（D2）；重连/恢复。关卡：完整对抗性套件（§14.6）对德州扑克多人通过。
+- **第 3 阶段 — 更多变体。** 奥马哈、七张梭哈、五张抽牌、Razz 作为模块（§7.3、§5.8），带手牌评估（§5.3）向量；下注结构 PL/FL（§5.4）。关卡：每个变体的 E2E + 对抗性 + 向量为绿。
+- **第 4 阶段 — 微下注 + 审计。** `bonded-subsat-channel` 微下注（§5.7）配 `Q*` 结算；`verifiable-accounting` 选择性披露审计包（§12.4），并显示边界。关卡：通道争议状态测试；审计包可独立验证。
+- **第 5 阶段 — 互联网 P2P + 撮合 + 加固。** A 层对等发现 + NAT 穿透（§8.7）；规模化撮合/大厅；性能；安全评审；桌面自动更新。关卡：跨网络游玩；负载测试；评审已处理。
+- **后续轨道（此处不设关卡）：** 可撤销内容 NFT（`overlay-broadcast` 接缝，§15.7）；TEE 托管后端（§9.3）；21 点（D7）；移动端；主网产品化（仅在 §10.5 开关下并在本文档之外解决法律面之后）。
 
 ---
 
-# §19 Appendices
+# §18 威胁模型
 
-- §19.A Canonical serialization (cards, ruleset, actions, state, tx) — byte-exact. `[EXPAND: Part 3]`
-- §19.B Side-pot algorithm with a worked multi-all-in example. **(Filled below.)**
-- §19.C Script template byte schedules + SIGHASH choices, incl. the fair-play measurement (REQ-CRYPTO-009) and a per-hand transaction-count/byte cost envelope (RT-01 m2). `[EXPAND: Part 3]`
-- §19.D Hand-evaluation test-vector catalog (all categories, wheel, kickers, Omaha-2+3, ace-to-five low). **(Filled below — values generated by the reference evaluator, not hand-written.)**
-- §19.E Texas Hold'em full state-transition table. **(Filled below.)**
-- §19.F Requirements register (all `REQ-*`) with owning module and test family. **(Filled below — auto-generated from this document; the cited section is canonical.)**
-- §19.G References (GB2616862A; the prof-faustus repositories; NPR 7150.2; JPL Power of Ten; RFC 5869; SEC-1).
+每个威胁都列出**限定它的机制**和一项**如实陈述的残余风险**（P8）。"被限定"绝不意味着"被消除"。
+威胁按组划分；ID 为 `THR-*`。
 
-## §19.B Side-pot algorithm (with worked example)
+## §18.1 经济性威胁
 
-**Inputs:** `contrib[p]` = total chips player `p` committed this hand (folded players
-included — their chips are in the pot but they cannot win); `live` = set of players not
-folded (eligible to win).
+- **THR-ECON-1 过期状态广播（发布一个旧的、对自己更有利的通道/牌桌状态）。** 限定：在微下注中，过期广播时那个固定的一聪保证金被罚没给诚实方（§2.2、INV-BS-2），因此作弊的期望值为负；在链上牌桌结算中，一个被取代的状态无法花费当前状态的 UTXO（§8.5）。残余：一个看重捣乱甚于一聪的攻击者仍可烧掉其保证金来扰乱；保证金大小是一个可调项，而非一个威慑证明。
+- **THR-ECON-2 结算操纵（主张一个自己并未赢得的底池）。** 限定：结算花费要求一个有效的获胜证明，对照隐藏牌承诺（§5.6、§6.6 结算模板）和签名进行验证；一个未经证明的主张在解释器内部失败（P9）。残余：取决于揭示/承诺绑定的健全性（§4.5–§4.6），以及在 Mode A 中取决于有界窗口密钥论证（§4.3）。
+- **THR-ECON-3 输牌后拒绝结算（扣留一个所需的签名/标量）。** 限定：预签名回退图和恢复超时（§6.4）在成熟后经一条已被授权的路径移动价值；输家无法滞留底池。残余：诚实的赢家被强加一段恢复延迟（超时窗口）；该窗口是一种 UX/安全权衡。
+- **THR-ECON-4 捣乱 / 慢滚（仅在截止时刻行动以浪费时间）。** 限定：带不作为默认的决策超时（§6.4）封顶每次行动的延迟；惯犯可被中继的大厅声誉降级（§8.7，后续）。残余：在超时预算之内，攻击者仍可最大化延迟；只能靠调节超时来缓解。
 
-**Algorithm (deterministic; satisfies P2):**
+## §18.2 公平性威胁
 
-1. Build the sorted set of distinct positive contribution levels across **all** players: `L₁ < L₂ < … < L_m`.
-2. `prev ← 0`. For `i = 1..m`:
-   a. `increment ← Lᵢ − prev`.
-   b. `contributors_i ←` all players (live **or** folded) with `contrib[p] ≥ Lᵢ`.
-   c. `potᵢ.amount ← increment × |contributors_i|`.
-   d. `potᵢ.eligible ←` the **live** players with `contrib[p] ≥ Lᵢ`.
-   e. `prev ← Lᵢ`.
-3. Any `potᵢ` with `|potᵢ.eligible| = 1` is **awarded to that player without showdown** (this is the "uncalled/returned" case — the sole eligible contributor takes it back).
-4. At showdown, award each remaining `potᵢ` to the best eligible **live** hand by `compare` (§5.3); ties split per §5.5.1 (even division; odd chip by the deterministic rule, never by suit).
-5. **Conservation check (assertion, REQ-ENG):** `Σ potᵢ.amount = Σ_p contrib[p]`. A violation is a defect.
+- **THR-FAIR-1 洗牌偏置（扭曲牌堆顺序）。** 限定：可验证的分布式洗牌复合每一方的秘密置换，因此没有任何单方能固定顺序（INV-CT-1）；承诺-揭示熵（§4.1）阻止迟到的熵选择。残余：所有各方的*完整*联盟可以约定顺序 — 但那样就没有诚实玩家可被欺诈了；安全性随联盟规模直到 N−1 而优雅降级。
+- **THR-FAIR-2 做记号的牌 / 不匹配的密钥（使用与所承诺不符的密钥）。** 限定：公平博弈交易在脚本内证明已承诺密钥可推导出所用密钥；不匹配会罚没绑定的资金（§4.7）。残余：取决于公平博弈脚本正确，以及其扩展性方案（REQ-CRYPTO-009 / RT-01 M3）到位；在 §19.C 对其测量之前，这一控制虽已规定但未在牌堆规模上得到证明。
+- **THR-FAIR-3 平方根分支泄露（使密钥搜索空间减半）。** 限定：固定一个分支并保持选择一致（REQ-CRYPTO-007）；资金是短命的（§4.3 Mode A 窗口）。残余：若分支选择泄露则有 2 倍的减少；在手牌窗口内仍在计算上不可行，但予以陈述而非搪塞。
+- **THR-FAIR-4 揭示时的合谋（Mode A 标量重用）。** 限定：逐牌标量是单对局的且绝不重用（REQ-WALLET-004）；联合密钥资金只在该手牌期间存活。残余：在单一对局内，合谋的玩家本就已经看到彼此被揭示的牌（这是任何心智扑克联盟固有的）；Mode B 为有需要者彻底消除了完整密钥重构的暴露。
 
-**Worked example (3-handed, multi-all-in preflop, no folds for clarity).**
+## §18.3 活性威胁
 
-Stacks/contributions: `A = 100`, `B = 60`, `C = 40`. All three are all-in. `live = {A,B,C}`.
+- **THR-LIVE-1 扣留揭示（玩家或公共牌）。** 限定：每次揭示 — 包括每条公共牌街 — 都是一次带超时默认的 N-of-N 协作转换（§4.6、RT-01 M2）；恢复解决价值，在已配置之处罚没保证金。残余：手牌在默认处理前停滞一个超时窗口；一个铁了心的扣留者把一次很可能的输牌转变为一次强制超时，而绝非一次盗取。
+- **THR-LIVE-2 丧失法定人数（一方在手牌中途掉线）。** 限定：超时默认/恢复路径（§6.4）；不尝试部分重洗（REQ-CRYPTO-012）。残余：手牌由回退作废/结算，而不会用替补者继续；牌桌以当时在座集合进入下一手（§4.9）。
+- **THR-LIVE-3 内存池逐出 / 未传播。** 限定：平台追踪牌桌级重广播并能重新提交；它不仅仅依赖内存池记忆（§8.4）。残余：传播延迟可减慢收敛；速度路径（§8.3）缓解 UX 但不缓解底层网络。
 
-- Distinct levels: `L₁=40, L₂=60, L₃=100`.
-- **Pot 1 (main):** increment `40−0=40`; contributors with `contrib ≥ 40` = {A,B,C} (3); amount `40×3 = 120`; eligible (live) = {A,B,C}.
-- **Pot 2 (side 1):** increment `60−40=20`; contributors with `contrib ≥ 60` = {A,B} (2); amount `20×2 = 40`; eligible = {A,B}.
-- **Pot 3 (side 2):** increment `100−60=40`; contributors with `contrib ≥ 100` = {A} (1); amount `40×1 = 40`; eligible = {A} → **single eligible ⇒ returned to A** (step 3).
-- Conservation: `120 + 40 + 40 = 200 = 100+60+40`. ✓
+## §18.4 客户端与密钥威胁
 
-Suppose hand strength `C > B > A`:
+- **THR-CLIENT-1 从钱包/设备提取密钥。** 限定：托管边界（§9.3）；Mode B 门限托管使任何完整密钥都不在单处存在；后续可选 TEE 后端。残余：软件托管（第 1 阶段默认）信任本地设备；设备被攻陷即攻陷该玩家的密钥 — 直言不讳；平台在第 1 阶段不主张抵抗设备攻陷。
+- **THR-CLIENT-2 手牌视图泄露（屏幕截图、读取已解密牌面的恶意软件）。** 限定：仅经受控的查看器路径进行解密（§11.5）。残余：被攻陷的客户端可泄露其自身玩家的视图；这无法靠协议防止，只作为部分缓解来主张（屏幕加固是一个可选的后续轨道）。
+- **THR-CLIENT-3 恶意中继。** 限定：中继仅负责传输/索引，绝非真相之源（P3、§8.1）；客户端独立派生状态，并通过从有效交易集重建来检测撒谎的中继。残余：恶意中继可降低活性（丢弃/延迟消息）并尝试日蚀（eclipse）；由规范网络路径（§8.3）缓解，并在第 5 阶段由对等层（§8.7）缓解。
 
-- Main pot 120 → **C** (best among {A,B,C}). C net: `−40 + 120 = +80`.
-- Side 1 (40) → **B** (best among {A,B}; C not eligible). B net: `−60 + 40 = −20`.
-- Side 2 (40) → **returned to A**. A net: `−100 + 40 = −60`.
-- Net sum: `+80 −20 −60 = 0`. ✓ (C, the best hand, cannot win more than the pot C contributed to — C is capped at the main pot, exactly as the rules require.)
+## §18.5 协议威胁
 
-**Edge cases the implementation must cover (each a §19.D vector):** a folded player whose
-contribution sits in a pot they cannot win; two players tied for a side pot (even split +
-odd-chip rule); an all-in exactly equal to another player's stack (levels coincide → one
-layer, not two); an uncalled final raise (single-eligible top pot returned).
+- **THR-PROTO-1 将某分支重放到不同状态。** 限定：每一笔交易都绑定 `gid`、`rulesetHash`、轮次、状态哈希和后继承诺（§6.3）；被重放的分支在解释器中未通过绑定检查。残余：除哈希绑定的健全性之外没有。
+- **THR-PROTO-2 双花 / 冲突行动。** 限定：每阶段一个可花费的阶段权；冲突的尝试不能同时有效；确定性冲突规则（§8.5）和超时默认使双花在策略上无用。残余：确认前的排序分歧，由 §8.5 解决；只有在确认时才最终敲定。
+- **THR-PROTO-3 未确认牌桌交易的重组。** 限定：对于离开牌桌的价值，游戏玩法将确认视为最终结算；手牌内状态从已商定排序重新派生，并受恢复路径保护（§6.4）。残余：一次深度重组可能使一次未确认的结算失效；已离开牌桌的价值要等待确认深度（一个规则集参数）。
 
-## §19.D Hand-evaluation test vectors (generated by the reference evaluator)
+## §18.6 完整的信任面（P8 — 任何东西都不会"无需信任"超出此列表）
 
-**Provenance (P6/P10).** Every value below was produced by a reference evaluator run, not
-written from memory. The oracle implements the §5.1 encoding and the §5.3 rules; it is the
-source of truth the production evaluator must reproduce **bit-for-bit** (REQ-POKER-003).
-`reproduce` (§14.5) regenerates this table and exits non-zero on any mismatch. Encoding
-recap: `card_index = rank*4 + suit`, rank `2=0 … A=12`, suit `c=0,d=1,h=2,s=3`. The
-"tiebreak" tuple uses internal rank values `2..14` (A=14), with the wheel straight scored
-as high-card 5. `compare` orders by `(category, tiebreak)`; higher is better.
+一个运行未被攻陷客户端的、正确而诚实的玩家所信任的恰好是：
 
-**High-hand category vectors (5 cards):**
+1. **secp256k1 上的离散对数 / DDH 困难性**（洗牌、密钥、签名）。
+2. **协议参与者对未在链上强制执行的步骤的正确链下执行**（链上部分由解释器强制执行；链下编排被信任遵循规范，凡触及链状态之处，偏离都会被公平博弈、承诺和重放所捕获 — 但从不触及链的纯链下不端行为只由超时/经济机制限定）。
+3. **各原语的健全性：** HKDF、AEAD（AES-256-GCM）、SHA-256/双重 SHA-256、ECDSA，以及（Mode B）门限方案。
+4. **节点与 BSV 共识完整性：** 即本地/所连接节点强制执行 Genesis 升级后共识，且工作量证明保护区块头链。
+5. **所配置层级上的托管后端完整性：** 软件（设备信任）、门限（无完整密钥）或 TEE（硬件飞地）— 取决于配置何者（§9.3）。
 
-| Hand | Cards | Canonical indices | Category | Tiebreak |
+在此列表之外，平台不要求信任。"无需信任"一词在任何地方都不被无条件使用；凡散文使用"非托管"或类似
+措辞之处，它指的是被强制执行的特定属性（没有运营方持有牌堆或决定结果），并受此信任面限定。
+
+---
+
+# §19 附录
+
+- §19.A 规范序列化（牌、规则集、行动、状态、交易）— 字节精确。`[EXPAND: Part 3]`
+- §19.B 边池算法，附一个多人全下的实做示例。**（下方已填充。）**
+- §19.C 脚本模板字节排布 + SIGHASH 选择，含公平博弈测量（REQ-CRYPTO-009）和一个每手牌的交易数/字节成本包络（RT-01 m2）。`[EXPAND: Part 3]`
+- §19.D 手牌评估测试向量目录（所有类别、轮牌、踢脚、奥马哈 2+3、ace-to-five 低牌）。**（下方已填充 — 数值由参考评估器生成，非手写。）**
+- §19.E 德州扑克完整状态转换表。**（下方已填充。）**
+- §19.F 需求登记册（所有 `REQ-*`），附所属模块与测试族。**（下方已填充 — 从本文档自动生成；被引用的章节具规范性。）**
+- §19.G 参考文献（GB2616862A；prof-faustus 仓库群；NPR 7150.2；JPL Power of Ten；RFC 5869；SEC-1）。
+
+## §19.B 边池算法（附实做示例）
+
+**输入：** `contrib[p]` = 玩家 `p` 本手牌投入的总筹码（包括已弃牌玩家 — 他们的筹码在底池中但无法
+获胜）；`live` = 未弃牌（有资格获胜）的玩家集合。
+
+**算法（确定性；满足 P2）：**
+
+1. 在**所有**玩家上构建不同正投入额度的有序集合：`L₁ < L₂ < … < L_m`。
+2. `prev ← 0`。对 `i = 1..m`：
+   a. `increment ← Lᵢ − prev`。
+   b. `contributors_i ←` 所有满足 `contrib[p] ≥ Lᵢ` 的玩家（存活**或**已弃牌）。
+   c. `potᵢ.amount ← increment × |contributors_i|`。
+   d. `potᵢ.eligible ←` 满足 `contrib[p] ≥ Lᵢ` 的**存活**玩家。
+   e. `prev ← Lᵢ`。
+3. 任何满足 `|potᵢ.eligible| = 1` 的 `potᵢ` 都**不经摊牌判给该玩家**（这是"未被跟注/退回"的情形 — 唯一有资格的投入者将其取回）。
+4. 在摊牌时，按 `compare`（§5.3）将每个剩余的 `potᵢ` 判给最佳的有资格**存活**手牌；平局按 §5.5.1 拆分（均分；奇数筹码按确定性规则，绝不按花色）。
+5. **守恒检查（断言，REQ-ENG）：** `Σ potᵢ.amount = Σ_p contrib[p]`。违反即为缺陷。
+
+**实做示例（3 人、翻前多人全下，为清晰起见无弃牌）。**
+
+筹码量/投入：`A = 100`、`B = 60`、`C = 40`。三人全部全下。`live = {A,B,C}`。
+
+- 不同额度：`L₁=40, L₂=60, L₃=100`。
+- **Pot 1（主池）：** 增量 `40−0=40`；满足 `contrib ≥ 40` 的投入者 = {A,B,C}（3 人）；金额 `40×3 = 120`；有资格（存活）= {A,B,C}。
+- **Pot 2（边池 1）：** 增量 `60−40=20`；满足 `contrib ≥ 60` 的投入者 = {A,B}（2 人）；金额 `20×2 = 40`；有资格 = {A,B}。
+- **Pot 3（边池 2）：** 增量 `100−60=40`；满足 `contrib ≥ 100` 的投入者 = {A}（1 人）；金额 `40×1 = 40`；有资格 = {A} → **唯一有资格 ⇒ 退回给 A**（步骤 3）。
+- 守恒：`120 + 40 + 40 = 200 = 100+60+40`。✓
+
+假设手牌强度 `C > B > A`：
+
+- 主池 120 → **C**（{A,B,C} 中最佳）。C 净额：`−40 + 120 = +80`。
+- 边池 1（40）→ **B**（{A,B} 中最佳；C 不具资格）。B 净额：`−60 + 40 = −20`。
+- 边池 2（40）→ **退回给 A**。A 净额：`−100 + 40 = −60`。
+- 净额之和：`+80 −20 −60 = 0`。✓（C 这手最佳手牌赢不到超过它所参与的底池 — C 被封顶在主池，恰如规则所要求。）
+
+**实现必须覆盖的边缘情形（每个都是一个 §19.D 向量）：** 一个已弃牌玩家，其投入位于一个他无法赢得的
+底池中；两名玩家就某边池平局（均分 + 奇数筹码规则）；一次全下恰好等于另一玩家的筹码量（额度重合 →
+一层，而非两层）；一次未被跟注的最后加注（唯一有资格的顶层底池被退回）。
+
+## §19.D 手牌评估测试向量（由参考评估器生成）
+
+**来历（P6/P10）。** 下方每个数值都由一次参考评估器运行产生，而非凭记忆写出。该 oracle 实现 §5.1 的
+编码和 §5.3 的规则；它是生产评估器必须**逐位**复现的真相之源（REQ-POKER-003）。`reproduce`（§14.5）
+重新生成此表，并在任何不匹配时以非零退出。编码回顾：`card_index = rank*4 + suit`，rank `2=0 … A=12`，
+suit `c=0,d=1,h=2,s=3`。"tiebreak" 元组使用内部点数值 `2..14`（A=14），其中轮牌顺子按高牌 5 计分。
+`compare` 按 `(category, tiebreak)` 排序；越高越好。
+
+**高手牌类别向量（5 张牌）：**
+
+| 手牌 | 牌 | 规范索引 | 类别 | Tiebreak |
 |---|---|---|---|---|
-| Royal flush (spades) | As Ks Qs Js Ts | 51 47 43 39 35 | straight flush | (14) |
-| Straight flush 9-high (hearts) | 9h 8h 7h 6h 5h | 30 26 22 18 14 | straight flush | (9) |
-| Steel wheel (clubs) | 5c 4c 3c 2c Ac | 12 8 4 0 48 | straight flush | (5) |
-| Quads, K kicker | Qs Qh Qd Qc Ks | 43 42 41 40 47 | four of a kind | (12, 13) |
-| Quads, 2 kicker | Qs Qh Qd Qc 2s | 43 42 41 40 3 | four of a kind | (12, 2) |
-| Full house AAA KK | As Ah Ad Ks Kh | 51 50 49 47 46 | full house | (14, 13) |
-| Full house KKK AA | Ks Kh Kd As Ah | 47 46 45 51 50 | full house | (13, 14) |
-| Flush A-high (diamonds) | Ad Jd 9d 6d 3d | 49 37 29 17 5 | flush | (14, 11, 9, 6, 3) |
-| Flush K-high (diamonds) | Kd Jd 9d 6d 3d | 45 37 29 17 5 | flush | (13, 11, 9, 6, 3) |
-| Straight A-high (broadway) | As Kd Qh Jc Ts | 51 45 42 36 35 | straight | (14) |
-| Straight 5-high (wheel) | 5s 4d 3h 2c As | 15 9 6 0 51 | straight | (5) |
-| Trips 7s, K Q kickers | 7s 7h 7d Ks Qd | 23 22 21 47 41 | three of a kind | (7, 13, 12) |
-| Two pair A K, kicker 5 | As Ah Ks Kh 5d | 51 50 47 46 13 | two pair | (14, 13, 5) |
-| Two pair A K, kicker 4 | As Ah Ks Kh 4d | 51 50 47 46 9 | two pair | (14, 13, 4) |
-| Pair 8s, A 7 5 kickers | 8s 8h Ad 7c 5h | 27 26 49 20 14 | one pair | (8, 14, 7, 5) |
-| Pair 8s, K 7 5 kickers | 8s 8h Kd 7c 5h | 27 26 45 20 14 | one pair | (8, 13, 7, 5) |
-| High card A K J 8 6 | As Kd Jh 8c 6s | 51 45 38 24 19 | high card | (14, 13, 11, 8, 6) |
+| 同花大顺（黑桃） | As Ks Qs Js Ts | 51 47 43 39 35 | straight flush | (14) |
+| 同花顺 9 高（红心） | 9h 8h 7h 6h 5h | 30 26 22 18 14 | straight flush | (9) |
+| 钢轮同花顺（梅花） | 5c 4c 3c 2c Ac | 12 8 4 0 48 | straight flush | (5) |
+| 四条，K 踢脚 | Qs Qh Qd Qc Ks | 43 42 41 40 47 | four of a kind | (12, 13) |
+| 四条，2 踢脚 | Qs Qh Qd Qc 2s | 43 42 41 40 3 | four of a kind | (12, 2) |
+| 葫芦 AAA KK | As Ah Ad Ks Kh | 51 50 49 47 46 | full house | (14, 13) |
+| 葫芦 KKK AA | Ks Kh Kd As Ah | 47 46 45 51 50 | full house | (13, 14) |
+| 同花 A 高（方块） | Ad Jd 9d 6d 3d | 49 37 29 17 5 | flush | (14, 11, 9, 6, 3) |
+| 同花 K 高（方块） | Kd Jd 9d 6d 3d | 45 37 29 17 5 | flush | (13, 11, 9, 6, 3) |
+| 顺子 A 高（百老汇/broadway） | As Kd Qh Jc Ts | 51 45 42 36 35 | straight | (14) |
+| 顺子 5 高（轮牌/wheel） | 5s 4d 3h 2c As | 15 9 6 0 51 | straight | (5) |
+| 三条 7，K Q 踢脚 | 7s 7h 7d Ks Qd | 23 22 21 47 41 | three of a kind | (7, 13, 12) |
+| 两对 A K，踢脚 5 | As Ah Ks Kh 5d | 51 50 47 46 13 | two pair | (14, 13, 5) |
+| 两对 A K，踢脚 4 | As Ah Ks Kh 4d | 51 50 47 46 9 | two pair | (14, 13, 4) |
+| 一对 8，A 7 5 踢脚 | 8s 8h Ad 7c 5h | 27 26 49 20 14 | one pair | (8, 14, 7, 5) |
+| 一对 8，K 7 5 踢脚 | 8s 8h Kd 7c 5h | 27 26 45 20 14 | one pair | (8, 13, 7, 5) |
+| 高牌 A K J 8 6 | As Kd Jh 8c 6s | 51 45 38 24 19 | high card | (14, 13, 11, 8, 6) |
 
-**Consistency results (all computed, all pass):** category ladder strictly descending
-(royal > sf-9 > steel-wheel > quads > boat > flush > straight > trips > two-pair > pair >
-high) = **true**; quads(K-kick) > quads(2-kick) = **true**; AAA-KK > KKK-AA = **true**;
-flush(A) > flush(K) = **true**; two-pair(kicker 5) > two-pair(kicker 4) = **true**;
-pair(A-kick) > pair(K-kick) = **true**; broadway > wheel = **true**; transitivity over
-**20,000** random triples = **true**.
+**一致性结果（全部经计算，全部通过）：** 类别阶梯严格递减
+（royal > sf-9 > steel-wheel > quads > boat > flush > straight > trips > two-pair > pair >
+high）= **true**；quads(K-kick) > quads(2-kick) = **true**；AAA-KK > KKK-AA = **true**；
+flush(A) > flush(K) = **true**；two-pair(踢脚 5) > two-pair(踢脚 4) = **true**；
+pair(A-kick) > pair(K-kick) = **true**；broadway > wheel = **true**；在 **20,000** 个随机三元组上的
+传递性 = **true**。
 
-**Omaha 2+3 constraint vector (proves the generic best-of-7 is WRONG for Omaha,
-REQ-POKER-005):**
+**奥马哈 2+3 约束向量（证明通用的七选五对奥马哈是错误的，REQ-POKER-005）：**
 
-- Board `As Ks Qs 2s 7d` (four spades); hole `Js 9h 4c 3d` (exactly one spade).
-- Generic best-of-7 (Hold'em-style) → **flush** A-K-Q-J-2♠, tiebreak (14,13,12,11,2), using `As Ks Qs 2s Js`.
-- Correct Omaha (exactly 2 hole + 3 board) → **high card** A-K-Q-J-9, tiebreak (14,13,12,11,9), using `Js 9h | As Ks Qs`.
-- They **differ**: Hold'em sees a flush; Omaha cannot, because only one spade is in hand. The Omaha evaluator is therefore a distinct, separately-vectored path.
+- 公共牌 `As Ks Qs 2s 7d`（四张黑桃）；底牌 `Js 9h 4c 3d`（恰好一张黑桃）。
+- 通用七选五（德州风格）→ **同花** A-K-Q-J-2♠，tiebreak (14,13,12,11,2)，使用 `As Ks Qs 2s Js`。
+- 正确的奥马哈（恰好 2 张底牌 + 3 张公共牌）→ **高牌** A-K-Q-J-9，tiebreak (14,13,12,11,9)，使用 `Js 9h | As Ks Qs`。
+- 二者**不同**：德州看到一个同花；奥马哈看不到，因为手中只有一张黑桃。因此奥马哈评估器是一条独立的、单独编向量的路径。
 
-**Ace-to-five low (Razz) vectors — 7 cards, best 5-card low, lower is better
-(REQ-POKER-006). Pattern = `(pair_penalty, sorted-desc low values; A=1)`:**
+**Ace-to-five 低牌（Razz）向量 — 7 张牌，最佳 5 张低牌，越低越好
+（REQ-POKER-006）。模式 = `(pair_penalty, 降序排列的低牌值; A=1)`：**
 
-| Hand | Seven cards | Best 5-card low | Pattern |
+| 手牌 | 七张牌 | 最佳 5 张低牌 | 模式 |
 |---|---|---|---|
-| Wheel (the bicycle) | Ah 2d 3c 4s 5h Kd Qs | Ah 2d 3c 4s 5h | (0, (5,4,3,2,1)) |
-| Six-low 6-4-3-2-A | Ah 2d 3c 4s 6h Ks Qd | Ah 2d 3c 4s 6h | (0, (6,4,3,2,1)) |
-| Seven-low 7-5-4-2-A | Ah 2d 4c 5s 7h Ks Qd | Ah 2d 4c 5s 7h | (0, (7,5,4,2,1)) |
-| Pair forces a NINE-low | Ah Ad 2c 3s 8h 9s Td | Ah 2c 3s 8h 9s | (0, (9,8,3,2,1)) |
-| All hearts still the wheel | Ah 2h 3h 4h 5h Kh Qh | Ah 2h 3h 4h 5h | (0, (5,4,3,2,1)) |
+| 轮牌（the bicycle） | Ah 2d 3c 4s 5h Kd Qs | Ah 2d 3c 4s 5h | (0, (5,4,3,2,1)) |
+| 6 低 6-4-3-2-A | Ah 2d 3c 4s 6h Ks Qd | Ah 2d 3c 4s 6h | (0, (6,4,3,2,1)) |
+| 7 低 7-5-4-2-A | Ah 2d 4c 5s 7h Ks Qd | Ah 2d 4c 5s 7h | (0, (7,5,4,2,1)) |
+| 对子迫使一个 9 低 | Ah Ad 2c 3s 8h 9s Td | Ah 2c 3s 8h 9s | (0, (9,8,3,2,1)) |
+| 全红心仍然是轮牌 | Ah 2h 3h 4h 5h Kh Qh | Ah 2h 3h 4h 5h | (0, (5,4,3,2,1)) |
 
-Computed orderings: bicycle < six-low < seven-low = **true**; the no-pair seven-low beats
-the (pair-forced) nine-low = **true**; the all-hearts hand evaluates **identically to the
-wheel** (flushes are ignored for low) = **true**. Note: the paired example is labelled a
-**nine-low**, not eight-low — the duplicate ace cannot be reused, so the best distinct
-five are 9-8-3-2-A; the computed result governs the label (a hand-written "8-low" would
-have been wrong, which is exactly why these are generated, not asserted).
+经计算的排序：bicycle < 6 低 < 7 低 = **true**；无对子的 7 低胜过（被对子迫使的）9 低 = **true**；
+全红心的手牌评估结果与**轮牌完全相同**（低牌忽略同花）= **true**。注意：成对的那个示例被标注为
+**9 低**，而非 8 低 — 重复的 A 无法被重用，因此最佳的五个不同点数是 9-8-3-2-A；以计算结果为准来定标签
+（手写的 "8 低" 本会出错，这正是为什么这些是生成而非断言的原因）。
 
-**Edge cases still owed in this catalog (next pass):** an explicit tie/odd-chip split pair
-of hands; coincident all-in levels collapsing to one side-pot layer; a folded-but-contributing
-player in a side pot (cross-links to §19.B); the Omaha-8 qualifying-low boundary at exactly
-8-high.
+**本目录中仍欠的边缘情形（下一轮）：** 一对显式平局/奇数筹码拆分的手牌；重合的全下额度坍缩为一个
+边池层；某边池中一个已弃牌但有投入的玩家（与 §19.B 交叉关联）；恰好在 8 高处的 Omaha-8 合格低牌
+边界。
 
-## §19.E Texas Hold'em — full state-transition table (heads-up NL reference, D1)
+## §19.E 德州扑克 — 完整状态转换表（单挑 NL 参考实现，D1）
 
-Every actionable state has a cooperative successor **and** a timeout-default successor
-(P4). "N-of-N reveal" states are cooperative transitions whose timeout-default is the
-recovery path (§6.4, RT-01 M2). Heads-up order: **button = small blind, acts first
-pre-flop and last post-flop**; the other seat is big blind.
+每个可操作状态都有一个协作后继**以及**一个超时默认后继（P4）。"N-of-N reveal" 状态是协作转换，
+其超时默认是恢复路径（§6.4、RT-01 M2）。单挑顺序：**按钮 = 小盲，翻前先行动、翻后后行动**；另一个
+座位是大盲。
 
-| State | Entry condition | Events / legal actions | Guard | Cooperative successor | Timeout-default successor |
+| State | 进入条件 | 事件 / 合法行动 | 守卫 | 协作后继 | 超时默认后继 |
 |---|---|---|---|---|---|
-| S0 TABLE_LOCKED | 2 seats funded; `rulesetHash` bound (§5.2) | — | quorum=2 | S1 POST_BLINDS | RECOVERY (table-abort refund) |
-| S1 POST_BLINDS | from S0 | post SB (button), post BB | blinds match ruleset | S2 SHUFFLE | RECOVERY (no-blind unwind) |
-| S2 SHUFFLE | from S1 | each party: commit entropy (§4.1) → shuffle stages (§4.4) | all N commits before any reveal; fair-play committed (§4.7) | S3 DEAL_HOLE | RECOVERY (deck-build timeout) |
-| S3 DEAL_HOLE | from S2 | draw 2 concealed cards to each seat (§4.3 draw) | exactly 2/seat; commitments recorded | S4 BET_PREFLOP | RECOVERY (deal timeout) |
-| S4 BET_PREFLOP | from S3 | check?/call/bet/raise/fold (button first) | betting rules §5.4; min-raise §5.4 | round-close → S5; any fold → FOLD_END | actor times out → default check if legal else **fold** → FOLD_END or round-close |
-| S5 REVEAL_FLOP | from S4 round-close | N-of-N release flop decryption (3 board) | all N release | S6 BET_FLOP | RECOVERY (reveal timeout) |
-| S6 BET_FLOP | from S5 | check/bet/call/raise/fold (BB first) | §5.4 | round-close → S7; fold → FOLD_END | timeout → default check/fold |
-| S7 REVEAL_TURN | from S6 | N-of-N release turn (1 board) | all N release | S8 BET_TURN | RECOVERY (reveal timeout) |
-| S8 BET_TURN | from S7 | check/bet/call/raise/fold | §5.4 | round-close → S9; fold → FOLD_END | timeout → default check/fold |
-| S9 REVEAL_RIVER | from S8 | N-of-N release river (1 board) | all N release | S10 BET_RIVER | RECOVERY (reveal timeout) |
-| S10 BET_RIVER | from S9 | check/bet/call/raise/fold | §5.4 | round-close → S11; fold → FOLD_END | timeout → default check/fold |
-| S11 SHOWDOWN | from S10 round-close | minimum reveal (§5.6): last aggressor shows first; others show/muck | revealed hand verifies vs commitments (§6.6) | S12 SETTLE | RECOVERY (showdown/reveal timeout forfeit) |
-| S12 SETTLE | from S11 or FOLD_END | settle pot(s) §5.5/§5.7; close-out spend (§4.3, §6.6) | winning proof + signatures valid in interpreter (P9) | S13 HAND_END | RECOVERY (settlement timeout) |
-| FOLD_END | any BET_* fold leaves one live player | award uncontested pot to the sole live player without reveal (P5) | one live player remains | S12 SETTLE | — (no actor to time out; proceeds) |
-| S13 HAND_END | from S12 | rotate button; re-seat sit-out/join (§4.9) | seats still ≥ 2 | S1 POST_BLINDS (next hand) | TABLE_CLOSE (refund remaining) |
-| RECOVERY | timeout from any state | execute the pre-signed fallback for that state (§6.4) | maturity reached (tx-level nLockTime, §6.2) | value resolved per fallback graph | — (terminal) |
+| S0 TABLE_LOCKED | 2 个座位已注资；`rulesetHash` 已绑定（§5.2） | — | 法定人数=2 | S1 POST_BLINDS | RECOVERY（建桌中止退款） |
+| S1 POST_BLINDS | 从 S0 | 下 SB（按钮）、下 BB | 盲注与规则集匹配 | S2 SHUFFLE | RECOVERY（无盲注解绑） |
+| S2 SHUFFLE | 从 S1 | 每一方：承诺熵（§4.1）→ 洗牌阶段（§4.4） | 在任何揭示前完成全部 N 个承诺；公平博弈已承诺（§4.7） | S3 DEAL_HOLE | RECOVERY（建牌堆超时） |
+| S3 DEAL_HOLE | 从 S2 | 向每座位抽 2 张隐藏牌（§4.3 draw） | 每座位恰好 2 张；承诺已记录 | S4 BET_PREFLOP | RECOVERY（发牌超时） |
+| S4 BET_PREFLOP | 从 S3 | 看牌?/跟注/下注/加注/弃牌（按钮先） | 下注规则 §5.4；最小加注 §5.4 | 本轮关闭 → S5；任何弃牌 → FOLD_END | 行动者超时 → 若合法则默认看牌否则**弃牌** → FOLD_END 或本轮关闭 |
+| S5 REVEAL_FLOP | 从 S4 本轮关闭 | N-of-N 释放翻牌解密（3 张公共牌） | 全部 N 方释放 | S6 BET_FLOP | RECOVERY（揭示超时） |
+| S6 BET_FLOP | 从 S5 | 看牌/下注/跟注/加注/弃牌（BB 先） | §5.4 | 本轮关闭 → S7；弃牌 → FOLD_END | 超时 → 默认看牌/弃牌 |
+| S7 REVEAL_TURN | 从 S6 | N-of-N 释放转牌（1 张公共牌） | 全部 N 方释放 | S8 BET_TURN | RECOVERY（揭示超时） |
+| S8 BET_TURN | 从 S7 | 看牌/下注/跟注/加注/弃牌 | §5.4 | 本轮关闭 → S9；弃牌 → FOLD_END | 超时 → 默认看牌/弃牌 |
+| S9 REVEAL_RIVER | 从 S8 | N-of-N 释放河牌（1 张公共牌） | 全部 N 方释放 | S10 BET_RIVER | RECOVERY（揭示超时） |
+| S10 BET_RIVER | 从 S9 | 看牌/下注/跟注/加注/弃牌 | §5.4 | 本轮关闭 → S11；弃牌 → FOLD_END | 超时 → 默认看牌/弃牌 |
+| S11 SHOWDOWN | 从 S10 本轮关闭 | 最小亮牌（§5.6）：上一位进攻者先亮牌；其他人亮牌/盖牌 | 被亮出的手牌对照承诺通过验证（§6.6） | S12 SETTLE | RECOVERY（摊牌/揭示超时罚没） |
+| S12 SETTLE | 从 S11 或 FOLD_END | 结算底池 §5.5/§5.7；平仓花费（§4.3、§6.6） | 获胜证明 + 签名在解释器中有效（P9） | S13 HAND_END | RECOVERY（结算超时） |
+| FOLD_END | 任何 BET_* 弃牌后仅剩一名存活玩家 | 不亮牌地将不战而胜的底池判给唯一存活玩家（P5） | 仅剩一名存活玩家 | S12 SETTLE | —（无行动者可超时；继续进行） |
+| S13 HAND_END | 从 S12 | 轮换按钮；重新入座离座/加入（§4.9） | 座位仍 ≥ 2 | S1 POST_BLINDS（下一手） | TABLE_CLOSE（退回剩余） |
+| RECOVERY | 来自任何状态的超时 | 执行该状态的预签名回退（§6.4） | 已达成熟（交易层 nLockTime，§6.2） | 价值按回退图解决 | —（终态） |
 
-Notes: (1) all timeouts are transaction-level (nLockTime/nSequence), never in-script
-(§6.2). (2) "default fold" at S4–S10 means: if facing a bet, the timed-out player folds; if
-checking is legal, they check — never a forced wager (§6.4). (3) S5/S7/S9 reveals are
-cooperative N-of-N with the recovery default (RT-01 M2). (4) The full multi-way table
-(3–9 seats) generalises round-close and adds side-pot settlement at S12 (§19.B) and is in
-the §7.3 expansion.
+注：(1) 所有超时都在交易层（nLockTime/nSequence），绝不在脚本内（§6.2）。(2) S4–S10 处的"默认弃牌"
+意为：若面对一个下注，超时的玩家弃牌；若看牌合法，则看牌 — 绝非强制下注（§6.4）。(3) S5/S7/S9 的
+揭示是带恢复默认的协作 N-of-N（RT-01 M2）。(4) 完整的多人表（3–9 座位）将本轮关闭推广，并在 S12 处
+增加边池结算（§19.B），位于 §7.3 的扩展中。
 
-## §19.F Requirements register
+## §19.F 需求登记册
 
-**Provenance.** Auto-generated from this document (every `REQ-*` ID and an excerpt of its
-text), then mapped to an owning module and a test family. The **cited section is canonical**;
-excerpts are truncated for the table. This realises REQ-ENG-002 (the register is also emitted
-as `/spec/requirements.yaml` in the build, with `status` per requirement) and feeds the
-traceability matrix REQ-ENG-003. Count: **115 unique requirements** across 15 families,
-including `REQ-FSM-003…011` added with §7.3. Every unique `REQ-*` in the document has exactly
-one register row (a generation-time check; a missing or duplicate row fails CI).
+**来历。** 从本文档自动生成（每个 `REQ-*` ID 及其文本的一段摘录），随后映射到一个所属模块和一个
+测试族。**被引用的章节具规范性**；表格中的摘录经截断。这实现了 REQ-ENG-002（该登记册在构建中也作为
+`/spec/requirements.yaml` 发出，每条需求带 `status`），并供给可追溯性矩阵 REQ-ENG-003。计数：跨 15 个
+族的 **115 条唯一需求**，包括随 §7.3 增加的 `REQ-FSM-003…011`。文档中每个唯一的 `REQ-*` 恰有一个
+登记行（一项生成时检查；缺失或重复的行使 CI 失败）。
 
-| ID | Requirement (excerpt; cited section is canonical) | Owning module(s) | Test family |
+| ID | 需求（摘录；被引用的章节具规范性） | 所属模块 | 测试族 |
 |---|---|---|---|
-| REQ-ARCH-001 | The engine is a pure function of inputs: `(orderedValidTxSet, ruleset) -> tableState`. | engine | property + integration |
-| REQ-ARCH-002 | The engine performs no I/O, no networking, no time reads, and no randomness except via injected, recorded sources. | engine | property + integration |
-| REQ-ARCH-003 | "Now" enters the engine only as an explicit parameter for timeout-eligibility, derived from chain/relay-anchored height/time. | engine | property + integration |
-| REQ-BUILD-001 | Monorepo layout (see §16): /spec, /packages, /apps, /vm, /tests. | build / ci | CI |
-| REQ-BUILD-002 | Reproducible builds: pinned toolchains, locked lockfiles, recorded artifact hashes. | build / ci | CI |
-| REQ-BUILD-003 | CI stages: typecheck, lint (Power-of-Ten), unit+property, interpreter (Genesis), integration, build image, e2e-in-image, reproduce, traceability. | build / ci | CI |
-| REQ-BUILD-004 | Releases: Windows installer (Tauri, signed), web bundle, VM/container image, from the same commit with recorded hashes. | build / ci | CI |
-| REQ-CRYPTO-001 | Withholding a reveal after committing triggers a deterministic penalty/fallback (timeout forfeiture or committed fallback-seed). | crypto-mentalpoker | property + interpreter + conformance |
-| REQ-CRYPTO-002 | No player may sample or alter `r_p` after observing any other `r_q`; binding by commit hash + ordering. | crypto-mentalpoker | property + interpreter + conformance |
-| REQ-CRYPTO-003 | Canonical party order = lexicographic order of long-term public keys (33-byte SEC-1); published in setup state. | crypto-mentalpoker | property + interpreter + conformance |
-| REQ-CRYPTO-004 | Each shuffle stage is committed `c_p = H(state ‖ scalars ‖ permutation)`; OP_RETURN acceptable for these dead-end commits. | crypto-mentalpoker | property + interpreter + conformance |
-| REQ-CRYPTO-005 | Mid-protocol substitution of a card's ciphertext/commitment is rejected by byte-equality across transitions and AEAD integrity. | crypto-mentalpoker | property + interpreter + conformance |
-| REQ-CRYPTO-006 | Fair-play transactions generated after shuffle/encryption, before reveal; locking script from in-script EC routines. | crypto-mentalpoker | property + interpreter + conformance |
-| REQ-CRYPTO-007 | Fix one square-root branch for shuffle keys; keep it consistent; treat both-branch exposure as a factor-2 reduction. | crypto-mentalpoker | property + interpreter + conformance |
-| REQ-CRYPTO-008 | The build MUST NOT present Mode A while claiming Mode B's property; active mode recorded in ruleset. | crypto-mentalpoker | property + interpreter + conformance |
-| REQ-CRYPTO-009 | Fair-play scaling is a measured risk; measure script size before single-script use; fallback = per-card/per-batch fair-play. | crypto-mentalpoker | interpreter + measured (§19.C) |
-| REQ-CRYPTO-010 | Shuffle is N-of-N over the currently-seated set; each hand is a fresh N-party shuffle (new seed/keys/order). | crypto-mentalpoker | property + integration |
-| REQ-CRYPTO-011 | Sit-out/join take effect between hands only; participant set frozen at hand start. | crypto-mentalpoker | property + integration |
-| REQ-CRYPTO-012 | No partial reshuffle of an in-progress deck; mid-hand disconnect handled by timeout/recovery. | crypto-mentalpoker | property + adversarial |
-| REQ-DATA-001 | Web: IndexedDB; desktop+relay: SQLite. | persistence / engine | unit + replay (§14.2) |
-| REQ-DATA-002 | A transcript is the ordered valid tx set plus the commit/reveal material to re-derive state; exportable. | persistence / engine | unit + replay (§14.2) |
-| REQ-DATA-003 | Replay reconstructs the hand from transcript + ruleset hash, byte-identical, offline; divergence is a defect. | persistence / engine | replay (§14.2) |
-| REQ-DATA-004 | Via VA: selective-disclosure bundle proving a figure is genuine+anchored, revealing nothing else; boundary surfaced. | persistence / engine | integration |
-| REQ-DEP-001 | Core depends only on contracts CT/BS/VA/OB via an adapter layer; each has a fake for orchestration tests. | adapters | conformance + integration |
-| REQ-DEP-002 | A repo API change is absorbed in its adapter; no change propagates into engine/FSMs/UI. | adapters | conformance + integration |
-| REQ-DEP-003 | A single conformance suite per contract is run against both the fake and the real adapter; both must pass. | adapters | conformance |
-| REQ-DEP-004 | Security-critical behaviours (shuffle, reveal, fair-play, signing) tested against real implementations, never fakes. | adapters | conformance + interpreter |
-| REQ-ENG-001 | Built to NPR 7150.2 assurance + a documented Power-of-Ten adaptation (not literal compliance; rule 3/pointers N/A). | (cross-cutting) | CI gates (§16) |
-| REQ-ENG-002 | Every REQ-* is an entry in a machine-readable register with id/text/section/module/tests/status; validated in CI. | (cross-cutting) | CI gates (§16) |
-| REQ-ENG-003 | A traceability matrix maps every requirement → code → test; CI fails on any untested requirement or untraced consensus file. | (cross-cutting) | CI gates (§16) |
-| REQ-ENG-004 | Every stated boundary/limit (P7/P8) is asserted in the source so no change silently papers over it. | (cross-cutting) | CI gates (§16) |
-| REQ-FSM-001 | A game module implements GameModule (init/getLegalActions/apply/isTimeoutEligible/isHandComplete/settle); no I/O. | engine / game-* | property + e2e |
-| REQ-FSM-002 | The full Hold'em transition table is specified in §19.E; the prose flow is normative for phase order + two-exit rule. | engine / game-holdem | property + e2e |
-| REQ-FSM-003 | Down-card = drawn then privately revealed to holder; up-card = drawn then N-of-N publicly revealed (with timeout-default). | engine / game-stud / game-razz | property + e2e |
-| REQ-FSM-004 | Draw = surrender chosen concealed cards to dead-hand without reveal + draw equal fresh concealed cards from undealt deck. | engine / game-draw | property + e2e |
-| REQ-FSM-005 | Stud/razz betting order is determined by the exposed board, not the button (a distinct ordering function). | engine / game-stud / game-razz | property + e2e |
-| REQ-FSM-006 | Omaha = Hold'em FSM with two overrides: deal 4 hole cards; showdown uses Omaha exactly-2+3 evaluator. | game-omaha | property + e2e + vectors |
-| REQ-FSM-007 | Omaha Hi-Lo (Omaha-8) adds an eight-or-better low split; distinct test-vectored path; off unless ruleset.hiLo. | game-omaha | vectors + e2e |
-| REQ-FSM-008 | 8-handed stud/razz deck-exhaustion: final card dealt as a single shared community up-card; else 7-handed max. | game-stud / game-razz | property + e2e |
-| REQ-FSM-009 | Draw preserves concealment: discards to dead-hand without reveal; replacements private; count public, identities not. | game-draw | property + e2e |
-| REQ-FSM-010 | Five-card-draw S4 DRAW timeout-default is stand-pat (draw zero). | game-draw | property + adversarial |
-| REQ-FSM-011 | Razz = stud FSM with three overrides: bring-in = highest up-card; post-3rd order = best low first; ace-to-five low showdown. | game-razz | property + e2e + vectors |
-| REQ-NET-001 | The relay is transport + indexing only; never the source of truth. | relay-go / indexer-go | integration + adversarial |
-| REQ-NET-002 | Tier A discovery = hosted relay + LAN auto-discovery (Phase 1); version/verack peer layer at Phase 5. | relay-go | integration |
-| REQ-NET-003 | Every action sent simultaneously to the network (canonical) and to table peers (speed); speed never overrides canonical. | relay-go / indexer-go | integration + adversarial |
-| REQ-NET-004 | Via BS.node: broadcast; outpoint/UTXO status; double-spend-attempt status; headers/blocks; mempool conflicts. | indexer-go | integration |
-| REQ-NET-005 | One spendable phase-right per phase; conflicting actions cannot both be valid; accepted = referenced by next accepted transition. | engine / indexer-go | adversarial |
-| REQ-NET-006 | Deterministic local tie-break: first valid tx referenced by a threshold of peers; final tie-break by lexicographic txid. | indexer-go | adversarial |
-| REQ-NET-007 | A client can request the transcript gap and rebuild current state deterministically from the valid tx set. | relay-go / engine | integration |
-| REQ-POKER-001 | The deck encoding is fixed and identical to the one bound into the shuffle (§4) and tx schemas (§6). | protocol-types / hand-eval | unit + vectors (§19.D) |
-| REQ-POKER-002 | rulesetHash = H(canonicalSerialize(Ruleset)); computed once, displayed, bound into every transaction. | engine / tx-builder | unit + interpreter |
-| REQ-POKER-003 | The evaluator is pure/deterministic and backed by §19.D vectors (categories, wheel, kickers, Omaha-2+3, low). | hand-eval | unit + vectors (§19.D) |
-| REQ-POKER-004 | Best-5-of-7 enumerates C(7,5)=21 subsets and takes the max by compare. | hand-eval | unit + vectors |
-| REQ-POKER-005 | Omaha enumerates C(4,2)·C(5,3)=60 combinations and takes the max; mandatory distinct path. | hand-eval | unit + vectors (§19.D) |
-| REQ-POKER-006 | Low evaluation returns a comparable where lower is better (ace-to-five); pairs penalised; distinct path. | hand-eval | unit + vectors (§19.D) |
-| REQ-POKER-007 | Evaluator correct first, fast second; bounded enumeration; any LUT optimisation must reproduce the reference bit-for-bit. | hand-eval | unit + vectors |
-| REQ-POKER-008 | Betting is a strategy behind one BettingStructure interface (NL/PL/FL); legalBets/applyBet. | engine / betting | unit + property |
-| REQ-POKER-009 | Betting machine tracks stacks, committed-this-round/-hand, bet-to-call, last full raise, all-in, who acted, round-close. | engine / betting | unit + property |
-| REQ-POKER-010 | Round closes when action returns to last aggressor with all live non-all-in matched; short all-in doesn't reopen unless a full raise. | engine / betting | unit + property |
-| REQ-POKER-011 | Pot engine computes main + ordered side pots from per-seat contributions on differing all-ins (§19.B). | engine / pots | unit + vectors (§19.B) |
-| REQ-POKER-012 | Each pot awarded independently to the best eligible hand; ties split per §5.5.1. | engine / pots | unit + vectors |
-| REQ-POKER-013 | Odd chip deterministic (left-of-button default); suit tiebreak is house-rule, default OFF, never in hand-eval. | engine / pots | unit |
-| REQ-POKER-014 | Showdown: only contenders reveal, minimum required; last aggressor shows first; lose-only may muck. | engine | e2e |
-| REQ-POKER-015 | A revealed hand is verified against concealed-card commitments before it can win. | engine / script-templates-ts | interpreter |
-| REQ-POKER-016 | Settlement routes each pot to winner(s) and updates stacks; on-chain spend or BS channel update. | engine / tx-builder | integration |
-| REQ-POKER-017 | If settlement stalls, the recovery/timeout path resolves value deterministically; funds never stranded. | engine / tx-builder | adversarial |
-| REQ-PROD-001 | Wallet create/import; pluggable custody. | wallet-custody / ui-core | e2e |
-| REQ-PROD-002 | Lobby: list/create/join tables; presence of other players. | app/sdk / relay-go / ui-core | e2e |
-| REQ-PROD-003 | Ruleset + stake configuration with a displayed, hashed config. | ui-core / engine | e2e |
-| REQ-PROD-004 | Table view: seats, turn, board/up cards, pot(s), balances, timers, default-on-timeout text. | ui-core | component + e2e |
-| REQ-PROD-005 | Local private-hand inspection; never expose keys to the UI beyond the viewer path. | ui-core / wallet-custody | e2e |
-| REQ-PROD-006 | Signing prompts that state exactly what is being signed. | ui-core | component + e2e |
-| REQ-PROD-007 | Fold-without-reveal action. | engine / ui-core | e2e |
-| REQ-PROD-008 | Showdown reveal of only what is required. | engine / ui-core | e2e |
-| REQ-PROD-009 | Deterministic settlement display + final balances. | engine / ui-core | e2e |
-| REQ-PROD-010 | Transcript export + deterministic offline replay. | persistence / ui-core | replay |
-| REQ-PROD-011 | Reconnect/resume into a live table. | relay-go / engine / ui-core | integration |
-| REQ-PROD-012 | Clear research/regtest banner; mainnet behind explicit flag. | ui-core / vm | e2e |
-| REQ-TEST-001 | Unit (hand-eval, pots, betting, serialization vs §19.D/B vectors). | tests/unit | meta (CI) |
-| REQ-TEST-002 | Replay equivalence + cross-client agreement (byte-identical). | tests/property | meta (CI) |
-| REQ-TEST-003 | Every script template spend (pos+neg) executed through the real interpreter, Genesis on; neg fails inside interpreter. | tests/interpreter | meta (CI) |
-| REQ-TEST-004 | Scripted full heads-up Hold'em hand runs through the VM on regtest + the failure injections. | tests/e2e | meta (CI) |
-| REQ-TEST-005 | `reproduce` regenerates every committed vector and exits non-zero on mismatch; runs in the VM image. | tests/* | meta (CI) |
-| REQ-TEST-006 | Adversarial suite: disconnect/stale/timeout/withheld-reveal/conflict/eviction/fair-play-violation/substitution/etc. | tests/adversarial | meta (CI) |
-| REQ-TEST-007 | A phase is accepted only when its requirements trace to passing tests, reproduce is green, adversarial+e2e pass. | tests/* | meta (CI) |
-| REQ-TX-001 | CLTV/CSV are no-ops on post-Genesis BSV and MUST NOT enforce timing. | script-templates-ts | interpreter (§14.3) |
-| REQ-TX-002 | Timing enforced at the transaction level (nLockTime + nSequence under original replacement). | tx-builder | interpreter |
-| REQ-TX-003 | Transaction-level timing + bond-forfeiture incentive is sufficient for the cooperative/timeout model. | tx-builder | interpreter + adversarial |
-| REQ-TX-004 | Opcode palette limited to post-Genesis-meaningful primitives (sig/hash/conditional/numeric-stack for EC routines). | script-templates-ts | interpreter |
-| REQ-TX-005 | Every tx binds gid, rulesetHash, round, state hash, acting seat, economic state, commitments, successor commitment. | tx-builder | interpreter |
-| REQ-TX-006 | Two timeout layers: decision (default check-or-fold, never forced wager) and recovery (withheld reveal/stalled settlement). | tx-builder | adversarial |
-| REQ-TX-007 | "Now" for timeouts from chain/relay-anchored height/time, not local wall-clock for consensus decisions. | engine / tx-builder | property |
-| REQ-TX-008 | A pre-signed fallback graph is signed before play for every stall (abort/quorum/deck/deal/action/reveal/settlement/close). | tx-builder | interpreter + adversarial |
-| REQ-TX-009 | Dead-end commitments (shuffle stage, ruleset-hash) MAY use OP_RETURN. | script-templates-ts | interpreter |
-| REQ-TX-010 | Commitments that must stay in the spend-linked graph MUST be pushdata in a live script, not OP_RETURN. | script-templates-ts | interpreter |
-| REQ-TX-011 | Each template ships a positive test, negative battery (fail inside interpreter), and a measured wire-byte size vector. | script-templates-ts | interpreter (§14.3) |
-| REQ-TX-012 | Spending a Q_j UTXO requires a signature under Q_j per the active signing mode (A: reconstruct-at-reveal; B: threshold). | tx-builder / wallet-custody | interpreter |
-| REQ-UI-001 | One TS/React UI core runs in the browser and inside Tauri; no business logic in the shell. | ui-core / client-* | component + e2e |
-| REQ-UI-002 | Web persists via IndexedDB; no localStorage/sessionStorage for load-bearing state; desktop SQLite. | client-web | component |
-| REQ-UI-003 | Interactions use explicit handlers, never `<form>` submit (avoids webview navigation side effects). | ui-core | component |
-| REQ-UI-004 | The UI hides protocol complexity but never hides consequences (explicit default-on-timeout / committed-state text). | ui-core | component + e2e |
-| REQ-UI-005 | Card decryption goes through the custody boundary; rendered face only in the controlled viewer path. | ui-core / wallet-custody | e2e |
-| REQ-UI-006 | Every signing prompt shows action, amounts, affected pot/state, and the exact intent/bytes signed; no silent signing. | ui-core | component + e2e |
-| REQ-VM-001 | A reproducible self-contained runtime launches node(regtest)+relay+client with no external services. | vm | e2e-in-image + reproduce |
-| REQ-VM-002 | Image contains the bonded-subsat-channel embedded node (regtest), the Go relay/indexer, the client, and a bootstrap. | vm | e2e-in-image |
-| REQ-VM-003 | Primary packaging: a reproducible container image + a one-liner that yields a playable stack. | vm | e2e-in-image |
-| REQ-VM-004 | Desktop: a Windows installer (Tauri) that embeds/supervises a local node+relay so a user double-clicks and plays. | client-desktop / vm | e2e |
-| REQ-VM-005 | A literal hypervisor VM image (OVA/qcow2), if required, is an extra artifact from the same composition (DECISION). | vm | packaging |
-| REQ-VM-006 | The image build is reproducible (pinned toolchains, locked deps, recorded hashes). | vm | CI |
-| REQ-VM-007 | Mainnet only behind an explicit named research flag; unmissable banner; regtest default everywhere. | vm / ui-core | e2e |
-| REQ-WALLET-001 | One long-term secp256k1 key per player; per-game/per-card scalars via HKDF bound to (gid,j); old-game keys reveal nothing. | wallet-custody | unit + conformance |
-| REQ-WALLET-002 | Distinct key sets for distinct jobs (signing vs card-encryption vs session); least authority. | wallet-custody | unit |
-| REQ-WALLET-003 | A Custody interface abstracts where keys live and signing happens (derive/sign/decryptToViewer/combineSignShare). | wallet-custody | unit + conformance |
-| REQ-WALLET-004 | Whole-key handling follows the signing mode: Mode A reconstructs w_j at reveal (single-game keys, bounded window); Mode B threshold. | wallet-custody | unit + conformance |
-| REQ-WALLET-005 | In micro-betting mode, channel keys + the 1-sat bond managed via BS; presented as explicit signing actions. | wallet-custody | integration |
+| REQ-ARCH-001 | 引擎是输入的纯函数：`(orderedValidTxSet, ruleset) -> tableState`。 | engine | property + integration |
+| REQ-ARCH-002 | 引擎不执行 I/O、不联网、不读取时间，也不使用随机性，除非通过被注入且被记录的来源。 | engine | property + integration |
+| REQ-ARCH-003 | "Now" 只作为一个显式参数进入引擎以供超时资格评估，取自链/中继锚定的高度/时间。 | engine | property + integration |
+| REQ-BUILD-001 | Monorepo 布局（见 §16）：/spec、/packages、/apps、/vm、/tests。 | build / ci | CI |
+| REQ-BUILD-002 | 可复现构建：固定工具链、锁定的 lockfile、记录的产物哈希。 | build / ci | CI |
+| REQ-BUILD-003 | CI 各阶段：类型检查、lint（Power-of-Ten）、单元+属性、解释器（Genesis）、集成、构建镜像、镜像内 e2e、reproduce、可追溯性。 | build / ci | CI |
+| REQ-BUILD-004 | 发布物：Windows 安装程序（Tauri，已签名）、web 包、VM/容器镜像，出自同一提交并记录哈希。 | build / ci | CI |
+| REQ-CRYPTO-001 | 承诺后扣留揭示触发一个确定性的惩罚/回退（超时罚没或已承诺的回退种子）。 | crypto-mentalpoker | property + interpreter + conformance |
+| REQ-CRYPTO-002 | 任何玩家都不得在观察到任何其他 `r_q` 之后再采样或更改 `r_p`；约束由承诺哈希 + 排序提供。 | crypto-mentalpoker | property + interpreter + conformance |
+| REQ-CRYPTO-003 | 规范方序 = 长期公钥（33 字节 SEC-1）的字典序；在设置状态中发布。 | crypto-mentalpoker | property + interpreter + conformance |
+| REQ-CRYPTO-004 | 每个洗牌阶段都被承诺 `c_p = H(state ‖ scalars ‖ permutation)`；对这些死路承诺 OP_RETURN 可接受。 | crypto-mentalpoker | property + interpreter + conformance |
+| REQ-CRYPTO-005 | 协议中途对一张牌的密文/承诺的替换，被跨转换的逐字节相等性和 AEAD 完整性所拒绝。 | crypto-mentalpoker | property + interpreter + conformance |
+| REQ-CRYPTO-006 | 公平博弈交易在洗牌/加密之后、揭示之前生成；锁定脚本来自脚本内的 EC 例程。 | crypto-mentalpoker | property + interpreter + conformance |
+| REQ-CRYPTO-007 | 为洗牌密钥固定一个平方根分支；保持一致；将两分支暴露视为 2 倍的减少。 | crypto-mentalpoker | property + interpreter + conformance |
+| REQ-CRYPTO-008 | 构建 MUST NOT 在主张 Mode B 属性的同时呈现 Mode A；当前生效模式记入规则集。 | crypto-mentalpoker | property + interpreter + conformance |
+| REQ-CRYPTO-009 | 公平博弈扩展性是一项实测风险；在使用单脚本前测量脚本大小；回退 = 逐牌/逐批公平博弈。 | crypto-mentalpoker | interpreter + measured (§19.C) |
+| REQ-CRYPTO-010 | 洗牌是对当前在座集合的 N-of-N；每手牌是一次全新的 N 方洗牌（新种子/密钥/顺序）。 | crypto-mentalpoker | property + integration |
+| REQ-CRYPTO-011 | 离座/加入仅在两手牌之间生效；参与者集合在手牌开始时冻结。 | crypto-mentalpoker | property + integration |
+| REQ-CRYPTO-012 | 对进行中的牌堆不做部分重洗；手牌中途掉线由超时/恢复处理。 | crypto-mentalpoker | property + adversarial |
+| REQ-DATA-001 | Web：IndexedDB；桌面+中继：SQLite。 | persistence / engine | unit + replay (§14.2) |
+| REQ-DATA-002 | 一份记录誊本是有序的有效交易集加上重新派生状态的承诺/揭示材料；可导出。 | persistence / engine | unit + replay (§14.2) |
+| REQ-DATA-003 | 重放从记录誊本 + 规则集哈希重建手牌，逐字节相同、离线；分歧即缺陷。 | persistence / engine | replay (§14.2) |
+| REQ-DATA-004 | 经 VA：选择性披露包证明某数字真实+锚定，不泄露其他；显示边界。 | persistence / engine | integration |
+| REQ-DEP-001 | 核心仅经一个适配器层依赖契约 CT/BS/VA/OB；每个都有一个用于编排测试的伪实现。 | adapters | conformance + integration |
+| REQ-DEP-002 | 仓库 API 改动被吸收在其适配器中；没有改动传播进引擎/FSM/UI。 | adapters | conformance + integration |
+| REQ-DEP-003 | 每个契约一套一致性套件，针对伪实现和真实适配器双方运行；二者都必须通过。 | adapters | conformance |
+| REQ-DEP-004 | 安全关键行为（洗牌、揭示、公平博弈、签名）针对真实实现测试，绝不用伪实现。 | adapters | conformance + interpreter |
+| REQ-ENG-001 | 按 NPR 7150.2 保障 + 一个有文档记录的 Power-of-Ten 改编构建（非字面合规；规则 3/指针不适用）。 | (横切) | CI gates (§16) |
+| REQ-ENG-002 | 每个 REQ-* 都是机器可读登记册中的一项，带 id/文本/章节/模块/测试/状态；在 CI 中验证。 | (横切) | CI gates (§16) |
+| REQ-ENG-003 | 一个可追溯性矩阵将每条需求 → 代码 → 测试相映射；CI 在任何未测需求或未追溯共识文件时失败。 | (横切) | CI gates (§16) |
+| REQ-ENG-004 | 每条所声明的边界/限制（P7/P8）都在源码中被断言，使任何改动都不会悄然掩盖。 | (横切) | CI gates (§16) |
+| REQ-FSM-001 | 一个游戏模块实现 GameModule（init/getLegalActions/apply/isTimeoutEligible/isHandComplete/settle）；无 I/O。 | engine / game-* | property + e2e |
+| REQ-FSM-002 | 完整的德州扑克转换表在 §19.E 规定；散文流程对阶段顺序 + 两出口规则具规范性。 | engine / game-holdem | property + e2e |
+| REQ-FSM-003 | 暗牌 = 抽牌后私下揭示给持有者；明牌 = 抽牌后 N-of-N 公开揭示（带超时默认）。 | engine / game-stud / game-razz | property + e2e |
+| REQ-FSM-004 | 抽牌 = 将所选隐藏牌不亮牌地放弃到死手 + 从未发牌堆抽取等量全新隐藏牌。 | engine / game-draw | property + e2e |
+| REQ-FSM-005 | 梭哈/razz 下注顺序由露出的牌面决定，而非按钮（一个独立的排序函数）。 | engine / game-stud / game-razz | property + e2e |
+| REQ-FSM-006 | 奥马哈 = 德州扑克 FSM 加两处覆盖：发 4 张底牌；摊牌用奥马哈恰好 2+3 评估器。 | game-omaha | property + e2e + vectors |
+| REQ-FSM-007 | 奥马哈高低分（Omaha-8）增加一个八或更佳的低牌分割；独立的有测试向量路径；除非 ruleset.hiLo 否则关闭。 | game-omaha | vectors + e2e |
+| REQ-FSM-008 | 8 人梭哈/razz 牌堆耗尽：最后一张牌作为单一共享公共明牌发出；否则 7 人为上限。 | game-stud / game-razz | property + e2e |
+| REQ-FSM-009 | 抽牌保持隐藏性：丢弃牌不亮牌地进死手；替换牌私有；张数公开、身份不公开。 | game-draw | property + e2e |
+| REQ-FSM-010 | 五张抽牌 S4 DRAW 超时默认是不换牌（抽零张）。 | game-draw | property + adversarial |
+| REQ-FSM-011 | Razz = 梭哈 FSM 加三处覆盖：bring-in = 最高明牌；第三街后顺序 = 最佳低牌先；ace-to-five 低牌摊牌。 | game-razz | property + e2e + vectors |
+| REQ-NET-001 | 中继仅负责传输 + 索引；绝非真相之源。 | relay-go / indexer-go | integration + adversarial |
+| REQ-NET-002 | A 层发现 = 托管中继 + LAN 自动发现（第 1 阶段）；version/verack 对等层在第 5 阶段。 | relay-go | integration |
+| REQ-NET-003 | 每个行动同时发往网络（规范）和牌桌对等方（速度）；速度绝不覆盖规范。 | relay-go / indexer-go | integration + adversarial |
+| REQ-NET-004 | 经 BS.node：广播；outpoint/UTXO 状态；双花尝试状态；区块头/区块；内存池冲突。 | indexer-go | integration |
+| REQ-NET-005 | 每阶段一个可花费的阶段权；冲突行动不能同时有效；被接受 = 被下一个被接受的转换所引用。 | engine / indexer-go | adversarial |
+| REQ-NET-006 | 确定性本地平局判定：被一个阈值数量对等方引用的第一笔有效交易；最终按字典序 txid。 | indexer-go | adversarial |
+| REQ-NET-007 | 客户端可请求记录誊本缺口并从有效交易集确定性地重建当前状态。 | relay-go / engine | integration |
+| REQ-POKER-001 | 牌堆编码固定，且与绑定进洗牌（§4）和交易模式（§6）的编码相同。 | protocol-types / hand-eval | unit + vectors (§19.D) |
+| REQ-POKER-002 | rulesetHash = H(canonicalSerialize(Ruleset))；计算一次、展示、绑定进每一笔交易。 | engine / tx-builder | unit + interpreter |
+| REQ-POKER-003 | 评估器纯粹/确定性，并由 §19.D 向量支撑（类别、轮牌、踢脚、奥马哈 2+3、低牌）。 | hand-eval | unit + vectors (§19.D) |
+| REQ-POKER-004 | 七选五最佳枚举 C(7,5)=21 个子集并按 compare 取最大值。 | hand-eval | unit + vectors |
+| REQ-POKER-005 | 奥马哈枚举 C(4,2)·C(5,3)=60 种组合并取最大值；强制的独立路径。 | hand-eval | unit + vectors (§19.D) |
+| REQ-POKER-006 | 低牌评估返回一个越低越好的可比较值（ace-to-five）；对子被惩罚；独立路径。 | hand-eval | unit + vectors (§19.D) |
+| REQ-POKER-007 | 评估器先正确、后快；有界枚举；任何 LUT 优化都必须逐位复现参考实现。 | hand-eval | unit + vectors |
+| REQ-POKER-008 | 下注是置于一个 BettingStructure 接口之后的策略（NL/PL/FL）；legalBets/applyBet。 | engine / betting | unit + property |
+| REQ-POKER-009 | 下注机追踪筹码量、本轮/本手已投入、需跟注额、上一次完整加注、全下、谁已行动、本轮关闭。 | engine / betting | unit + property |
+| REQ-POKER-010 | 当行动回到上一进攻者且所有存活非全下者已跟上时本轮关闭；不足额全下不重开除非构成完整加注。 | engine / betting | unit + property |
+| REQ-POKER-011 | 在不同全下额时，底池引擎从各座位投入计算主池 + 有序边池（§19.B）。 | engine / pots | unit + vectors (§19.B) |
+| REQ-POKER-012 | 每个池独立判给最佳有资格手牌；平局按 §5.5.1 拆分。 | engine / pots | unit + vectors |
+| REQ-POKER-013 | 奇数筹码确定性（默认按钮左侧）；花色平局判定是房规，默认关闭，绝不在手牌评估中。 | engine / pots | unit |
+| REQ-POKER-014 | 摊牌：只有争夺者亮牌，最少所需；上一进攻者先亮牌；只会输者可盖牌。 | engine | e2e |
+| REQ-POKER-015 | 一手被亮出的牌在能获胜前对照隐藏牌承诺进行验证。 | engine / script-templates-ts | interpreter |
+| REQ-POKER-016 | 结算将每个池路由给获胜者并更新筹码量；链上花费或 BS 通道更新。 | engine / tx-builder | integration |
+| REQ-POKER-017 | 若结算停滞，恢复/超时路径确定性地解决价值；资金绝不被滞留。 | engine / tx-builder | adversarial |
+| REQ-PROD-001 | 钱包创建/导入；可插拔托管。 | wallet-custody / ui-core | e2e |
+| REQ-PROD-002 | 大厅：列出/创建/加入牌桌；其他玩家的在线状态。 | app/sdk / relay-go / ui-core | e2e |
+| REQ-PROD-003 | 规则集 + 筹码配置，并展示一份经哈希的配置。 | ui-core / engine | e2e |
+| REQ-PROD-004 | 牌桌视图：座位、轮次、公共牌/明牌、底池、余额、计时器、超时默认文案。 | ui-core | component + e2e |
+| REQ-PROD-005 | 本地私有手牌查看；绝不将密钥暴露给查看器路径之外的 UI。 | ui-core / wallet-custody | e2e |
+| REQ-PROD-006 | 准确说明正在签署什么内容的签名提示。 | ui-core | component + e2e |
+| REQ-PROD-007 | 弃牌不亮牌的行动。 | engine / ui-core | e2e |
+| REQ-PROD-008 | 摊牌时只亮所需的内容。 | engine / ui-core | e2e |
+| REQ-PROD-009 | 确定性结算展示 + 最终余额。 | engine / ui-core | e2e |
+| REQ-PROD-010 | 记录誊本导出 + 确定性离线重放。 | persistence / ui-core | replay |
+| REQ-PROD-011 | 重连/恢复进入一张进行中的牌桌。 | relay-go / engine / ui-core | integration |
+| REQ-PROD-012 | 清晰的研究/regtest 横幅；主网置于显式开关之后。 | ui-core / vm | e2e |
+| REQ-TEST-001 | 单元（手牌评估、底池、下注、序列化，对照 §19.D/B 向量）。 | tests/unit | meta (CI) |
+| REQ-TEST-002 | 重放等价 + 跨客户端一致（逐字节相同）。 | tests/property | meta (CI) |
+| REQ-TEST-003 | 每个脚本模板花费（正+负）通过真实解释器、启用 Genesis 执行；否定性在解释器内部失败。 | tests/interpreter | meta (CI) |
+| REQ-TEST-004 | 脚本化的完整单挑德州扑克手牌经 VM 在 regtest 上运行 + 故障注入。 | tests/e2e | meta (CI) |
+| REQ-TEST-005 | `reproduce` 重新生成每个已提交向量并在不匹配时以非零退出；在 VM 镜像中运行。 | tests/* | meta (CI) |
+| REQ-TEST-006 | 对抗性套件：掉线/过期/超时/扣留揭示/冲突/逐出/公平博弈违规/替换/等等。 | tests/adversarial | meta (CI) |
+| REQ-TEST-007 | 一个阶段只有在其需求追溯到通过的测试、reproduce 为绿、对抗性+e2e 通过时才被验收。 | tests/* | meta (CI) |
+| REQ-TX-001 | CLTV/CSV 在 Genesis 升级后的 BSV 上是空操作，且 MUST NOT 用于强制时间。 | script-templates-ts | interpreter (§14.3) |
+| REQ-TX-002 | 时间在交易层强制执行（原始替换下的 nLockTime + nSequence）。 | tx-builder | interpreter |
+| REQ-TX-003 | 交易层计时 + 保证金罚没激励足以支撑协作/超时模型。 | tx-builder | interpreter + adversarial |
+| REQ-TX-004 | 操作码集合仅限于 Genesis 升级后有意义的原语（用于 EC 例程的 签名/哈希/条件/数值栈）。 | script-templates-ts | interpreter |
+| REQ-TX-005 | 每一笔交易绑定 gid、rulesetHash、轮次、状态哈希、行动座位、经济状态、承诺、后继承诺。 | tx-builder | interpreter |
+| REQ-TX-006 | 两层超时：决策（默认看牌或弃牌，绝非强制下注）和恢复（扣留揭示/停滞结算）。 | tx-builder | adversarial |
+| REQ-TX-007 | 超时所用的 "Now" 取自链/中继锚定的高度/时间，对于共识决策不取本地挂钟。 | engine / tx-builder | property |
+| REQ-TX-008 | 一个预签名回退图在开局前为每种停滞被签署（中止/法定人数/牌堆/发牌/行动/揭示/结算/关闭）。 | tx-builder | interpreter + adversarial |
+| REQ-TX-009 | 死路承诺（洗牌阶段、规则集哈希）MAY 使用 OP_RETURN。 | script-templates-ts | interpreter |
+| REQ-TX-010 | 必须保留在花费关联图中的承诺 MUST 是活动脚本中的 pushdata，而非 OP_RETURN。 | script-templates-ts | interpreter |
+| REQ-TX-011 | 每个模板随附一个肯定性测试、否定性组（在解释器内部失败），以及一个实测线缆字节大小向量。 | script-templates-ts | interpreter (§14.3) |
+| REQ-TX-012 | 花费一个 Q_j UTXO 需要一个 Q_j 下、按当前生效签名模式的签名（A：揭示时重构；B：门限）。 | tx-builder / wallet-custody | interpreter |
+| REQ-UI-001 | 一个 TS/React UI 核心运行于浏览器和 Tauri 内；外壳中没有业务逻辑。 | ui-core / client-* | component + e2e |
+| REQ-UI-002 | Web 经 IndexedDB 持久化；不用 localStorage/sessionStorage 承载关键状态；桌面 SQLite。 | client-web | component |
+| REQ-UI-003 | 交互使用显式处理器，绝不用 `<form>` 提交（避免 webview 导航副作用）。 | ui-core | component |
+| REQ-UI-004 | UI 隐藏协议复杂性，但绝不隐藏后果（显式的超时默认 / 已承诺状态文案）。 | ui-core | component + e2e |
+| REQ-UI-005 | 牌的解密经过托管边界；渲染出的牌面只存在于受控查看器路径。 | ui-core / wallet-custody | e2e |
+| REQ-UI-006 | 每个签名提示都显示行动、金额、受影响的底池/状态，以及所签的确切意图/字节；不做静默签名。 | ui-core | component + e2e |
+| REQ-VM-001 | 一个可复现的自包含运行时启动 节点(regtest)+中继+客户端，无需任何外部服务。 | vm | e2e-in-image + reproduce |
+| REQ-VM-002 | 镜像包含 bonded-subsat-channel 嵌入式节点（regtest）、Go 中继/索引器、客户端，以及一个引导程序。 | vm | e2e-in-image |
+| REQ-VM-003 | 主要打包：一个可复现的容器镜像 + 一个产出可玩栈的一行命令。 | vm | e2e-in-image |
+| REQ-VM-004 | 桌面：一个 Windows 安装程序（Tauri），嵌入/监管一个本地节点+中继，使用户双击即玩。 | client-desktop / vm | e2e |
+| REQ-VM-005 | 一个真正的虚拟机管理程序 VM 镜像（OVA/qcow2），若需要，是从同一组合得到的一个额外产物（DECISION）。 | vm | packaging |
+| REQ-VM-006 | 镜像构建可复现（固定工具链、锁定依赖、记录哈希）。 | vm | CI |
+| REQ-VM-007 | 主网仅在一个显式具名的研究开关之后；无法忽视的横幅；各处默认 regtest。 | vm / ui-core | e2e |
+| REQ-WALLET-001 | 每个玩家一个长期 secp256k1 密钥；逐对局/逐牌标量经绑定到 (gid,j) 的 HKDF；旧对局密钥不泄露任何信息。 | wallet-custody | unit + conformance |
+| REQ-WALLET-002 | 不同工作使用不同密钥集（签名 vs 牌加密 vs 会话）；最小权限。 | wallet-custody | unit |
+| REQ-WALLET-003 | 一个 Custody 接口抽象密钥所在与签名发生之处（derive/sign/decryptToViewer/combineSignShare）。 | wallet-custody | unit + conformance |
+| REQ-WALLET-004 | 完整密钥处理遵循签名模式：Mode A 在揭示时重构 w_j（单对局密钥、有界窗口）；Mode B 门限。 | wallet-custody | unit + conformance |
+| REQ-WALLET-005 | 在微下注模式中，通道密钥 + 1 聪保证金经 BS 管理；作为显式签名行动呈现。 | wallet-custody | integration |
 
-**Register notes.** (1) Module/test columns are the *intended* owners; the build's
-`requirements.yaml` replaces them with the *actual* satisfying files and test IDs and adds
-`status` (REQ-ENG-002). (2) CI fails if any row lacks a satisfying test or any consensus-path
-file is untraced (REQ-ENG-003). (3) Decisions `D1–D9` and threats `THR-*` (§18) are tracked
-in companion registers (`decisions.yaml`, `threats.yaml`) on the same generation pass.
-
----
-
-# §20 Changelog — Red-Team Review 01 applied
-
-This pass applied the corrections from `bsv-poker-spec-redteam-01.md`:
-
-- **B1 (BLOCKER) resolved** — the unconditional "combined private key never reconstructed in one place" claim is removed from §0.6, §4.3, §6.6, §6.7, §9.3 and replaced by an explicit **signing-mode decision (D9)**: Mode A (patent-literal reconstruct-at-reveal, Phase-1 default, with single-game-key and bounded-window consequences stated) vs Mode B (threshold/no-reconstruction, upgrade). The spec no longer ships Mode A's mechanism while claiming Mode B's property (REQ-CRYPTO-008).
-- **B2 (BLOCKER) resolved** — §4.3 now specifies the `minted → drawn(position) → revealed|folded → discarded` card lifecycle; the poker **deal** is the `draw` operation, and "selection-by-spend" is the **close-out/settlement** primitive, not the deal.
-- **M1 resolved** — P2 reworded: determinism is relative to an agreed ordering; pre-confirmation safety is provided by §8.3+§8.5+§6.4; reorg/eviction handled by recovery + confirmation finality.
-- **M2 resolved** — §4.6 board reveals are N-of-N cooperative transitions with a timeout-default.
-- **M3 resolved** — §4.7/§6.6 fair-play scaling is a measured risk (REQ-CRYPTO-009) with a per-card/per-batch fallback; no "scales" claim until §19.C measures it.
-- **M4 resolved** — §2.6 adds a contract-conformance suite binding fakes to real adapters (REQ-DEP-003) and requires security-critical paths tested against real implementations (REQ-DEP-004).
-- **M5 resolved** — §13.1 states which Power-of-Ten rules are adopted/adapted/N-A; claims "NPR 7150.2 + a documented Power-of-Ten adaptation," never literal compliance.
-- **M6 partially closed** — B1 Mode A gives Phase 1 a concrete signing construction (no threshold dependency); the reveal-token candidate remains provisional-normative pending cardtable's API.
-- **m1 resolved** — §4.9 fixes participant-set-per-hand (fresh N-party shuffle each hand; sit-out/join between hands; no partial reshuffle).
-- **m3 resolved** — §5.5.1 odd-chip rule is deterministic; any suit tiebreak is an explicit house-rule flag, defaulted OFF, never inside hand evaluation.
-
-**Filled this pass:** §18 threat model (THR-* with bounding mechanism + residual risk +
-trust surface), §19.B side-pot algorithm with a worked conserved example, §19.E Hold'em
-heads-up state-transition table.
-
-**Still open after RT-01, tracked honestly:** m2 (cost envelope) and m4 (stage-commitment
-carriage re-examination) — folded into §19.C; m5 (trustless-prose hygiene sweep) — partially
-done via §18.6, full sweep pending; §7.3 per-variant FSMs; §19.A canonical serialization;
-§19.C byte schedules + fair-play measurement; §19.D vectors; §19.F register. Two
-constructions remain `DECISION REQUIRED` pending cardtable's API: the Mode-B signing detail
-(§6.7) and the reveal-token (§4.6) — neither blocks Phase 0/1, which run on Mode A.
-
-# §20.1 Build-out pass 02
-
-Added this pass, to the same standard, no padding:
-
-- **§7.3 filled** — full FSMs for Omaha (Hold'em + 2 overrides; PLO; Omaha-8 noted), Seven-Card Stud (ante/bring-in/streets 3–7/up-down cards/best-5-of-7/8-handed exhaustion rule), Five-Card Draw (draw = no-reveal discard + private redraw; stand-pat timeout), and Razz (stud structure + ace-to-five low + bring-in/order reversals). New requirements **REQ-FSM-003…011** and the three new mental-poker primitives (up-card, down-card, draw) are specified and registered.
-- **§19.D filled — verified, not asserted.** A reference evaluator was implemented and run; its output is embedded as the vector catalog. Consistency checks all pass (category ladder strictly descending; transitivity over 20,000 random triples; kicker/boat/flush orderings; Omaha 2+3 demonstrably diverging from generic best-of-7; ace-to-five low). The evaluator is the oracle the production code must reproduce bit-for-bit (`reproduce`, §14.5). One computed result corrected a label error of mine (a "paired eight-low" is actually a nine-low) — the computed truth governs, which is the point of generating rather than asserting.
-- **§19.F filled** — the full **106-requirement** register (id, excerpt, owning module, test family), auto-generated from the document, with the canonical section authoritative and `requirements.yaml`/traceability called out (REQ-ENG-002/003).
-
-**Still open after pass 02:** §19.A canonical serialization (byte-exact); §19.C script byte
-schedules + the fair-play measurement (REQ-CRYPTO-009) + the per-hand cost envelope (m2);
-§19.D remaining edge-case vectors (ties/odd-chip, coincident all-ins, folded-contributor,
-Omaha-8 boundary); m4/m5 closure; the full multi-way (3–9 seat) transition tables; and the
-two `DECISION REQUIRED` constructions pending cardtable's API. Mode A keeps Phase 0/1
-unblocked.
+**登记册注释。** (1) 模块/测试列是*预期*负责者；构建的 `requirements.yaml` 用*实际*满足它的文件和
+测试 ID 替换它们，并增加 `status`（REQ-ENG-002）。(2) 若任何行缺少满足它的测试，或任何共识路径文件
+未被追溯，CI 失败（REQ-ENG-003）。(3) 决策 `D1–D9` 和威胁 `THR-*`（§18）在同一次生成轮次中于配套
+登记册（`decisions.yaml`、`threats.yaml`）中跟踪。
 
 ---
 
-## Build-out status of this specification
+# §20 变更日志 — 已应用红队评审 01
 
-Through Build-out pass 02 this file fixes the architecture, principles, dependency contracts
-and conformance, the cryptographic protocol (explicit signing-mode decision; deal-to-positions
-lifecycle), the full poker domain model **and all five variant FSMs** (Hold'em, Omaha, Stud,
-Draw, Razz), the BSV transaction/script model (post-Genesis CLTV/CSV correction; tx-level
-timing), the engineering standard (honest Power-of-Ten adaptation), the test strategy
-(conformance + interpreter-level + reproducible vectors), the SDK surface, the VM/packaging,
-the shells, the phased plan with acceptance gates, the threat model (§18), the side-pot
-algorithm with a worked example (§19.B), **verified hand-evaluation vectors generated by a
-reference evaluator (§19.D)**, the Hold'em transition table (§19.E), and the **106-requirement
-register (§19.F)**. Remaining high-volume content (§19.A serialization, §19.C byte schedules +
-fair-play measurement + cost envelope, remaining edge-case vectors, multi-way tables) is
-enumerated in §20.1 "Still open" and is written in subsequent passes to the same standard,
-without padding.
+本轮应用了来自 `bsv-poker-spec-redteam-01.md` 的修正：
+
+- **B1（阻断级）已解决** — 那条无条件的"联合私钥从不在单处重构"主张从 §0.6、§4.3、§6.6、§6.7、§9.3 中移除，并替换为一个显式的**签名模式决策（D9）**：Mode A（专利字面、揭示时重构，第 1 阶段默认，并陈述单对局密钥和有界窗口后果）对比 Mode B（门限/不重构，升级）。规范不再在主张 Mode B 属性的同时交付 Mode A 的机制（REQ-CRYPTO-008）。
+- **B2（阻断级）已解决** — §4.3 现规定 `minted → drawn(position) → revealed|folded → discarded` 牌的生命周期；扑克的**发牌**是 `draw` 操作，而"通过花费来选取"是**平仓/结算**原语，而非发牌。
+- **M1 已解决** — P2 重新措辞：确定性是相对于一个已商定排序的；确认前安全性由 §8.3+§8.5+§6.4 提供；重组/逐出由恢复 + 确认终局性处理。
+- **M2 已解决** — §4.6 公共牌揭示是带超时默认的 N-of-N 协作转换。
+- **M3 已解决** — §4.7/§6.6 公平博弈扩展性是一项实测风险（REQ-CRYPTO-009），带逐牌/逐批回退；在 §19.C 对其测量之前不作"可扩展"主张。
+- **M4 已解决** — §2.6 增加一套契约一致性套件，将伪实现与真实适配器绑定（REQ-DEP-003），并要求安全关键路径针对真实实现进行测试（REQ-DEP-004）。
+- **M5 已解决** — §13.1 说明哪些 Power-of-Ten 规则被采纳/改编/不适用；主张 "NPR 7150.2 + 一个有文档记录的 Power-of-Ten 改编"，绝非字面合规。
+- **M6 部分关闭** — B1 的 Mode A 为第 1 阶段提供了一个具体的签名构造（无门限依赖）；揭示令牌候选在等待 cardtable 的 API 期间仍为暂定-规范性。
+- **m1 已解决** — §4.9 确定了每手牌的参与者集合（每手牌全新的 N 方洗牌；两手牌之间离座/加入；不做部分重洗）。
+- **m3 已解决** — §5.5.1 奇数筹码规则是确定性的；任何花色平局判定都是一个显式的房规开关，默认关闭，绝不在手牌评估内部。
+
+**本轮已填充：** §18 威胁模型（带限定机制 + 残余风险 + 信任面的 THR-*）、§19.B 边池算法及一个守恒的
+实做示例、§19.E 德州扑克单挑状态转换表。
+
+**RT-01 之后仍未决，如实跟踪：** m2（成本包络）和 m4（阶段承诺承载的再审视）— 并入 §19.C；
+m5（无需信任散文的清理扫查）— 经 §18.6 部分完成，完整扫查待办；§7.3 各变体 FSM；§19.A 规范序列化；
+§19.C 字节排布 + 公平博弈测量；§19.D 向量；§19.F 登记册。两个构造在等待 cardtable 的 API 期间仍为
+`DECISION REQUIRED`：Mode-B 签名细节（§6.7）和揭示令牌（§4.6）— 二者都不阻塞在 Mode A 上运行的
+第 0/1 阶段。
+
+# §20.1 构建轮次 02
+
+本轮按同一标准新增，无填充：
+
+- **§7.3 已填充** — 奥马哈（德州 + 2 处覆盖；PLO；提及 Omaha-8）、七张梭哈（底注/bring-in/第 3–7 街/明暗牌/七选五最佳/8 人耗尽规则）、五张抽牌（抽牌 = 不亮牌丢弃 + 私有重抽；不换牌超时）和 Razz（梭哈结构 + ace-to-five 低牌 + bring-in/顺序反转）的完整 FSM。新需求 **REQ-FSM-003…011** 以及三个新的心智扑克原语（明牌、暗牌、抽牌）已规定并登记。
+- **§19.D 已填充 — 经验证，而非断言。** 实现并运行了一个参考评估器；其输出作为向量目录嵌入。一致性检查全部通过（类别阶梯严格递减；在 20,000 个随机三元组上的传递性；踢脚/葫芦/同花排序；奥马哈 2+3 明显偏离通用七选五；ace-to-five 低牌）。该评估器是生产代码必须逐位复现的 oracle（`reproduce`，§14.5）。一个计算结果纠正了我的一处标签错误（一个"成对的 8 低"实际上是 9 低）— 以计算出的真相为准，这正是生成而非断言的意义所在。
+- **§19.F 已填充** — 完整的 **106 条需求**登记册（id、摘录、所属模块、测试族），从文档自动生成，以规范章节为权威，并标明 `requirements.yaml`/可追溯性（REQ-ENG-002/003）。
+
+**轮次 02 之后仍未决：** §19.A 规范序列化（字节精确）；§19.C 脚本字节排布 + 公平博弈测量
+（REQ-CRYPTO-009）+ 每手牌成本包络（m2）；§19.D 剩余边缘情形向量（平局/奇数筹码、重合全下、
+已弃牌投入者、Omaha-8 边界）；m4/m5 的关闭；完整的多人（3–9 座位）转换表；以及等待 cardtable 的 API
+的两个 `DECISION REQUIRED` 构造。Mode A 使第 0/1 阶段保持不被阻塞。
+
+---
+
+## 本规范的构建状态
+
+经过构建轮次 02，本文件确定了架构、原则、依赖契约与一致性、密码学协议（显式的签名模式决策；
+发牌到各位置的生命周期）、完整的扑克领域模型**以及全部五个变体 FSM**（德州、奥马哈、梭哈、抽牌、
+Razz）、BSV 交易/脚本模型（Genesis 升级后 CLTV/CSV 修正；交易层计时）、工程标准（如实的 Power-of-Ten
+改编）、测试策略（一致性 + 解释器级 + 可复现向量）、SDK 表面、VM/打包、各外壳、带验收关卡的分阶段
+计划、威胁模型（§18）、附实做示例的边池算法（§19.B）、**由参考评估器生成的经验证手牌评估向量
+（§19.D）**、德州扑克转换表（§19.E），以及 **106 条需求登记册（§19.F）**。剩余的大批量内容
+（§19.A 序列化、§19.C 字节排布 + 公平博弈测量 + 成本包络、剩余边缘情形向量、多人表）在 §20.1
+"仍未决" 中列举，并在后续轮次中按同一标准撰写，无填充。

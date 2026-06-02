@@ -1,18 +1,9 @@
-# ADR 0001 — Node-native TypeScript (type-stripping) for the deterministic core
+# ADR 0001 — 确定性核心采用 Node 原生 TypeScript（类型剥离）
 
-**Status:** Accepted
+**状态：** 已接受
 
-**Context.** The core spec (§3.2) mandates one deterministic TypeScript core shared by web and
-desktop. The build host has TLS-inspection that makes heavy dev-dependency installs fragile, and
-the spec's Power-of-Ten discipline favours a minimal, auditable toolchain.
+**背景。** 核心规范（§3.2）要求 Web 与桌面端共享一个确定性 TypeScript 核心。构建主机存在 TLS 检查，导致大量开发依赖的安装变得脆弱，而规范的 Power-of-Ten 准则倾向于一套最小化、可审计的工具链。
 
-**Decision.** Run `.ts` directly via Node 24's native type-stripping; test with `node --test`;
-typecheck with `tsc --strict --noEmit` only (no emit). No bundler, ts-node, or test framework is
-used for the packages. To stay strip-compatible the core avoids `enum`, `namespace`, and
-parameter-properties, and imports with explicit `.ts` extensions — which also aligns with the
-Power-of-Ten "limit metaprogramming" adaptation (§13.1).
+**决策。** 通过 Node 24 的原生类型剥离直接运行 `.ts`；使用 `node --test` 进行测试；仅用 `tsc --strict --noEmit` 做类型检查（不产出文件）。各软件包不使用打包器、ts-node 或测试框架。为保持与类型剥离的兼容性，核心避免使用 `enum`、`namespace` 和参数属性，并以显式 `.ts` 扩展名导入——这也符合 Power-of-Ten 中"限制元编程"的适配条款（§13.1）。
 
-**Consequences.** Near-zero install surface for the core; the typecheck (`tsc`) is the single
-source of type truth; tests run with no build step. The browser/desktop shells still use Vite/Tauri
-toolchains (their own concern). `pnpm` installs use `NODE_OPTIONS=--use-system-ca` to trust the
-host CA.
+**后果。** 核心的安装面几乎为零；类型检查（`tsc`）是类型真相的唯一来源；测试无需构建步骤即可运行。浏览器/桌面外壳仍使用 Vite/Tauri 工具链（属于它们各自的范畴）。`pnpm` 安装使用 `NODE_OPTIONS=--use-system-ca` 以信任主机 CA。

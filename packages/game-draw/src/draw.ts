@@ -1,23 +1,22 @@
 /**
- * Five-Card Draw GameModule — core §7.3.3 (S0..S8). Blinds; deal 5 concealed; first betting
- * round; the DRAW; second betting round; showdown of the 5 cards held (best-5, §5.3,
- * REQ-POKER-004).
+ * 五张换牌扑克(Five-Card Draw)GameModule —— 核心 §7.3.3(S0..S8)。盲注;发 5 张暗牌;第一轮
+ * 下注;换牌(DRAW);第二轮下注;以持有的 5 张牌进行摊牌(best-5,§5.3,
+ * REQ-POKER-004)。
  *
- * The DRAW (REQ-FSM-004 / REQ-FSM-009): each live seat, in turn, surrenders a chosen subset of
- * its concealed cards to a dead-hand state WITHOUT revealing them (a partial fold) and is dealt
- * the same number of fresh concealed cards from the still-undealt portion of the shuffled deck.
- * The discarded cards are never revealed; replacements are private-revealed to the drawer only.
- * The COUNT drawn is public game information; the card IDENTITIES are not. The DRAW
- * timeout-default is STAND PAT — draw zero (REQ-FSM-010): the safe default that forfeits no
- * information and no equity beyond declining to improve.
+ * 换牌阶段(REQ-FSM-004 / REQ-FSM-009):每个存活座位依次将其暗牌中选定的子集交还到一个死牌
+ * 状态,且不揭示它们(部分弃牌),并从洗好的牌堆中尚未发出的部分发出相同数量的新暗牌。
+ * 弃掉的牌永不揭示;替换牌仅向换牌者私下揭示。
+ * 换牌的数量(COUNT)是公共对局信息;牌的身份(IDENTITIES)不是。换牌的
+ * 超时默认动作是 STAND PAT —— 换零张(REQ-FSM-010):一个安全的默认动作,除了放弃提升手牌之外
+ * 不放弃任何信息和任何权益。
  *
- * The draw action uses Action.discard (slot indices into the seat's 5-card hand) with
- * kind:'draw'; a no-op draw is expressed as kind:'stand' (or kind:'draw' with empty discard).
+ * 换牌动作使用 Action.discard(指向座位 5 张手牌的槽位索引),kind:'draw';空操作的换牌
+ * 表示为 kind:'stand'(或 kind:'draw' 且 discard 为空)。
  *
- * Determinism (P2 / REQ-ARCH-002): pure function of (ruleset, injected recorded deck, actions);
- * no randomness. The deck is the post-shuffle order (core §4); the undealt tail supplies the
- * replacements deterministically. Every actionable state has a cooperative successor and a
- * timeout-default (P4): check/fold in betting, stand-pat in the draw.
+ * 确定性(P2 / REQ-ARCH-002):是 (ruleset, 注入的已记录牌堆, actions) 的纯函数;
+ * 无随机性。牌堆是洗牌后的顺序(核心 §4);未发出的牌尾确定性地提供
+ * 替换牌。每个可操作状态都有一个协作式后继和一个
+ * 超时默认动作(P4):下注时为 check/fold,换牌时为 stand-pat。
  */
 
 import {
@@ -51,7 +50,7 @@ import {
 
 const HAND_SIZE = 5;
 
-// §7.3.3 phases (S0..S8).
+// §7.3.3 阶段(S0..S8)。
 export const PHASES = {
   BLINDS: 'S0_BLINDS',
   SHUFFLE: 'S1_SHUFFLE',
@@ -69,19 +68,19 @@ export const PHASES = {
 export interface DrawState extends GameState {
   readonly ctx: BettingCtx;
   readonly deck: readonly Card[];
-  /** Engine-known 5-card hand per seat; concealed at the UI boundary. */
+  /** 每个座位的、引擎已知的 5 张手牌;在 UI 边界处隐藏。 */
   readonly hole: Readonly<Record<number, readonly Card[]>>;
-  /** Public per-seat draw count (identities private, count public — REQ-FSM-009). */
+  /** 每个座位的公共换牌数量(身份私有,数量公开 —— REQ-FSM-009)。 */
   readonly drawCounts: Readonly<Record<number, number>>;
-  /** Index of the next undealt card in the deck (advances on deal and on each redraw). */
+  /** 牌堆中下一张未发出牌的索引(在发牌和每次重抽时前进)。 */
   readonly deckCursor: number;
-  /** Seat currently to act in the DRAW phase; null outside DRAW or once all have drawn. */
+  /** 当前在换牌阶段轮到行动的座位;在换牌阶段之外或所有人都已换牌后为 null。 */
   readonly drawToAct: number | null;
   readonly payouts: Payouts;
 }
 
 interface DrawConfig {
-  /** Post-shuffle deck. Must cover the deal (5*seats) plus worst-case redraws (up to 5*seats). */
+  /** 洗牌后的牌堆。必须覆盖发牌(5*seats)以及最坏情况下的重抽(最多 5*seats)。 */
   readonly deck: readonly Card[];
 }
 
@@ -143,7 +142,7 @@ export function createDraw(config: DrawConfig): DrawModule {
   function init(ruleset: Ruleset, seatInits: SeatInit[]): DrawState {
     if (ruleset.variant !== 'draw') throw new Error('not a draw ruleset');
     if (seatInits.length < 2) throw new Error('need >= 2 seats');
-    const need = HAND_SIZE * seatInits.length; // minimum to deal; redraws need more tail
+    const need = HAND_SIZE * seatInits.length; // 发牌所需最小值;重抽需要更多牌尾
     if (deck.length < need) throw new Error(`deck too small: need ${need}, got ${deck.length}`);
 
     const order = [...seatInits].sort((a, b) => a.seat - b.seat);
@@ -151,7 +150,7 @@ export function createDraw(config: DrawConfig): DrawModule {
     const sb = buttonSeat;
     const bb = order[1 % order.length]!.seat;
 
-    // Deal 5 concealed cards, one at a time, button-first (S2 DEAL).
+    // 发 5 张暗牌,一次一张,从庄家开始(S2 DEAL)。
     const hole: Record<number, Card[]> = {};
     const drawCounts: Record<number, number> = {};
     for (const s of order) {
@@ -195,7 +194,7 @@ export function createDraw(config: DrawConfig): DrawModule {
     ctx.betToCall = ruleset.blinds.bigBlind;
     ctx.lastFullRaise = ruleset.blinds.bigBlind;
     ctx.lastAggressor = bb;
-    ctx.toAct = sb; // heads-up: button/SB acts first in BET1
+    ctx.toAct = sb; // 单挑:庄家/小盲在 BET1 中首先行动
 
     const base: DrawState = {
       rulesetHash: '',
@@ -212,7 +211,7 @@ export function createDraw(config: DrawConfig): DrawModule {
       deck,
       hole,
       drawCounts,
-      deckCursor: HAND_SIZE * order.length, // first undealt card after the deal
+      deckCursor: HAND_SIZE * order.length, // 发牌后的第一张未发出牌
       drawToAct: null,
       payouts: [],
     };
@@ -220,12 +219,12 @@ export function createDraw(config: DrawConfig): DrawModule {
     return base;
   }
 
-  /** First seat to act in a draw / postflop-style round: left of the button (non-button HU). */
+  /** 换牌 / 翻牌后风格回合中首先行动的座位:庄家左侧(单挑中的非庄家)。 */
   function firstAfterButton(state: DrawState): number {
     return nonButton(state.ctx, state.buttonSeat);
   }
 
-  /** Order of live seats for the DRAW, starting left-of-button (REQ-FSM-009 turn order). */
+  /** 换牌时存活座位的顺序,从庄家左侧开始(REQ-FSM-009 行动顺序)。 */
   function drawOrder(state: DrawState): number[] {
     const order = seatOrder(state.ctx);
     const start = firstAfterButton(state);
@@ -248,7 +247,7 @@ export function createDraw(config: DrawConfig): DrawModule {
         continue;
       }
       if (s.phase === PHASES.DRAW) {
-        return s; // awaits draw actions, advanced by applyDraw
+        return s; // 等待换牌动作,由 applyDraw 推进
       }
       if (s.phase === PHASES.SHOWDOWN) {
         s = freshState(s, s.ctx, PHASES.SETTLE);
@@ -261,7 +260,7 @@ export function createDraw(config: DrawConfig): DrawModule {
   function nextPhase(state: DrawState): DrawState {
     switch (state.phase) {
       case PHASES.BET1: {
-        // Open the DRAW phase: first live seat left-of-button draws first.
+        // 开启换牌阶段:庄家左侧的第一个存活座位首先换牌。
         const live = drawOrder(state);
         return { ...freshState(state, state.ctx, PHASES.DRAW), drawToAct: live[0] ?? null };
       }
@@ -273,10 +272,10 @@ export function createDraw(config: DrawConfig): DrawModule {
     }
   }
 
-  /** Begin BET2 after the draw completes: open a fresh round, first live seat left-of-button. */
+  /** 换牌完成后开始 BET2:开启一个新回合,庄家左侧的第一个存活座位。 */
   function openBet2(state: DrawState): DrawState {
     const ctx = openRound(state.ctx, firstAfterButton(state), 'big');
-    // openRound set toAct to firstAfterButton even if that seat folded; fix to first live actor.
+    // 即使该座位已弃牌,openRound 也会将 toAct 设为 firstAfterButton;修正为第一个存活的行动者。
     const live = drawOrder(state);
     const first = live[0] ?? null;
     const fixed: BettingCtx = { ...ctx, toAct: first };
@@ -291,7 +290,7 @@ export function createDraw(config: DrawConfig): DrawModule {
     const bIdx = order.indexOf(state.buttonSeat);
     const leftOfButton = [...order.slice(bIdx + 1), ...order.slice(0, bIdx + 1)];
 
-    // Showdown: best-5 of the 5 cards held (each seat has exactly 5, REQ-POKER-004).
+    // 摊牌:以持有的 5 张牌取 best-5(每个座位恰好有 5 张,REQ-POKER-004)。
     const handValue = (seat: number) => bestHigh(state.hole[seat]!).value;
     const cmp = (a: number, b: number): -1 | 0 | 1 => {
       const fa = state.ctx.seats.find((x) => x.seat === a)!.folded;
@@ -330,12 +329,12 @@ export function createDraw(config: DrawConfig): DrawModule {
     return legalActions(state.ctx, rulesetRef!, seat);
   }
 
-  /** Apply a draw/stand for the seat on the clock in the DRAW phase (REQ-FSM-004/009). */
+  /** 在换牌阶段为当前计时中的座位应用 draw/stand(REQ-FSM-004/009)。 */
   function applyDraw(state: DrawState, action: Action): DrawState {
     if (state.drawToAct !== action.seat) throw new Error(`not seat ${action.seat}'s draw`);
     const seat = action.seat;
     const slots = action.kind === 'stand' ? [] : [...(action.discard ?? [])];
-    // Validate slot indices: distinct, within 0..4.
+    // 校验槽位索引:互不相同,且在 0..4 之内。
     const uniq = new Set(slots);
     if (uniq.size !== slots.length) throw new Error('duplicate discard slots');
     for (const i of slots) {
@@ -343,7 +342,7 @@ export function createDraw(config: DrawConfig): DrawModule {
     }
     if (slots.length > HAND_SIZE) throw new Error('cannot discard more than 5');
 
-    // Surrender the chosen slots to dead-hand (no reveal) and redraw from the undealt tail.
+    // 将选定的槽位交还到死牌(不揭示),并从未发出的牌尾重抽。
     const current = state.hole[seat]!;
     const discardSet = new Set(slots);
     const kept: Card[] = current.filter((_, i) => !discardSet.has(i));
@@ -360,7 +359,7 @@ export function createDraw(config: DrawConfig): DrawModule {
     hole[seat] = newHand;
     const drawCounts: Record<number, number> = { ...state.drawCounts, [seat]: slots.length };
 
-    // Advance drawToAct to the next live seat that has not yet drawn.
+    // 将 drawToAct 推进到下一个尚未换牌的存活座位。
     const orderLive = drawOrder(state);
     const idx = orderLive.indexOf(seat);
     const nextSeat = idx >= 0 && idx + 1 < orderLive.length ? orderLive[idx + 1]! : null;
@@ -373,7 +372,7 @@ export function createDraw(config: DrawConfig): DrawModule {
       drawToAct: nextSeat,
     };
     if (nextSeat !== null) return advanced;
-    // All live seats have drawn → open the second betting round.
+    // 所有存活座位都已换牌 → 开启第二轮下注。
     return autoAdvance(openBet2(advanced));
   }
 
@@ -397,7 +396,7 @@ export function createDraw(config: DrawConfig): DrawModule {
     void now;
     if (state.phase === PHASES.DRAW) {
       if (state.drawToAct === null) return null;
-      // REQ-FSM-010: the DRAW timeout-default is STAND PAT (draw zero).
+      // REQ-FSM-010:换牌的超时默认动作是 STAND PAT(换零张)。
       const seat = state.drawToAct;
       return { seat, defaultAction: { kind: 'stand', seat, amount: 0, discard: [] } };
     }
@@ -427,7 +426,7 @@ export function createDraw(config: DrawConfig): DrawModule {
       ww.u8(s.seat).u64(s.stack).u64(s.committedThisRound).u64(s.committedThisHand);
       ww.bool(s.folded).bool(s.allIn);
     });
-    // Public draw counts (identities stay concealed — REQ-FSM-009).
+    // 公共换牌数量(身份保持隐藏 —— REQ-FSM-009)。
     w.arr(
       seatOrder(state.ctx).map((seat) => ({ seat, n: state.drawCounts[seat] ?? 0 })),
       (ww, d) => ww.u8(d.seat).u8(d.n),

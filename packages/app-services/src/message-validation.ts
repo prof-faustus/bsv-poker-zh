@@ -1,8 +1,8 @@
 /**
- * Trust-boundary input validation (REQ-APP-103). Every message crossing a trust boundary — relay /
- * peer envelopes (and, on desktop, IPC) — is validated before use; anything unrecognized or
- * malformed is REJECTED (returns null), never partially trusted. This is the structural guard the
- * networked client applies to inbound envelopes from the (untrusted) relay channel.
+ * 信任边界处的输入校验（REQ-APP-103）。每一条跨越信任边界的消息——中继 / peer 的
+ * envelope（以及在桌面端的 IPC）——在使用前都会被校验；任何无法识别或格式错误的内容
+ * 都会被拒绝（返回 null），绝不部分信任。这是网络客户端对来自（不可信的）中继通道的
+ * 入站 envelope 所施加的结构性防护。
  */
 
 export type EnvelopeKind = 'commit' | 'reveal' | 'action';
@@ -11,20 +11,20 @@ export interface WireEnvelope {
   readonly t: EnvelopeKind;
   readonly seat: number;
   readonly hand: number;
-  readonly c?: string; // commit: H(entropy) hex
-  readonly r?: string; // reveal: entropy hex
-  readonly kind?: string; // action: ActionKind
-  readonly amount?: number; // action: optional wager
+  readonly c?: string; // commit：H(entropy) 的 hex
+  readonly r?: string; // reveal：entropy 的 hex
+  readonly kind?: string; // action：ActionKind
+  readonly amount?: number; // action：可选下注额
 }
 
 const isHex = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]+$/i.test(v) && v.length > 0;
 const isSeatOrHand = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
 
-/** Validate an inbound envelope; return the typed envelope or null if it must be rejected. */
+/** 校验一个入站 envelope；返回带类型的 envelope，若必须拒绝则返回 null。 */
 export function validateEnvelope(raw: unknown): WireEnvelope | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
-  if (o.t !== 'commit' && o.t !== 'reveal' && o.t !== 'action') return null; // unrecognized → reject
+  if (o.t !== 'commit' && o.t !== 'reveal' && o.t !== 'action') return null; // 无法识别 → 拒绝
   if (!isSeatOrHand(o.seat) || !isSeatOrHand(o.hand)) return null;
 
   if (o.t === 'commit') {

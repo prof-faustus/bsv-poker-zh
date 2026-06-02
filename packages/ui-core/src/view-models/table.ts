@@ -1,14 +1,13 @@
 /**
- * Table view-model (REQ-APP-051) — a PURE projection of engine state into render props.
+ * 牌桌 view-model（REQ-APP-051）—— 把引擎状态纯投影为渲染 props。
  *
- * No React, no I/O, no business logic: it reads a HoldemState (+ the bot/own seat point of
- * view) and the module's legal-action / timeout-eligibility outputs, and emits the props the
- * presentational components render. Legality is NEVER computed here — it is read from the
- * engine (game-holdem getLegalActions / isTimeoutEligible). The UI hides complexity but never
- * consequences (core §11.4 / §6.4): the consequence text is derived from isTimeoutEligible.
+ * 不依赖 React、无 I/O、无业务逻辑：它读取一个 HoldemState（外加机器人/自身座位的
+ * 视角）以及模块的合法动作 / 超时资格输出，并发出展示型组件用于渲染的 props。
+ * 合法性绝不在此计算——而是从引擎读取（game-holdem getLegalActions / isTimeoutEligible）。
+ * UI 隐藏复杂性，但绝不隐藏后果（core §11.4 / §6.4）：后果文本由 isTimeoutEligible 推导而来。
  *
- * Kept strip-friendly (no enum/namespace/param-properties) so the unit tests run under
- * `node --test` type-stripping.
+ * 保持适合类型剥离（不使用 enum/namespace/param-properties），以便单元测试可在
+ * `node --test` 的类型剥离下运行。
  */
 
 import { cardToString } from '@bsv-poker/protocol-types';
@@ -17,11 +16,11 @@ import type { HoldemState } from '@bsv-poker/game-holdem';
 import type { TimeoutResolution } from '@bsv-poker/engine';
 
 export interface CardVM {
-  /** Full two-char code e.g. "As". */
+  /** 完整的两字符代码，例如 "As"。 */
   readonly code: string;
-  /** Rank glyph, e.g. "A", "T". */
+  /** 点数字形，例如 "A"、"T"。 */
   readonly rank: string;
-  /** Suit letter, e.g. "s" — carried as a glyph so info is never colour-only (§A3.5 a11y). */
+  /** 花色字母，例如 "s"——以字形形式携带，使信息绝不仅靠颜色表达（§A3.5 a11y）。 */
   readonly suit: string;
 }
 
@@ -33,9 +32,9 @@ export interface SeatVM {
   readonly allIn: boolean;
   readonly isButton: boolean;
   readonly isToAct: boolean;
-  /** True for the seat this view is rendered for (the human's perspective). */
+  /** 此视图所渲染的座位（人类玩家的视角）为 true。 */
   readonly isHero: boolean;
-  /** Hero's own hole cards (custody-bound — only ever populated for the hero seat). */
+  /** hero 自己的底牌（与托管绑定——只会为 hero 座位填充）。 */
   readonly holeCards: readonly CardVM[];
 }
 
@@ -45,19 +44,19 @@ export interface PotVM {
 }
 
 export interface ActionBarVM {
-  /** Whether it is the hero's turn (controls live) — read straight from the engine. */
+  /** 是否轮到 hero 行动（控件激活）——直接从引擎读取。 */
   readonly isHeroTurn: boolean;
   readonly legal: LegalActions;
 }
 
 export interface TimerVM {
-  /** Seat the clock is on. */
+  /** 计时所针对的座位。 */
   readonly seat: number | null;
-  /** decisionMs from the ruleset timeout profile (operational, not consensus — core §6.2). */
+  /** 来自 ruleset 超时配置的 decisionMs（运营性的，非共识——core §6.2）。 */
   readonly decisionMs: number;
-  /** Exact consequence text (core §11.4). */
+  /** 精确的后果文本（core §11.4）。 */
   readonly consequenceText: string;
-  /** The kind the safe default resolves to ("check" | "fold"); null if no seat on the clock. */
+  /** 安全默认动作所解析为的类型（"check" | "fold"）；若无座位在计时中则为 null。 */
   readonly defaultKind: string | null;
 }
 
@@ -67,7 +66,7 @@ export interface TableViewModel {
   readonly board: readonly CardVM[];
   readonly seats: readonly SeatVM[];
   readonly pots: readonly PotVM[];
-  /** Sum of every pot plus uncommitted chips already in front of seats this round. */
+  /** 所有底池之和，加上本轮已置于各座位面前但尚未计入的筹码。 */
   readonly totalPot: number;
   readonly toAct: number | null;
   readonly heroSeat: number;
@@ -102,8 +101,8 @@ function seatVM(
 }
 
 /**
- * Consequence text derived from the module's timeout resolution (core §11.4 / §6.4).
- * The player is NEVER forced to wager: facing a bet the default is fold, otherwise check.
+ * 由模块的超时解析推导出的后果文本（core §11.4 / §6.4）。
+ * 玩家绝不会被强制下注：面对下注时默认弃牌，否则过牌。
  */
 export function consequenceText(
   resolution: TimeoutResolution | null,
@@ -128,9 +127,9 @@ export function consequenceText(
 }
 
 /**
- * Project a HoldemState into the table render props for the given hero seat.
- * `legal` and `resolution` are the engine's outputs (getLegalActions / isTimeoutEligible) —
- * passed in so the projection stays pure and the component never recomputes legality.
+ * 把一个 HoldemState 投影为给定 hero 座位的牌桌渲染 props。
+ * `legal` 与 `resolution` 是引擎的输出（getLegalActions / isTimeoutEligible）——
+ * 作为参数传入，使该投影保持纯粹，组件永不重新计算合法性。
  */
 export function tableViewModel(args: {
   readonly state: HoldemState;

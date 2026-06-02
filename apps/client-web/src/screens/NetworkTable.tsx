@@ -1,15 +1,15 @@
 /**
- * Networked table (§A6.5/§A7) — REAL multiplayer play over the relay. It constructs an
- * InteractiveNetworkedTableClient from the seated result, drives React state from its onUpdate
- * stream, renders seats/board/pot/timer via ui-core, and on the hero's turn raises the signing
- * modal (no silent signing, §A6.7) before calling client.submitAction(). client.play() resolves
- * when the hand completes → we show the showdown + settlement. Hole cards are rendered for the
- * hero's own seat (which we know). No game logic here — legality is read from the engine via the
- * update's `legal` / client.legalActions() (REQ-APP-052).
+ * 联网牌桌（§A6.5/§A7）—— 经由 relay 的真实多人对战。它从已入座结果构建一个
+ * InteractiveNetworkedTableClient，由其 onUpdate 流驱动 React 状态，
+ * 经由 ui-core 渲染座位/公共牌/底池/计时器，并在 hero 回合时弹出签名
+ * 模态框（不静默签名，§A6.7），然后再调用 client.submitAction()。当这手牌完成时
+ * client.play() 兑现 → 我们展示摊牌 + 结算。底牌会为 hero
+ * 自己的座位（我们知道的）渲染。这里没有游戏逻辑 —— 合法性经由
+ * 更新中的 `legal` / client.legalActions() 从引擎读取（REQ-APP-052）。
  *
- * The InteractiveNetworkedTableClient plays exactly ONE hand per instance (the entropy
- * commit/reveal handshake is per-hand); after settlement the player returns to the lobby. A
- * multi-hand session would re-run the handshake per hand — that is out of scope here and noted.
+ * InteractiveNetworkedTableClient 每个实例恰好玩一手牌（熵的
+ * commit/reveal 握手是每手一次的）；结算后玩家返回大厅。
+ * 多手对局会按每手重新执行握手 —— 那超出此处范围，特此注明。
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -44,7 +44,7 @@ export function NetworkTable(props: {
   tableId: string;
   tableName: string;
   seated: SeatedResult;
-  /** Cash out the hero's remaining stack (final or current) to the wallet, then leave. */
+  /** 将 hero 的剩余筹码（最终或当前）套现到钱包，然后离开。 */
   onLeave: (heroStack: number) => void;
 }): React.JSX.Element {
   const { seated } = props;
@@ -56,7 +56,7 @@ export function NetworkTable(props: {
     [seated.seats],
   );
 
-  // Construct the client once (per mount). play() runs the handshake then the hand.
+  // 仅构建一次客户端（每次挂载）。play() 先执行握手，然后进行这手牌。
   const clientRef = useRef<InteractiveNetworkedTableClient | null>(null);
   if (clientRef.current === null) {
     const entropy = new Uint8Array(32);
@@ -87,13 +87,13 @@ export function NetworkTable(props: {
       if (!u.complete) setStatus('');
     });
     let cancelled = false;
-    // A continuous table: play hand after hand (fresh shuffle, carried stacks, rotating button)
-    // until the player leaves (client.abort()) or the table can't continue.
+    // 一张连续的牌桌：一手接一手地玩（重新洗牌、延续筹码、轮转庄家按钮）
+    // 直到玩家离开（client.abort()）或牌桌无法继续。
     client
       .playSession({ maxHands: 100 })
       .then(() => {
-        // The interactive client is variant-generic (GameState); this screen renders the
-        // holdem-shaped projection. The runtime shape matches; narrow at the boundary.
+        // 交互式客户端与变体无关（GameState）；此屏幕渲染
+        // holdem 形态的投影。运行时形态匹配；在边界处收窄类型。
         const s = client.getState();
         if (!cancelled && s) setFinalState(s as HoldemState);
       })
@@ -105,11 +105,11 @@ export function NetworkTable(props: {
       client.abort();
       off();
     };
-    // client is stable for the life of this component.
+    // client 在本组件的生命周期内保持稳定。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // GameState (variant-generic) narrowed to the holdem-shaped state this screen renders.
+  // 将 GameState（与变体无关）收窄为此屏幕渲染的 holdem 形态状态。
   const state = (update?.state ?? null) as HoldemState | null;
   const heroHole = state ? (state.hole?.[heroSeat] ?? []) : [];
   const legal = update?.yourTurn ? client.legalActions() : null;
@@ -120,10 +120,10 @@ export function NetworkTable(props: {
       state,
       heroSeat,
       heroHole,
-      // When it is not our turn there are no legal actions for us; pass an empty descriptor.
+      // 当不是我们的回合时，我们没有合法动作；传入一个空的描述符。
       legal: legal ?? { check: false, fold: false },
-      // Timeout/consequence text needs the engine's resolution; the interactive client does not
-      // expose it, so we surface a neutral line (the engine still enforces turns over the relay).
+      // 超时/后果文案需要引擎的判定结果；交互式客户端并不
+      // 暴露它，因此我们呈现一行中性文案（引擎仍会经由 relay 强制执行回合）。
       resolution: null,
       decisionMs: ruleset.timeouts.decisionMs,
     });
@@ -157,8 +157,8 @@ export function NetworkTable(props: {
   const showdown = finalState ? showdownViewModel(finalState, startingStacks) : null;
   const settlement = finalState ? settlementViewModel(finalState, startingStacks) : null;
 
-  // Hero's remaining stack to cash back into the wallet on leave (final state if the hand
-  // completed, else the live state, else the starting buy-in).
+  // 离开时套现回钱包的 hero 剩余筹码（若这手牌已完成则用最终状态，
+  // 否则用实时状态，再否则用初始买入）。
   const heroStack =
     (finalState ?? state)?.seats.find((s) => s.seat === heroSeat)?.stack ??
     (startingStacks.get(heroSeat) ?? 0);

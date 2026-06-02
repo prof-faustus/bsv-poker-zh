@@ -1,9 +1,8 @@
 /**
- * Relay-backed lobby + waiting room (app §A6.3/§A7, core §8.2) — this is how REAL players find
- * and join a game (not a bot). A host creates a table with a config; others see it via the relay
- * table list and join the waiting room by announcing themselves on the table channel; when the
- * seats fill, everyone derives the SAME seat assignment (sorted by identity pubkey) and starts.
- * The relay is transport/index only (P3); seating is agreed by the players, not the relay.
+ * 基于中继的大厅 + 等待室（app §A6.3/§A7, core §8.2）——这是真实玩家（而非 bot）发现
+ * 并加入一局对战的方式。一名主机用某个配置创建一桌；其他人通过中继的牌桌列表看到它，
+ * 并通过在该牌桌通道上宣告自己来加入等待室；当座位坐满时，所有人派生出相同的座位分配
+ * （按身份 pubkey 排序）并开始。中继仅承担传输/索引职责（P3）；座位由玩家约定，而非中继决定。
  */
 
 import type { Ruleset, Variant } from '@bsv-poker/protocol-types';
@@ -17,7 +16,7 @@ export interface TableMeta {
   readonly bigBlind: number;
   readonly startingStack: number;
   readonly maxSeats: number;
-  /** Omaha Hi-Lo split (Omaha-8, REQ-FSM-007) — only meaningful for the omaha variant. */
+  /** Omaha Hi-Lo 分池（Omaha-8, REQ-FSM-007）——仅对 omaha 变体有意义。 */
   readonly hiLo?: boolean;
 }
 
@@ -41,7 +40,7 @@ interface JoinEnvelope {
 }
 
 export function rulesetFromMeta(meta: TableMeta): Ruleset {
-  // Stud and Razz use ante + bring-in; the blind variants use small/big blinds (core §7.3).
+  // Stud 和 Razz 使用 ante + bring-in；盲注类变体使用小盲/大盲（core §7.3）。
   const bringIn = meta.variant === 'stud' || meta.variant === 'razz';
   return {
     variant: meta.variant,
@@ -67,29 +66,29 @@ export class LobbyClient {
     this.relay = relay;
   }
 
-  /** Host a new table; returns the table id (the meta is carried in the relay table name). */
+  /** 主持开一桌新对局；返回该牌桌 id（meta 承载在中继的牌桌名称中）。 */
   async createTable(meta: TableMeta): Promise<string> {
     const id = `tbl-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
     await this.relay.createTable(id, JSON.stringify(meta));
     return id;
   }
 
-  /** List open tables with their parsed config. */
+  /** 列出所有开放的牌桌及其已解析的配置。 */
   async listTables(): Promise<OpenTable[]> {
     const out: OpenTable[] = [];
     for (const t of await this.relay.listTables()) {
       try {
         out.push({ id: t.id, meta: JSON.parse(t.name) as TableMeta, members: t.members });
       } catch {
-        /* a table whose name isn't our JSON meta — skip */
+        /* 名称不是我们的 JSON meta 的牌桌——跳过 */
       }
     }
     return out;
   }
 
   /**
-   * Join a table's waiting room and resolve once it is full. `onPlayers` fires as players arrive.
-   * Returns the agreed seat assignment (sorted by identity pubkey) + ruleset, and an `abort()`.
+   * 加入某桌的等待室，并在其坐满后 resolve。`onPlayers` 在玩家到达时触发。
+   * 返回约定的座位分配（按身份 pubkey 排序）+ ruleset，以及一个 `abort()`。
    */
   joinWaitingRoom(
     tableId: string,
@@ -113,7 +112,7 @@ export class LobbyClient {
             }
           }
         } catch {
-          /* not a join envelope */
+          /* 不是 join envelope */
         }
       });
 
@@ -129,13 +128,13 @@ export class LobbyClient {
         if (aborted) return;
         announce();
         if (joined.size >= meta.maxSeats) {
-          // Deterministic seating: first maxSeats players sorted by identity pubkey.
+          // 确定性座位分配：按身份 pubkey 排序后取前 maxSeats 名玩家。
           const sorted = [...joined.values()].sort((a, b) => (a.pub < b.pub ? -1 : 1)).slice(0, meta.maxSeats);
           const players = sorted;
           const seats: TablePlayer[] = players.map((_, i) => ({ seat: i, stack: meta.startingStack }));
           const mySeat = players.findIndex((p) => p.pub === me.pub);
           if (mySeat < 0) {
-            // didn't make the cut for this table
+            // 未能入选本桌
             reject(new Error('table filled before you were seated'));
             return;
           }

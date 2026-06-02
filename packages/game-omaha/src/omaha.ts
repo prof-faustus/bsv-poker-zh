@@ -1,25 +1,25 @@
 /**
- * Omaha / Pot-Limit Omaha GameModule — core §7.3.1, REQ-FSM-006.
+ * 奥马哈 / 底池限注奥马哈(Pot-Limit Omaha)GameModule —— 核心 §7.3.1,REQ-FSM-006。
  *
- * Omaha is the Texas Hold'em FSM (§19.E) with exactly TWO overrides (REQ-FSM-006):
- *   (i)  DEAL_HOLE draws FOUR concealed cards per seat (not two);
- *   (ii) SHOWDOWN evaluates by the Omaha-constrained evaluator — exactly 2 of 4 hole + exactly
- *        3 of 5 board (§5.3.2, REQ-POKER-005). The generic best-of-7 is provably WRONG for
- *        Omaha (§19.D), so this module routes showdown through `bestOmaha`.
- * Everything else — streets preflop/flop/turn/river, the 3-1-1 board, side pots, the
- * two-exit timeout-default rule (P4) — is identical to Hold'em.
+ * 奥马哈就是德州扑克的状态机(§19.E),仅有两处重写(REQ-FSM-006):
+ *   (i)  DEAL_HOLE 给每个座位发四张暗牌(而非两张);
+ *   (ii) SHOWDOWN 使用奥马哈约束求值器进行评估 —— 恰好用 4 张底牌中的 2 张 + 恰好用
+ *        5 张公共牌中的 3 张(§5.3.2,REQ-POKER-005)。通用的 best-of-7 对奥马哈来说
+ *        可证明是错误的(§19.D),因此本模块的摊牌经由 `bestOmaha`。
+ * 其余一切 —— 翻牌前/翻牌/转牌/河牌各街、3-1-1 的公共牌、边池、
+ * 两出口超时默认动作规则(P4) —— 都与德州扑克相同。
  *
- * Determinism (P2 / REQ-ARCH-002): pure function of (ruleset, injected recorded deck, actions);
- * no randomness. The deck is the post-shuffle order (core §4). Card faces are engine-known for
- * settlement but concealed at the UI boundary; cooperative reveals auto-advance and their
- * timeout-default is reported by isTimeoutEligible (core §6.4).
+ * 确定性(P2 / REQ-ARCH-002):是 (ruleset, 注入的已记录牌堆, actions) 的纯函数;
+ * 无随机性。牌堆是洗牌后的顺序(核心 §4)。牌面为引擎已知以便
+ * 结算,但在 UI 边界处隐藏;协作式揭示会自动推进,其
+ * 超时默认动作由 isTimeoutEligible 报告(核心 §6.4)。
  *
- * The common structure is Pot-Limit (PLO); the module accepts the ruleset's structure (NL/PL/FL,
- * D3) unchanged — the betting machine already implements all three.
+ * 常见结构是底池限注(PLO);本模块原样接受 ruleset 的结构(NL/PL/FL,
+ * D3)—— 下注机已经实现了全部三种。
  *
- * Omaha Hi-Lo (Omaha-8, REQ-FSM-007) — the ace-to-five eight-or-better low split — is a
- * separate, test-vectored path that is NOT implemented here unless `ruleset.hiLo` is set; see
- * the TODO at SHOWDOWN below. The hand-eval package already exposes `bestOmaha8Low` for it.
+ * 奥马哈高低牌(Omaha-8,REQ-FSM-007)—— ace-to-five 八或更好的低牌平分 —— 是一条
+ * 独立的、有测试向量的路径,除非设置了 `ruleset.hiLo`,否则此处不实现;参见
+ * 下方 SHOWDOWN 处的 TODO。hand-eval 包已经为此暴露了 `bestOmaha8Low`。
  */
 
 import {
@@ -51,10 +51,10 @@ import {
   openRound,
 } from '@bsv-poker/engine';
 
-/** Number of concealed hole cards per seat — the first Omaha override (REQ-FSM-006). */
+/** 每个座位的暗底牌数量 —— 奥马哈的第一处重写(REQ-FSM-006)。 */
 const HOLE_CARDS = 4;
 
-// §19.E phases (identical graph to Hold'em).
+// §19.E 阶段(与德州扑克图相同)。
 export const PHASES = {
   TABLE_LOCKED: 'S0_TABLE_LOCKED',
   POST_BLINDS: 'S1_POST_BLINDS',
@@ -77,13 +77,13 @@ export const PHASES = {
 export interface OmahaState extends GameState {
   readonly ctx: BettingCtx;
   readonly deck: readonly Card[];
-  /** Engine-known hole cards per seat number (4 each); concealed at the UI boundary. */
+  /** 每个座位编号的、引擎已知的底牌(各 4 张);在 UI 边界处隐藏。 */
   readonly hole: Readonly<Record<number, readonly Card[]>>;
   readonly payouts: Payouts;
 }
 
 interface OmahaConfig {
-  /** The post-shuffle deck (>= 4*seats + 5 cards). Required for a real hand. */
+  /** 洗牌后的牌堆(>= 4*seats + 5 张牌)。真实一手牌所必需。 */
   readonly deck: readonly Card[];
 }
 
@@ -150,16 +150,16 @@ export function createOmaha(config: OmahaConfig): OmahaModule {
   function init(ruleset: Ruleset, seatInits: SeatInit[]): OmahaState {
     if (ruleset.variant !== 'omaha') throw new Error('not an omaha ruleset');
     if (seatInits.length < 2) throw new Error('need >= 2 seats');
-    // Override (i): FOUR concealed cards/seat then a 5-card board.
+    // 重写 (i):每个座位四张暗牌,然后是 5 张公共牌。
     const need = HOLE_CARDS * seatInits.length + 5;
     if (deck.length < need) throw new Error(`deck too small: need ${need}, got ${deck.length}`);
 
     const order = [...seatInits].sort((a, b) => a.seat - b.seat);
-    const buttonSeat = order[0]!.seat; // Phase-1: button at the lowest seat
+    const buttonSeat = order[0]!.seat; // 第一阶段:庄家位于最小座位
     const sb = buttonSeat;
     const bb = order[1 % order.length]!.seat;
 
-    // Deal hole cards one at a time, button-first, from the injected deck (4 rounds).
+    // 从注入的牌堆发底牌,一次一张,从庄家开始(4 轮)。
     const hole: Record<number, Card[]> = {};
     for (const s of order) hole[s.seat] = [];
     let p = 0;
@@ -199,7 +199,7 @@ export function createOmaha(config: OmahaConfig): OmahaModule {
     ctx.betToCall = ruleset.blinds.bigBlind;
     ctx.lastFullRaise = ruleset.blinds.bigBlind;
     ctx.lastAggressor = bb;
-    ctx.toAct = sb; // heads-up: button/SB acts first preflop
+    ctx.toAct = sb; // 单挑:庄家/小盲在翻牌前首先行动
 
     const base: OmahaState = {
       rulesetHash: '',
@@ -221,7 +221,7 @@ export function createOmaha(config: OmahaConfig): OmahaModule {
     return base;
   }
 
-  /** Board card indices in the deck after the 4-per-seat hole cards. */
+  /** 每座位 4 张底牌之后,公共牌在牌堆中的索引。 */
   function boardSlots(state: OmahaState): { flop: Card[]; turn: Card; river: Card } {
     const n = state.ctx.seats.length;
     const start = HOLE_CARDS * n;
@@ -287,7 +287,7 @@ export function createOmaha(config: OmahaConfig): OmahaModule {
     const bIdx = order.indexOf(state.buttonSeat);
     const leftOfButton = [...order.slice(bIdx + 1), ...order.slice(0, bIdx + 1)];
 
-    // Override (ii): Omaha-constrained showdown — exactly 2 hole + 3 board (REQ-POKER-005).
+    // 重写 (ii):奥马哈约束的摊牌 —— 恰好 2 张底牌 + 3 张公共牌(REQ-POKER-005)。
     const folded = (s: number): boolean => state.ctx.seats.find((x) => x.seat === s)!.folded;
     const handValue = (seat: number) => bestOmaha(state.hole[seat]!, state.board).value;
     const cmpHigh = (a: number, b: number): -1 | 0 | 1 => {
@@ -297,17 +297,17 @@ export function createOmaha(config: OmahaConfig): OmahaModule {
       return compareHigh(handValue(a), handValue(b));
     };
 
-    // Omaha Hi-Lo (Omaha-8, REQ-FSM-007): split each pot — high half to the best high; low half
-    // to the best qualifying eight-or-better low (bestOmaha8Low); no qualifying low ⇒ high scoops.
+    // 奥马哈高低牌(Omaha-8,REQ-FSM-007):平分每个底池 —— 高的一半归最佳高牌;低的一半
+    // 归最佳合格的八或更好低牌(bestOmaha8Low);无合格低牌 ⇒ 高牌通吃。
     const lowOf = (seat: number) =>
       folded(seat) ? null : bestOmaha8Low(state.hole[seat]!, state.board);
     const cmpLow = (a: number, b: number): -1 | 0 | 1 => {
       const la = lowOf(a);
       const lb = lowOf(b);
       if (!la && !lb) return 0;
-      if (!la) return -1; // a has no qualifying low → loses the low
+      if (!la) return -1; // a 无合格低牌 → 输掉低牌
       if (!lb) return 1;
-      const c = compareLow(la.value, lb.value); // lower is better
+      const c = compareLow(la.value, lb.value); // 越低越好
       return c === 0 ? 0 : c < 0 ? 1 : -1;
     };
 
@@ -324,10 +324,10 @@ export function createOmaha(config: OmahaConfig): OmahaModule {
         for (const [s, amt] of awardPot(pot, cmpHigh, leftOfButton)) add(s, amt);
         continue;
       }
-      // hi-lo: split. Odd chip goes to the high half (convention).
+      // 高低牌:平分。奇数筹码归高的一半(惯例)。
       const anyLow = pot.eligible.some((s) => lowOf(s) !== null);
       if (!anyLow) {
-        for (const [s, amt] of awardPot(pot, cmpHigh, leftOfButton)) add(s, amt); // high scoops
+        for (const [s, amt] of awardPot(pot, cmpHigh, leftOfButton)) add(s, amt); // 高牌通吃
         continue;
       }
       const lowHalf = Math.floor(pot.amount / 2);

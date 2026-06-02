@@ -1,15 +1,15 @@
 /**
- * §19.A Canonical serialization (byte-exact). Everything that must be deterministic across
- * clients (P2) binds to this: rulesetHash, branch bindings, state hashes, commitment preimages.
+ * §19.A 规范序列化（字节精确）。所有必须在客户端之间保持确定性的内容（P2）都绑定到它：
+ * rulesetHash、分支绑定、状态哈希、承诺原像。
  *
- * Rules (fixed here, owed by the core spec):
- *  - Little-endian fixed-width integers (u8/u16/u32/u64). Amounts are u64 (chips/satoshis;
- *    may exceed 2^53, so encoded via BigInt). No floats anywhere.
- *  - Enums are encoded as a 1-byte ordinal of their declared order in protocol-types.
- *  - Variable-length fields are length-prefixed with a u32 byte length.
- *  - Booleans are u8 ∈ {0,1}. Optional fields are preceded by a u8 presence flag.
- *  - Canonical field order is the order written by the serializers below; it is normative.
- *  - H = SHA-256 over the canonical bytes (txids elsewhere use double-SHA-256, BSV convention).
+ * 规则（在此固定，由 core 规范规定）：
+ *  - 小端定宽整数（u8/u16/u32/u64）。金额为 u64（筹码/聪；
+ *    可能超过 2^53，故通过 BigInt 编码）。任何地方都不使用浮点数。
+ *  - 枚举编码为 1 字节序数，对应其在 protocol-types 中声明的顺序。
+ *  - 变长字段以 u32 字节长度作为长度前缀。
+ *  - 布尔值为 u8 ∈ {0,1}。可选字段前面带有一个 u8 存在标志。
+ *  - 规范字段顺序即下方序列化器写入的顺序；它具有规范效力。
+ *  - H = 对规范字节做 SHA-256（其他地方的 txid 使用 double-SHA-256，遵循 BSV 惯例）。
  */
 
 import { sha256 as portableSha256 } from './sha256.ts';
@@ -60,24 +60,24 @@ export class ByteWriter {
     return this.u8(b ? 1 : 0);
   }
 
-  /** Length-prefixed (u32) raw bytes. */
+  /** 带长度前缀（u32）的原始字节。 */
   bytes(b: Uint8Array): this {
     this.u32(b.length);
     for (const x of b) this.chunks.push(x);
     return this;
   }
 
-  /** Length-prefixed UTF-8 string. */
+  /** 带长度前缀的 UTF-8 字符串。 */
   str(s: string): this {
     return this.bytes(new TextEncoder().encode(s));
   }
 
-  /** Length-prefixed hex string (decoded to bytes). */
+  /** 带长度前缀的 hex 字符串（解码为字节）。 */
   hex(h: string): this {
     return this.bytes(hexToBytes(h));
   }
 
-  /** Optional value: presence flag (u8) then the value if present. */
+  /** 可选值：存在标志（u8），若存在则写入该值。 */
   opt<T>(v: T | undefined, write: (w: this, v: T) => void): this {
     if (v === undefined) return this.u8(0);
     this.u8(1);
@@ -85,7 +85,7 @@ export class ByteWriter {
     return this;
   }
 
-  /** Length-prefixed (u32 count) array. */
+  /** 带长度前缀（u32 计数）的数组。 */
   arr<T>(items: readonly T[], write: (w: this, v: T) => void): this {
     this.u32(items.length);
     for (const it of items) write(this, it);
@@ -120,37 +120,37 @@ function ordinal<T extends readonly string[]>(table: T, value: T[number]): numbe
   return i;
 }
 
-/** H = SHA-256 (single). Portable (pure-TS) so the deterministic core runs in the browser too. */
+/** H = SHA-256（单次）。可移植（纯 TS），使确定性 core 也能在浏览器中运行。 */
 export function sha256(b: Uint8Array): Uint8Array {
   return portableSha256(b);
 }
 
-/** double-SHA-256 (BSV txid convention). */
+/** double-SHA-256（BSV txid 惯例）。 */
 export function hash256(b: Uint8Array): Uint8Array {
   return sha256(sha256(b));
 }
 
-// ---- Card (core §5.1) -------------------------------------------------------
+// ---- 牌（core §5.1） -------------------------------------------------------
 export function serializeCard(w: ByteWriter, c: Card): void {
   if (!isCard(c)) throw new RangeError(`card: ${c}`);
   w.u8(c);
 }
 
-// ---- Ruleset (core §5.2) ----------------------------------------------------
+// ---- Ruleset（core §5.2） ----------------------------------------------------
 export function serializeRuleset(r: Ruleset): Uint8Array {
   const w = new ByteWriter();
   w.u8(ordinal(VARIANTS, r.variant));
   w.u8(ordinal(BETTING_STRUCTURES, r.bettingStructure));
   w.u8(ordinal(FORCED_BET_MODELS, r.forcedBetModel));
   w.u8(r.seats);
-  // blinds
+  // 盲注
   w.u64(r.blinds.smallBlind).u64(r.blinds.bigBlind).u64(r.blinds.ante).u64(r.blinds.bringIn);
   w.u64(r.minBuyIn).u64(r.maxBuyIn);
-  // FL sizing (optional)
+  // FL 注额（可选）
   w.opt(r.flSizing, (ww, fl) => {
     ww.u64(fl.smallBet).u64(fl.bigBet).u32(fl.maxRaisesPerStreet);
   });
-  // timeouts
+  // 超时
   w.u32(r.timeouts.decisionMs).u32(r.timeouts.recoveryMs);
   w.u8(ordinal(SIGNING_MODES, r.signingMode));
   w.u8(ordinal(CURRENCY_SEMANTICS, r.currency));
@@ -159,12 +159,12 @@ export function serializeRuleset(r: Ruleset): Uint8Array {
   return w.toBytes();
 }
 
-/** rulesetHash = H(canonicalSerialize(Ruleset)) — core §5.2, REQ-POKER-002. */
+/** rulesetHash = H(canonicalSerialize(Ruleset)) — core §5.2, REQ-POKER-002。 */
 export function rulesetHash(r: Ruleset): string {
   return bytesToHex(sha256(serializeRuleset(r)));
 }
 
-// ---- Action (core §5.4) -----------------------------------------------------
+// ---- Action（core §5.4） -----------------------------------------------------
 export function serializeAction(a: Action): Uint8Array {
   const w = new ByteWriter();
   w.u8(ordinal(ACTION_KINDS, a.kind));

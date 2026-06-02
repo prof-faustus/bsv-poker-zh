@@ -1,20 +1,20 @@
 /**
- * Networked-lobby view-models (§A6.3/§A7) — pure helpers for the relay-backed multiplayer flow:
- * a per-session identity (random player id + identity pubkey hex used for deterministic seat
- * ordering), validation of the create-table form into a relay TableMeta shape, and a pure
- * waiting-room status projection. No React, no I/O — strip-friendly for `node --test`.
+ * 联网大厅 view-models（§A6.3/§A7）—— 用于基于 relay 的多人对局流程的纯辅助函数：
+ * 每个对局的身份（随机 player id + 用于确定性座位排序的身份 pubkey hex）、把建桌表单
+ * 校验为 relay TableMeta 形状，以及纯粹的等待室状态投影。不依赖 React、无 I/O——
+ * 适合 `node --test` 的类型剥离环境。
  *
- * NOTE: the "pub" here is a random per-session hex used ONLY for seat ordering in the waiting
- * room (LobbyClient sorts joined players by pub). It is NOT a real secp256k1 identity key — the
- * on-chain custody/identity path is the Node SDK path (§A2.3), not this browser bundle.
+ * NOTE: 此处的 "pub" 是每个对局随机生成的 hex，仅用于等待室中的座位排序
+ *（LobbyClient 按 pub 对加入的玩家排序）。它不是真正的 secp256k1 身份密钥——
+ * 链上托管/身份路径走的是 Node SDK 路径（§A2.3），而非这个浏览器 bundle。
  */
 
-/** Variant ids (structural mirror of protocol-types' Variant — ui-core stays import-light). */
+/** Variant id（protocol-types 的 Variant 的结构性镜像——ui-core 保持轻量导入）。 */
 export type VariantId = 'holdem' | 'omaha' | 'stud' | 'draw' | 'razz';
 
-/** Seat-range metadata per variant (structural mirror of app-services VARIANT_INFO so the
- * view-model can validate seat counts without importing app-services). The app passes the real
- * VARIANT_INFO labels into the UI; these bounds keep the pure validation self-contained. */
+/** 每个变体的座位范围元数据（app-services VARIANT_INFO 的结构性镜像，使该
+ * view-model 无需导入 app-services 即可校验座位数）。应用会把真正的
+ * VARIANT_INFO 标签传入 UI；这些边界让纯校验保持自包含。 */
 export const VARIANT_SEAT_RANGE: Record<VariantId, { readonly minSeats: number; readonly maxSeats: number }> = {
   holdem: { minSeats: 2, maxSeats: 9 },
   omaha: { minSeats: 2, maxSeats: 9 },
@@ -23,8 +23,8 @@ export const VARIANT_SEAT_RANGE: Record<VariantId, { readonly minSeats: number; 
   razz: { minSeats: 2, maxSeats: 8 },
 };
 
-/** The TableMeta shape consumed by app-services LobbyClient (kept structural to avoid importing
- * app-services into ui-core — ui-core must stay free of app-services). */
+/** app-services LobbyClient 所消费的 TableMeta 形状（保持结构性以避免把
+ * app-services 导入 ui-core —— ui-core 必须不依赖 app-services）。 */
 export interface NetworkTableMeta {
   readonly name: string;
   readonly variant: VariantId;
@@ -32,14 +32,14 @@ export interface NetworkTableMeta {
   readonly bigBlind: number;
   readonly startingStack: number;
   readonly maxSeats: number;
-  /** Omaha hi-lo split toggle (only meaningful for omaha). Carried in the meta for display. */
+  /** Omaha hi-lo 分池开关（仅对 omaha 有意义）。携带在 meta 中用于显示。 */
   readonly hiLo?: boolean;
 }
 
 export interface SessionIdentity {
-  /** Human-facing player id (e.g. "player-3f9a"). */
+  /** 面向用户的 player id（例如 "player-3f9a"）。 */
   readonly id: string;
-  /** Random hex used for deterministic seat ordering (NOT a real key — see file header). */
+  /** 用于确定性座位排序的随机 hex（不是真正的密钥——见文件头部）。 */
   readonly pub: string;
 }
 
@@ -50,7 +50,7 @@ export interface NetworkTableForm {
   readonly bigBlind: number;
   readonly startingStack: number;
   readonly maxSeats: number;
-  /** Omaha hi-lo split (ignored for other variants). */
+  /** Omaha hi-lo 分池（其他变体忽略）。 */
   readonly hiLo?: boolean;
 }
 
@@ -59,11 +59,11 @@ export interface NetworkTableValidation {
   readonly errors: readonly string[];
 }
 
-/** Random-byte source — defaults to the platform crypto (browser & Node 24). Injectable for tests. */
+/** 随机字节源——默认使用平台 crypto（浏览器与 Node 24）。可注入以便测试。 */
 export type RandomBytes = (n: number) => Uint8Array;
 
-/** Minimal structural view of the Web Crypto getRandomValues (present in browsers and Node 24),
- * typed locally so this module needs neither the DOM `lib` nor a named `Crypto` global type. */
+/** Web Crypto getRandomValues 的最小结构性视图（浏览器与 Node 24 中均存在），
+ * 在本地定义类型，使本模块既不需要 DOM `lib` 也不需要具名的 `Crypto` 全局类型。 */
 interface RandomSource {
   getRandomValues<T extends ArrayBufferView>(array: T): T;
 }
@@ -80,10 +80,10 @@ export function bytesToHexLower(bytes: Uint8Array): string {
   return s;
 }
 
-/** Generate a fresh per-session identity: a short readable id + a 33-byte "pub" hex. */
+/** 生成一份新的每对局身份：一个简短可读的 id + 一个 33 字节的 "pub" hex。 */
 export function generateIdentity(randomBytes: RandomBytes = defaultRandomBytes): SessionIdentity {
   const idTag = bytesToHexLower(randomBytes(2));
-  // 33 bytes mirrors a compressed pubkey width; the leading byte is forced to 02/03 cosmetically.
+  // 33 字节对应压缩 pubkey 的宽度；首字节被强制设为 02/03，仅作外观处理。
   const pubBytes = randomBytes(33);
   pubBytes[0] = (pubBytes[0]! & 1) === 0 ? 0x02 : 0x03;
   return { id: `player-${idTag}`, pub: bytesToHexLower(pubBytes) };
@@ -108,7 +108,7 @@ export function validateNetworkTable(form: NetworkTableForm): NetworkTableValida
   return { ok: errors.length === 0, errors };
 }
 
-/** Assemble the relay TableMeta from a validated form (any of the five variants). */
+/** 从已校验的表单组装 relay TableMeta（五种变体中的任意一种）。 */
 export function metaFromNetworkForm(form: NetworkTableForm): NetworkTableMeta {
   const hiLo = form.variant === 'omaha' ? Boolean(form.hiLo) : false;
   return {
@@ -123,12 +123,12 @@ export function metaFromNetworkForm(form: NetworkTableForm): NetworkTableMeta {
 }
 
 export interface WaitingRoomVM {
-  /** Players seen in the waiting room so far. */
+  /** 到目前为止在等待室中看到的玩家。 */
   readonly players: readonly { id: string; pub: string }[];
   readonly joined: number;
   readonly capacity: number;
   readonly full: boolean;
-  /** "Waiting for players (n/maxSeats)…" or "Table full — seating…". */
+  /** "Waiting for players (n/maxSeats)…" 或 "Table full — seating…"。 */
   readonly statusText: string;
 }
 
@@ -149,7 +149,7 @@ export function waitingRoomVM(
   };
 }
 
-/** Label for a seat in networked play: the opponent's player id (or "(you)" for the hero). */
+/** 联网对局中座位的标签：对手的 player id（hero 显示为 "(you)"）。 */
 export function networkSeatLabel(
   players: readonly { id: string; pub: string }[],
 ): (seat: { seat: number; isHero: boolean }) => string {
