@@ -126,7 +126,7 @@ REQ-APP-021: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/c
 REQ-APP-022: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
 REQ-APP-023: traced -> [packages/app-services/src/network-modes.ts] tests [packages/app-services/test/errors-modes.test.ts]
 REQ-APP-024: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
-REQ-APP-025: planned (later phase)
+REQ-APP-025: traced -> [packages/wallet-custody/src/custody.ts] tests [packages/wallet-custody/test/custody.test.ts]
 REQ-APP-026: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
 REQ-APP-027: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
 REQ-APP-028: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
