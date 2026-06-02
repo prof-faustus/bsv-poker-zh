@@ -2,7 +2,7 @@
 # (Rust + a C linker: MSVC Build Tools on Windows) + the Tauri CLI — see ../README.md.
 [package]
 name = "bsv-poker-desktop"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "bsv-poker desktop shell — Tauri supervisor for node+relay+indexer"
 
