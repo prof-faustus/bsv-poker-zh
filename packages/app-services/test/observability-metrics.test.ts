@@ -26,3 +26,17 @@ test('tracing: one trace per player action spans app-services → SDK → both s
   assert.deepEqual(span.events.map((e) => e.stage), ['app-services.action', 'sdk.sign', 'send.speed', 'send.canonical']);
   assert.ok(span.endedAt !== undefined, 'span is closed');
 });
+
+import { Logger, MemorySink as MS, diagnosticBundle, Metrics as Mx, Tracer as Tr } from '../src/observability.ts';
+
+test('diagnostic bundle aggregates logs+metrics+traces and inherits redaction (REQ-APP-123)', () => {
+  const sink = new MS();
+  new Logger('custody', sink, 'debug').info('derive', { priv: 'ff'.repeat(32), gid: 'a1' });
+  const m = new Mx(); m.inc('restarts');
+  const t = new Tr(); const s = t.start('action'); t.event(s, 'sign'); t.end(s);
+  const b = diagnosticBundle(sink, m, t);
+  assert.equal(b.logs.length, 1);
+  assert.equal(b.metrics.counters['restarts'], 1);
+  assert.equal(b.traces.length, 1);
+  assert.ok(!JSON.stringify(b).includes('ffffffff'), 'no key material in the exported bundle');
+});

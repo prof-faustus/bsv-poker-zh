@@ -112,3 +112,21 @@ export class Tracer {
   event(span: Span, stage: string): void { span.events.push({ stage, t: Date.now() }); }
   end(span: Span): void { span.endedAt = Date.now(); }
 }
+
+// ---- Diagnostic bundle (REQ-APP-123) ----
+export interface DiagnosticBundle {
+  readonly generatedAt: number;
+  readonly logs: readonly LogRecord[];
+  readonly metrics: ReturnType<Metrics['snapshot']>;
+  readonly traces: readonly Span[];
+}
+
+/**
+ * Assemble a diagnostic bundle from logs + metrics + traces. Logs were redacted at write time, so
+ * the bundle inherits the no-key-material guarantee (REQ-APP-124); we re-redact log fields
+ * defensively so the bundle is safe to export regardless of how records were produced.
+ */
+export function diagnosticBundle(sink: MemorySink, metrics: Metrics, tracer: Tracer): DiagnosticBundle {
+  const logs = sink.records.map((r) => (r.fields ? { ...r, fields: redact(r.fields) as Record<string, unknown> } : r));
+  return { generatedAt: Date.now(), logs, metrics: metrics.snapshot(), traces: tracer.spans };
+}
