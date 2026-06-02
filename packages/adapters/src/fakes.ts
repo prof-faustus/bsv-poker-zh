@@ -76,7 +76,7 @@ export function makeFakeBS(): BSContract {
       return sha256hex(enc(params.participants.join('|') + ':' + params.granularityK));
     },
     async channelTransfer() {
-      /* in-memory no-op for orchestration */
+      /* 用于编排的内存内空操作 */
     },
     reconcileQstar(microBalances, k) {
       // 按最大余额法分配到整聪（不产生带小数的输出，INV-BS-1）。

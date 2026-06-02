@@ -42,7 +42,7 @@ export function validateEnvelope(raw: unknown): WireEnvelope | null {
   return o.amount !== undefined ? { ...env, amount: o.amount } : env;
 }
 
-/** Parse a JSON wire frame and validate it; null on bad JSON or a rejected envelope. */
+/** 解析 JSON 线路帧并校验；JSON 损坏或信封被拒时返回 null。 */
 export function parseAndValidate(frame: string): WireEnvelope | null {
   try {
     return validateEnvelope(JSON.parse(frame));
