@@ -27,10 +27,10 @@ REQ-DEP-001: traced -> [packages/adapters/src/contracts.ts] tests [packages/adap
 REQ-DEP-002: traced -> [packages/adapters/src/contracts.ts] tests [packages/adapters/test/conformance.test.ts]
 REQ-DEP-003: traced -> [packages/adapters/src/conformance.ts] tests [packages/adapters/test/conformance.test.ts, packages/crypto-mentalpoker/test/realct.test.ts]
 REQ-DEP-004: traced -> [packages/crypto-mentalpoker/src/realct.ts] tests [packages/crypto-mentalpoker/test/realct.test.ts]
-REQ-ENG-001: planned (later phase)
+REQ-ENG-001: traced -> [docs/adr/0003-self-contained-interpreter.md, docs/assurance.md, tools/perf-suite.ts] tests [tools/perf-suite.ts]
 REQ-ENG-002: traced -> [tools/extract-requirements.ts] tests [tools/reproduce.ts]
 REQ-ENG-003: traced -> [tools/traceability.ts, tools/trace-map.ts] tests [tools/traceability.ts]
-REQ-ENG-004: planned (later phase)
+REQ-ENG-004: traced -> [packages/app-services/src/network-gate.ts, packages/app-services/src/message-validation.ts] tests [tests/boundaries.test.ts]
 REQ-FSM-001: traced -> [packages/engine/src/fsm.ts, packages/game-holdem/src/holdem.ts] tests [packages/game-holdem/test/holdem.test.ts]
 REQ-FSM-002: traced -> [packages/game-holdem/src/holdem.ts] tests [packages/game-holdem/test/holdem.test.ts]
 REQ-FSM-003: traced -> [packages/game-stud/src/stud.ts] tests [packages/game-stud/test/stud.test.ts]
@@ -187,7 +187,7 @@ REQ-APP-142: planned (later phase)
 REQ-APP-143: planned (later phase)
 REQ-APP-150: planned (later phase)
 REQ-APP-151: planned (later phase)
-REQ-APP-160: planned (later phase)
+REQ-APP-160: traced -> [tools/ci.ts] tests [packages/sdk/test/adversarial.test.ts]
 REQ-APP-161: traced -> [packages/ui-core/src/view-models/table.ts] tests [packages/ui-core/test/table-vm.test.ts]
 REQ-APP-162: traced -> [packages/sdk/src/table.ts] tests [packages/sdk/test/table.test.ts]
 REQ-APP-163: planned (later phase)
@@ -197,9 +197,9 @@ REQ-APP-166: planned (later phase)
 REQ-APP-167: planned (later phase)
 REQ-APP-168: planned (later phase)
 REQ-APP-169: planned (later phase)
-REQ-APP-170: planned (later phase)
+REQ-APP-170: traced -> [docs/assurance.md, tools/traceability.ts] tests [tools/traceability.ts]
 REQ-APP-171: planned (later phase)
-REQ-APP-172: planned (later phase)
+REQ-APP-172: traced -> [docs/assurance.md, docs/redteam-02.md, packages/app-services/src/network-gate.ts] tests [packages/app-services/test/network-gate.test.ts]
 REQ-APP-173: planned (later phase)
 REQ-APP-180: planned (later phase)
 REQ-APP-181: traced -> [tools/trace-map.ts, tools/traceability.ts] tests [tools/traceability.ts]
