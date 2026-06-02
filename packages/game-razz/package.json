@@ -1,0 +1,18 @@
+{
+  "name": "@bsv-poker/game-razz",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@bsv-poker/protocol-types": "workspace:*",
+    "@bsv-poker/hand-eval": "workspace:*",
+    "@bsv-poker/engine": "workspace:*",
+    "@bsv-poker/game-stud": "workspace:*"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\""
+  }
+}

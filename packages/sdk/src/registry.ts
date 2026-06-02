@@ -7,6 +7,10 @@
 import type { Card, GameState, Variant } from '@bsv-poker/protocol-types';
 import type { GameModule } from '@bsv-poker/engine';
 import { createHoldem } from '@bsv-poker/game-holdem';
+import { createOmaha } from '@bsv-poker/game-omaha';
+import { createStud } from '@bsv-poker/game-stud';
+import { createDraw } from '@bsv-poker/game-draw';
+import { createRazz } from '@bsv-poker/game-razz';
 
 export interface ModuleConfig {
   readonly deck: readonly Card[];
@@ -35,3 +39,7 @@ export function registeredVariants(): Variant[] {
 // (HoldemState extends GameState); the registry hands it back opaquely as GameState — state
 // only ever flows from this same module's init/apply, so the cast is runtime-safe.
 registerGame('holdem', (cfg) => createHoldem({ deck: cfg.deck }) as unknown as ReturnType<ModuleFactory>);
+registerGame('omaha', (cfg) => createOmaha({ deck: cfg.deck }) as unknown as ReturnType<ModuleFactory>);
+registerGame('stud', (cfg) => createStud({ deck: cfg.deck }) as unknown as ReturnType<ModuleFactory>);
+registerGame('draw', (cfg) => createDraw({ deck: cfg.deck }) as unknown as ReturnType<ModuleFactory>);
+registerGame('razz', (cfg) => createRazz({ deck: cfg.deck }) as unknown as ReturnType<ModuleFactory>);

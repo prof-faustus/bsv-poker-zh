@@ -12,7 +12,7 @@
  *  - H = SHA-256 over the canonical bytes (txids elsewhere use double-SHA-256, BSV convention).
  */
 
-import { createHash } from 'node:crypto';
+import { sha256 as portableSha256 } from './sha256.ts';
 import type { Card } from './cards.ts';
 import { isCard } from './cards.ts';
 import {
@@ -120,9 +120,9 @@ function ordinal<T extends readonly string[]>(table: T, value: T[number]): numbe
   return i;
 }
 
-/** H = SHA-256 (single). */
+/** H = SHA-256 (single). Portable (pure-TS) so the deterministic core runs in the browser too. */
 export function sha256(b: Uint8Array): Uint8Array {
-  return new Uint8Array(createHash('sha256').update(b).digest());
+  return portableSha256(b);
 }
 
 /** double-SHA-256 (BSV txid convention). */

@@ -127,9 +127,21 @@ importers:
       '@bsv-poker/engine':
         specifier: workspace:*
         version: link:../engine
+      '@bsv-poker/game-draw':
+        specifier: workspace:*
+        version: link:../game-draw
       '@bsv-poker/game-holdem':
         specifier: workspace:*
         version: link:../game-holdem
+      '@bsv-poker/game-omaha':
+        specifier: workspace:*
+        version: link:../game-omaha
+      '@bsv-poker/game-razz':
+        specifier: workspace:*
+        version: link:../game-razz
+      '@bsv-poker/game-stud':
+        specifier: workspace:*
+        version: link:../game-stud
       '@bsv-poker/hand-eval':
         specifier: workspace:*
         version: link:../hand-eval
