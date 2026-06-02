@@ -1,61 +1,67 @@
 # BUILD STATUS — honest metrics (core §17, app §A20.2)
 
 > Completeness is never claimed beyond what is written and tested. Every number here is
-> produced by running the build (`pnpm ci`), not asserted.
+> produced by running the build (`pnpm ci`), not asserted. Last full run: CI **GREEN**.
 
-## Phase 0 — Foundations — **GATE MET** ✅
+## Pipeline (`pnpm ci`)
 
-Gate (core §17): *VM launches end-to-end, self-test passes, CI all green; adapters + fakes
-for CT/BS/VA/OB; protocol-types; reproduce green; traceability skeleton live.*
-
-| Check | Result |
+| Stage | Result |
 |---|---|
-| `pnpm typecheck` (`tsc --strict`, all strict flags) | green |
-| `pnpm lint:opreturn` (OP_RETURN 0x6a absence, rule 2) | green |
-| TS tests (`node --test`) | **56 pass / 0 fail** |
-| Go tests (`go test ./...`, relay + indexer) | **16 pass / 0 fail** |
-| `pnpm reproduce` (every vector regenerates bit-for-bit) | green |
-| `pnpm trace` (traceability) | **42/223 requirements traced; all Phase-0/1 gate reqs → passing tests** |
-| `node tools/selftest.ts` (VM stack up + full hand E2E) | PASS |
-| `pnpm ci` (full pipeline) | **GREEN** |
+| `tsc --strict` (all strict flags, whole workspace) | green |
+| OP_RETURN lint (0x6a absence, rule 2) | green |
+| TS tests (`node --test`) | **110 pass / 0 fail** |
+| Go tests (relay + indexer) | **16 pass / 0 fail** |
+| `reproduce` (every vector regenerates bit-for-bit) | green |
+| traceability | **72 / 223 requirements traced; all Phase-0/1 gate reqs → passing tests** |
+| web client `vite build` | green → `apps/client-web/dist` (62 modules, 56.8 kB gzip) |
+| `node tools/selftest.ts` (stack up + full hand E2E) | PASS |
 
-## What is built and tested
+## Phases
 
-| Package | Spec | Tests |
-|---|---|---|
-| `protocol-types` | cards (§5.1), ruleset/actions/state/tx, **§19.A canonical serialization + rulesetHash** | 8 |
-| `hand-eval` | high/Omaha-2+3/ace-to-five-low, **reproduces §19.D bit-for-bit** vs the oracle | 5 |
-| `engine` | **§19.B side-pots** + conservation, NL/PL/FL betting machine (REQ-POKER-008/9/10 incl. short-all-in rule), GameModule FSM | 15 |
-| `game-holdem` | **heads-up NL Hold'em (§19.E)**: full hand→showdown, fold-without-reveal, determinism, timeout-default | 5 |
-| `adapters` | CT/BS/VA/OB contracts + conformance-bound fakes + **one conformance suite per contract** (REQ-DEP-003) | 4 |
-| `crypto-mentalpoker` | **real** commit/reveal, canonical party order, secret-permutation shuffle (INV-CT-1), **real secp256k1 combined keys**; passes CT conformance on real crypto (REQ-DEP-004) | 5 |
-| `script-templates-ts` | post-Genesis opcodes, **real Genesis stack interpreter** (real ECDSA CHECKSIG/MULTISIG), templates (funding/reveal-or-timeout/fold/settlement) as **pushdata not OP_RETURN**; positive+negative spends fail **inside** the interpreter (P9) | 10 |
-| `tx-builder` | sighash preimage, txid, §15.5 builders, **tx-level maturity** (REQ-TX-002, no in-script CLTV/CSV) | 4 |
-| `relay-go` (Go) | Tier A presence + table directory, Tier B opaque fan-out; transport/index only (REQ-NET-001) | 8 |
-| `indexer-go` (Go) | per-table projections, dedup, deterministic ordering, reproducible `Rebuild` (P2) | 8 |
-| `tools` | OP_RETURN lint, requirements register, traceability, **reproduce**, CI, VM self-test | — |
-| `vm` | docker-compose + reproducible Dockerfiles (relay/indexer/node/client) + one-command self-test | — |
+- **Phase 0 — Foundations — GATE MET** ✅ (tag `v0.0.0-phase0`): monorepo, adapters+conformance
+  fakes, protocol-types + §19.A serialization, reproduce + traceability, VM self-test, CI green.
+- **Phase 1 — First playable (heads-up NL Hold'em) — core MET; shells partial** :
+  - ✅ entropy commit/reveal, distributed shuffle, encrypted-card deal, full preflop→river
+    betting FSM, showdown, **settlement spend verified through the real interpreter**, fold
+    without reveal, decision/recovery timeout defaults, transcript + **deterministic replay**
+    (SDK `runHand`/`deriveState`); interpreter tests green for every template used.
+  - ✅ **running web client** (`vite build` → playable hot-seat-vs-bot Hold'em on the real engine;
+    lobby, table, legality-driven bet sizer, signing modal, consequence text, regtest banner).
+  - ⏳ **desktop shell**: source complete (Tauri supervisor, §A3.2 lifecycle, IPC) — **build
+    pending the native toolchain** (no Rust/MSVC linker on this host; see apps/client-desktop).
+  - ⏳ relay/LAN **discovery wired into the client** (relay+indexer run + self-test; the web
+    client is single-client local — multi-client sync is the next pass).
+  - ⏳ on-chain crypto/tx **end-to-end on the real bonded-subsat-channel node** (modeled in-process
+    + interpreter-verified; the real node adapter binds next).
+- **Phase 2 — Robustness — partially delivered**: fair-play template (mismatch forfeits inside
+  the interpreter) + §19.C measured byte schedule + per-card/per-batch decision; multi-way N-seat
+  Hold'em with side-pot settlement + button rotation; **9-case adversarial suite** (§14.6).
+- **Phase 3 — Variants — MET (modules)**: Omaha, Seven-Card Stud, Five-Card Draw, Razz game
+  modules, each tested; hand-eval reproduces the §19.D vectors. (TODO: Omaha-8 hi-lo split path
+  exists in hand-eval, gated off in the module; authentic FL bring-in completion sizing.)
+- **Phase 4 — seams**: VA audit (boundary surfaced, no truth-at-origin) + OB revocation
+  (unspent-expiring-output) integration-tested against the fakes.
 
-**Non-negotiable rules enforced:** BSV-only/post-Genesis (CLTV/CSV no-ops, tested); **OP_RETURN
-banned** (serialize throws, lint + interpreter reject); **zero fabrication** (`reproduce`
-green); **real-interpreter negative tests** (fail inside the interpreter); **traceability** (no
-claimed requirement is untested).
+## Packages (TS) + apps (Go/Rust)
 
-## Committed vectors (`spec/vectors/reproduce.json`)
+protocol-types · hand-eval · engine · game-holdem · game-omaha · game-stud · game-draw ·
+game-razz · crypto-mentalpoker · adapters · script-templates-ts · tx-builder · wallet-custody ·
+sdk · ui-core · app-services · tools · relay-go · indexer-go · client-web (Vite) ·
+client-desktop (Tauri, source).
 
-§19.D hand-eval (high/Omaha/low), §19.A rulesetHash sample, §19.C template wire-byte sizes,
-and a full-hand transcript state hash — all regenerated by `pnpm reproduce`.
+## Non-negotiable rules — enforced, not aspirational
 
-## What remains (honest — not yet built)
+BSV-only/post-Genesis (CLTV/CSV no-ops, tested) · **OP_RETURN banned** (serialize throws + lint +
+interpreter reject) · zero fabrication (`reproduce`) · real-interpreter negative tests (fail
+inside) · complete traceability for every claimed requirement · RT-01 B1/B2 not reintroduced.
 
-- **Phase 1 completion:** wire the crypto shuffle/reveal + tx templates into the Hold'em hand
-  end-to-end on the embedded node (bind the real `bonded-subsat-channel` node, D6); the
-  `ui-core` + Vite web client + Tauri desktop shell; relay/LAN discovery in the client;
-  transcript persistence (SQLite/IndexedDB); minimum-reveal showdown crypto.
-- **Phase 2+:** fair-play transactions + §19.C byte measurement at deck scale; full pre-signed
-  fallback graph; multi-way side pots in-game; 6-max.
-- **Phase 3:** Omaha / Stud / Draw / Razz game modules (hand-eval paths already vectored).
-- **Real adapters:** bind CT (cardtable) / BS / VA / OB real implementations; run the same
-  conformance suite against them.
-- **Traceability:** 181/223 requirements are `planned (later phase)` — see `spec/traceability.txt`.
-- **Toolchain gap:** Rust/Tauri not yet installed on the build host (desktop shell, Phase 1).
+## What remains (honest)
+
+1. **Desktop build**: install Rust + MSVC Build Tools, then `cargo tauri build` (source is ready).
+2. **Multi-client + discovery**: wire the web client to relay/indexer for real multiplayer.
+3. **On-chain E2E**: bind the real `bonded-subsat-channel` node (D6) and run a crypto/tx hand on
+   regtest through the VM; bind the real CT/BS/VA/OB repos and re-run conformance against them.
+4. **Mode B** threshold signing (`OB.custody`); full pre-signed fallback graph; minimum-reveal
+   showdown crypto; Omaha-8 hi-lo.
+5. **Traceability**: 151 / 223 requirements remain `planned (later phase)` — see
+   `spec/traceability.txt`.

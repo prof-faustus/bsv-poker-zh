@@ -1,5 +1,7 @@
 packages:
   - 'packages/*'
   - 'apps/client-web'
-  - 'apps/client-desktop'
+  # apps/client-desktop is a Tauri (Rust) project built via `cargo tauri build`, not the JS
+  # workspace install — kept out of the pnpm workspace so installs don't fetch the Tauri CLI
+  # in environments without the native toolchain (see apps/client-desktop/README.md).
   - 'tools'
