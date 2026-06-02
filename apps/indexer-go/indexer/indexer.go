@@ -39,6 +39,7 @@ type Record struct {
 type tableProjection struct {
 	order []string            // txids in deterministic insertion order
 	seen  map[string]struct{} // dedup set
+	recs  map[string]Record   // full records by txid (for transcript rebuild / reconnect)
 }
 
 // Indexer is the concurrency-safe collection of per-table projections.
@@ -68,7 +69,7 @@ func (ix *Indexer) Ingest(rec Record) (bool, error) {
 	defer ix.mu.Unlock()
 	tp := ix.tables[rec.TableID]
 	if tp == nil {
-		tp = &tableProjection{seen: make(map[string]struct{})}
+		tp = &tableProjection{seen: make(map[string]struct{}), recs: make(map[string]Record)}
 		ix.tables[rec.TableID] = tp
 	}
 	if _, dup := tp.seen[rec.Txid]; dup {
@@ -76,7 +77,25 @@ func (ix *Indexer) Ingest(rec Record) (bool, error) {
 	}
 	tp.seen[rec.Txid] = struct{}{}
 	tp.order = append(tp.order, rec.Txid)
+	tp.recs[rec.Txid] = rec
 	return true, nil
+}
+
+// Records returns the FULL ordered records for a table (the transcript) so any client can
+// rebuild current state from the valid tx set (REQ-NET-007, REQ-DATA-002/003). A copy is
+// returned; an unknown table yields an empty slice.
+func (ix *Indexer) Records(tableID string) []Record {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	tp := ix.tables[tableID]
+	if tp == nil {
+		return []Record{}
+	}
+	out := make([]Record, 0, len(tp.order))
+	for _, id := range tp.order { // bounded by len(order)
+		out = append(out, tp.recs[id])
+	}
+	return out
 }
 
 // Table returns the ordered txid list for a table id. A copy is returned so the

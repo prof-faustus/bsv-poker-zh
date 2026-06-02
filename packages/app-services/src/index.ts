@@ -8,3 +8,5 @@ export * from './lobby.ts';
 export * from './game-registry.ts';
 export * from './wallet.ts';
 export * from './offline.ts';
+export * from './mp-shuffle.ts';
+export * from './transcript.ts';

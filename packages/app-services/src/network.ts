@@ -164,4 +164,12 @@ export class IndexerClient {
     );
     return r.txids;
   }
+
+  /** The FULL ordered records (the transcript) — for reconnect/rebuild (REQ-NET-007). */
+  async records(tableId: string): Promise<TxRecord[]> {
+    const r = await asJson<{ tableId: string; records: TxRecord[] }>(
+      await this.fetchFn(`${this.base}/table/${tableId}/records`),
+    );
+    return r.records ?? [];
+  }
 }

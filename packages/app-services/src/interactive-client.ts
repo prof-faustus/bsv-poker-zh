@@ -20,8 +20,9 @@ import {
   hexToBytes,
   ByteWriter,
 } from '@bsv-poker/protocol-types';
-import type { RelayClient } from './network.ts';
+import type { RelayClient, IndexerClient } from './network.ts';
 import { createGameModule, type GenericGameModule } from './game-registry.ts';
+import { deckFromEntropies } from './mp-shuffle.ts';
 
 export interface TablePlayer {
   readonly seat: number;
@@ -48,30 +49,6 @@ export interface ClientUpdate {
   readonly complete: boolean;
 }
 
-/** Deterministic seeded Fisher–Yates over portable sha256 (identical on every client). */
-function seededShuffle(seed: Uint8Array, n: number): number[] {
-  const perm = Array.from({ length: n }, (_, i) => i);
-  let counter = 0;
-  let pool: number[] = [];
-  const draw = (): number => {
-    if (pool.length === 0) {
-      const w = new ByteWriter();
-      for (const b of seed) w.u8(b);
-      w.u32(counter++);
-      const h = sha256(w.toBytes());
-      for (let i = 0; i + 4 <= h.length; i += 4) {
-        pool.push(((h[i]! << 24) | (h[i + 1]! << 16) | (h[i + 2]! << 8) | h[i + 3]!) >>> 0);
-      }
-    }
-    return pool.shift()!;
-  };
-  for (let i = n - 1; i > 0; i--) {
-    const j = draw() % (i + 1);
-    [perm[i], perm[j]] = [perm[j]!, perm[i]!];
-  }
-  return perm;
-}
-
 export class InteractiveNetworkedTableClient {
   private readonly relay: RelayClient;
   private readonly tableId: string;
@@ -86,6 +63,8 @@ export class InteractiveNetworkedTableClient {
   private module: GenericGameModule | null = null;
   private state: GameState | null = null;
   private aborted = false;
+  private ingestSeq = 0; // makes each ingested record's txid unique (identical checks would collide)
+  private readonly indexer: IndexerClient | null;
 
   constructor(opts: {
     relay: RelayClient;
@@ -94,6 +73,8 @@ export class InteractiveNetworkedTableClient {
     seats: TablePlayer[];
     ruleset: Ruleset;
     entropy: Uint8Array;
+    /** Optional canonical path: every envelope is also ingested here for transcript/reconnect. */
+    indexer?: IndexerClient;
   }) {
     this.relay = opts.relay;
     this.tableId = opts.tableId;
@@ -101,6 +82,7 @@ export class InteractiveNetworkedTableClient {
     this.seats = [...opts.seats].sort((a, b) => a.seat - b.seat);
     this.ruleset = opts.ruleset;
     this.entropy = opts.entropy;
+    this.indexer = opts.indexer ?? null;
   }
 
   onUpdate(cb: (u: ClientUpdate) => void): () => void {
@@ -157,7 +139,19 @@ export class InteractiveNetworkedTableClient {
   }
 
   private async publish(env: Envelope): Promise<void> {
-    await this.relay.publish(this.tableId, new TextEncoder().encode(JSON.stringify(env)));
+    const json = JSON.stringify(env);
+    // speed path: relay channel
+    await this.relay.publish(this.tableId, new TextEncoder().encode(json));
+    // canonical path: ingest to the indexer (dedup by txid) so the transcript is rebuildable
+    if (this.indexer) {
+      // unique per occurrence: identical envelopes (e.g. repeated checks) must NOT dedup away
+      const txid = bytesToHex(sha256(new TextEncoder().encode(`${this.mySeat}:${this.ingestSeq++}:${json}`)));
+      try {
+        await this.indexer.ingest({ txid, class: env.t, tableId: this.tableId, raw: btoa(json) });
+      } catch {
+        /* canonical-path best-effort; the relay channel still carries truth this session */
+      }
+    }
   }
   private received(pred: (e: Envelope) => boolean): Envelope | undefined {
     return this.inbox.find(pred);
@@ -222,9 +216,7 @@ export class InteractiveNetworkedTableClient {
       if (bytesToHex(sha256(r)) !== commit.c) throw new Error(`bad reveal for seat ${s.seat}`);
       entropies.push(r);
     }
-    const w = new ByteWriter();
-    for (const e of entropies) for (const b of e) w.u8(b);
-    const deck: Card[] = seededShuffle(sha256(w.toBytes()), 52);
+    const deck: Card[] = deckFromEntropies(entropies);
 
     this.module = createGameModule(this.ruleset.variant, deck, buttonIndex);
     this.state = this.module.init(this.ruleset, seats.map((s) => ({ seat: s.seat, stack: s.stack })));

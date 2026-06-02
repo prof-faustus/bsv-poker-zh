@@ -37,6 +37,7 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("POST /ingest", s.handleIngest)
 	mux.HandleFunc("GET /table/{id}", s.handleTable)
+	mux.HandleFunc("GET /table/{id}/records", s.handleRecords)
 	mux.HandleFunc("GET /tables", s.handleTables)
 	s.mux = mux
 }
@@ -85,6 +86,17 @@ func (s *Server) handleTable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tableResponse{TableID: id, Txids: s.ix.Table(id)})
+}
+
+// handleRecords returns the FULL ordered records (the transcript) so a (re)connecting client
+// can rebuild current state from the valid tx set (REQ-NET-007, REQ-DATA-002/003).
+func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErr(w, http.StatusBadRequest, ErrEmptyTable.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tableId": id, "records": s.ix.Records(id)})
 }
 
 func (s *Server) handleTables(w http.ResponseWriter, _ *http.Request) {
