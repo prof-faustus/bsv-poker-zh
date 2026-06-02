@@ -24,6 +24,18 @@ importers:
         specifier: workspace:*
         version: link:../protocol-types
 
+  packages/game-holdem:
+    dependencies:
+      '@bsv-poker/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@bsv-poker/hand-eval':
+        specifier: workspace:*
+        version: link:../hand-eval
+      '@bsv-poker/protocol-types':
+        specifier: workspace:*
+        version: link:../protocol-types
+
   packages/hand-eval:
     dependencies:
       '@bsv-poker/protocol-types':
