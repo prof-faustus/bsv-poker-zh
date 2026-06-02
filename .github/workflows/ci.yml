@@ -22,8 +22,7 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # version comes from package.json "packageManager" (pnpm@9.0.0)
 
       - name: Set up Node 24 (native TypeScript type-stripping)
         uses: actions/setup-node@v4
