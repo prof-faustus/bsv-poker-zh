@@ -1,0 +1,13 @@
+{
+  "name": "@bsv-poker/tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@bsv-poker/protocol-types": "workspace:*",
+    "@bsv-poker/hand-eval": "workspace:*",
+    "@bsv-poker/engine": "workspace:*",
+    "@bsv-poker/game-holdem": "workspace:*",
+    "@bsv-poker/script-templates-ts": "workspace:*"
+  }
+}

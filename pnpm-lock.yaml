@@ -59,6 +59,39 @@ importers:
 
   packages/protocol-types: {}
 
+  packages/script-templates-ts:
+    dependencies:
+      '@bsv-poker/protocol-types':
+        specifier: workspace:*
+        version: link:../protocol-types
+
+  packages/tx-builder:
+    dependencies:
+      '@bsv-poker/protocol-types':
+        specifier: workspace:*
+        version: link:../protocol-types
+      '@bsv-poker/script-templates-ts':
+        specifier: workspace:*
+        version: link:../script-templates-ts
+
+  tools:
+    dependencies:
+      '@bsv-poker/engine':
+        specifier: workspace:*
+        version: link:../packages/engine
+      '@bsv-poker/game-holdem':
+        specifier: workspace:*
+        version: link:../packages/game-holdem
+      '@bsv-poker/hand-eval':
+        specifier: workspace:*
+        version: link:../packages/hand-eval
+      '@bsv-poker/protocol-types':
+        specifier: workspace:*
+        version: link:../packages/protocol-types
+      '@bsv-poker/script-templates-ts':
+        specifier: workspace:*
+        version: link:../packages/script-templates-ts
+
 packages:
 
   '@types/node@22.19.19':
