@@ -71,17 +71,17 @@ REQ-PROD-002: traced -> [packages/ui-core/src/view-models/lobby.ts, packages/app
 REQ-PROD-003: traced -> [packages/ui-core/src/view-models/lobby.ts] tests [packages/ui-core/test/showdown-signing-lobby-vm.test.ts]
 REQ-PROD-004: traced -> [packages/ui-core/src/view-models/table.ts] tests [packages/ui-core/test/table-vm.test.ts]
 REQ-PROD-005: planned (later phase)
-REQ-PROD-006: planned (later phase)
+REQ-PROD-006: traced -> [packages/ui-core/src/view-models/signing.ts] tests [packages/ui-core/test/showdown-signing-lobby-vm.test.ts]
 REQ-PROD-007: traced -> [packages/game-holdem/src/holdem.ts, packages/ui-core/src/view-models/table.ts] tests [packages/game-holdem/test/holdem.test.ts]
-REQ-PROD-008: planned (later phase)
+REQ-PROD-008: traced -> [packages/ui-core/src/view-models/showdown.ts] tests [packages/ui-core/test/showdown-signing-lobby-vm.test.ts]
 REQ-PROD-009: traced -> [packages/ui-core/src/view-models/showdown.ts] tests [packages/ui-core/test/showdown-signing-lobby-vm.test.ts]
-REQ-PROD-010: planned (later phase)
+REQ-PROD-010: traced -> [packages/sdk/src/table.ts, packages/app-services/src/transcript.ts] tests [packages/sdk/test/table.test.ts]
 REQ-PROD-011: traced -> [packages/app-services/src/transcript.ts] tests [apps/indexer-go/indexer/indexer_test.go]
 REQ-PROD-012: planned (later phase)
-REQ-TEST-001: planned (later phase)
+REQ-TEST-001: traced -> [packages/hand-eval/src/high.ts, packages/engine/src/pots.ts, packages/engine/src/betting.ts, packages/protocol-types/src/serialize.ts] tests [packages/hand-eval/test/vectors.test.ts, packages/engine/test/pots.test.ts, packages/engine/test/betting.test.ts, packages/protocol-types/test/serialize.test.ts]
 REQ-TEST-002: traced -> [packages/app-services/src/networked-table-client.ts, packages/game-holdem/src/holdem.ts] tests [packages/game-holdem/test/holdem.test.ts]
-REQ-TEST-003: planned (later phase)
-REQ-TEST-004: planned (later phase)
+REQ-TEST-003: traced -> [packages/script-templates-ts/src/interpreter.ts] tests [packages/script-templates-ts/test/templates.test.ts]
+REQ-TEST-004: traced -> [packages/sdk/src/table.ts] tests [packages/sdk/test/table.test.ts, packages/sdk/test/adversarial.test.ts]
 REQ-TEST-005: traced -> [tools/reproduce.ts] tests [tools/reproduce.ts]
 REQ-TEST-006: traced -> [packages/sdk/test/adversarial.test.ts] tests [packages/sdk/test/adversarial.test.ts]
 REQ-TEST-007: planned (later phase)
