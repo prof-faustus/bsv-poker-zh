@@ -1,0 +1,25 @@
+{
+  "name": "@bsv-poker/root",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-strip-types \"packages/**/test/**/*.test.ts\" \"tests/**/*.test.ts\"",
+    "test:unit": "node --test \"tests/unit/**/*.test.ts\"",
+    "test:property": "node --test \"tests/property/**/*.test.ts\"",
+    "test:integration": "node --test \"tests/integration/**/*.test.ts\"",
+    "lint:opreturn": "node tools/lint-opreturn.ts",
+    "reproduce": "node tools/reproduce.ts",
+    "trace": "node tools/traceability.ts",
+    "ci": "node tools/ci.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22",
+    "typescript": "5.8.3"
+  }
+}

@@ -1,0 +1,5 @@
+packages:
+  - 'packages/*'
+  - 'apps/client-web'
+  - 'apps/client-desktop'
+  - 'tools'
