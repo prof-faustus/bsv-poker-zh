@@ -7,3 +7,4 @@ export * from './interactive-client.ts';
 export * from './lobby.ts';
 export * from './game-registry.ts';
 export * from './wallet.ts';
+export * from './offline.ts';

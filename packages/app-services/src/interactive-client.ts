@@ -132,15 +132,20 @@ export class InteractiveNetworkedTableClient {
     return this.module && this.state ? this.module.stateHash(this.state) : null;
   }
 
+  /** Seat to act: a betting turn, else a non-betting decision turn (e.g. Draw's discard). */
+  private static toAct(s: GameState): number | null {
+    return s.betting.toAct ?? s.drawToAct ?? null;
+  }
+
   legalActions(): LegalActions | null {
     if (!this.module || !this.state) return null;
-    if (this.state.betting.toAct !== this.mySeat) return null;
+    if (InteractiveNetworkedTableClient.toAct(this.state) !== this.mySeat) return null;
     return this.module.getLegalActions(this.state, this.mySeat);
   }
 
   private emit(complete = false): void {
     if (!this.state || !this.module) return;
-    const yourTurn = !complete && this.state.betting.toAct === this.mySeat;
+    const yourTurn = !complete && InteractiveNetworkedTableClient.toAct(this.state) === this.mySeat;
     const update: ClientUpdate = {
       state: this.state,
       mySeat: this.mySeat,
@@ -227,7 +232,7 @@ export class InteractiveNetworkedTableClient {
 
     const cursor = new Map<number, number>();
     while (!this.state.handComplete) {
-      const toAct = this.state.betting.toAct;
+      const toAct = InteractiveNetworkedTableClient.toAct(this.state);
       if (toAct === null) break;
       if (toAct === this.mySeat) {
         const action = await new Promise<Action>((res) => {

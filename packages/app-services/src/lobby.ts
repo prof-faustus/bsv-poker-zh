@@ -41,12 +41,16 @@ interface JoinEnvelope {
 }
 
 export function rulesetFromMeta(meta: TableMeta): Ruleset {
+  // Stud and Razz use ante + bring-in; the blind variants use small/big blinds (core §7.3).
+  const bringIn = meta.variant === 'stud' || meta.variant === 'razz';
   return {
     variant: meta.variant,
     bettingStructure: 'NL',
-    forcedBetModel: 'blinds',
+    forcedBetModel: bringIn ? 'ante-bringin' : 'blinds',
     seats: meta.maxSeats,
-    blinds: { smallBlind: meta.smallBlind, bigBlind: meta.bigBlind, ante: 0, bringIn: 0 },
+    blinds: bringIn
+      ? { smallBlind: 0, bigBlind: 0, ante: Math.max(1, Math.floor(meta.smallBlind)), bringIn: Math.max(1, Math.floor(meta.smallBlind)) }
+      : { smallBlind: meta.smallBlind, bigBlind: meta.bigBlind, ante: 0, bringIn: 0 },
     minBuyIn: meta.startingStack,
     maxBuyIn: meta.startingStack,
     timeouts: { decisionMs: 30000, recoveryMs: 120000 },

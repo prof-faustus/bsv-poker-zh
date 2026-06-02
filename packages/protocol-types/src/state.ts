@@ -61,6 +61,11 @@ export interface GameState {
    * only its OWN seat's cards via the viewer path, core §11.5). Present once cards are dealt.
    */
   readonly hole?: Readonly<Record<number, readonly Card[]>>;
+  /**
+   * Seat to act in a NON-betting decision phase (e.g. Five-Card Draw's discard step, core
+   * §7.3.3), when `betting.toAct` is null but a player still owes a move. null otherwise.
+   */
+  readonly drawToAct?: number | null;
   /** True once the hand has reached a terminal phase. */
   readonly handComplete: boolean;
 }

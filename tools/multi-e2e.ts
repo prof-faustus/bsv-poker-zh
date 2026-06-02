@@ -12,11 +12,12 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import type { Action, LegalActions, Variant } from '@bsv-poker/protocol-types';
+import type { Variant } from '@bsv-poker/protocol-types';
 import {
   RelayClient,
   LobbyClient,
   InteractiveNetworkedTableClient,
+  universalBot,
   type TableMeta,
   type ClientUpdate,
 } from '@bsv-poker/app-services';
@@ -53,12 +54,6 @@ function cleanup(): void {
   }
 }
 
-const passive = (legal: LegalActions, seat: number): Action => {
-  if (legal.check) return { kind: 'check', seat, amount: 0 };
-  if (legal.call) return { kind: 'call', seat, amount: legal.call.amount };
-  return { kind: 'fold', seat, amount: 0 };
-};
-
 async function joinAndPlay(base: string, tableId: string, meta: TableMeta, id: string): Promise<string> {
   const lobby = new LobbyClient(new RelayClient(base));
   const pub = randomBytes(33).toString('hex');
@@ -73,7 +68,7 @@ async function joinAndPlay(base: string, tableId: string, meta: TableMeta, id: s
     entropy: randomBytes(32),
   });
   client.onUpdate((u: ClientUpdate) => {
-    if (u.yourTurn && u.legal) client.submitAction(passive(u.legal, u.mySeat));
+    if (u.yourTurn && u.legal) client.submitAction(universalBot(u.legal, u.mySeat));
   });
   await client.play();
   return client.stateHash()!;
@@ -107,9 +102,12 @@ async function main(): Promise<void> {
 
   const base = 'http://127.0.0.1:8091';
   await scenario(base, 'holdem', 3); // multi-seat (3-handed)
-  await scenario(base, 'omaha', 2); // variant-generic over the network
+  await scenario(base, 'omaha', 2); // 4 hole cards, 2+3
+  await scenario(base, 'stud', 2); // ante + bring-in, up/down cards
+  await scenario(base, 'draw', 2); // discard + redraw
+  await scenario(base, 'razz', 2); // ace-to-five low
 
-  console.log('\n[multi-e2e] PASS — variant-generic, multi-seat multiplayer over the relay.');
+  console.log('\n[multi-e2e] PASS — ALL FIVE variants play multiplayer over the relay (incl. 3-handed).');
 }
 
 main().then(
