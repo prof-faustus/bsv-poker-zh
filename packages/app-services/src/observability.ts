@@ -66,3 +66,49 @@ export class MemorySink implements LogSink {
   readonly records: LogRecord[] = [];
   write(record: LogRecord): void { this.records.push(record); }
 }
+
+// ---- Metrics (REQ-APP-121): counters / gauges / histograms ----
+export interface HistogramSummary {
+  readonly count: number;
+  readonly min: number;
+  readonly max: number;
+  readonly p50: number;
+}
+
+export class Metrics {
+  private readonly counters = new Map<string, number>();
+  private readonly gauges = new Map<string, number>();
+  private readonly histos = new Map<string, number[]>();
+
+  inc(name: string, by = 1): void { this.counters.set(name, (this.counters.get(name) ?? 0) + by); }
+  setGauge(name: string, value: number): void { this.gauges.set(name, value); }
+  observe(name: string, value: number): void {
+    const xs = this.histos.get(name) ?? [];
+    xs.push(value);
+    this.histos.set(name, xs);
+  }
+
+  snapshot(): { counters: Record<string, number>; gauges: Record<string, number>; histograms: Record<string, HistogramSummary> } {
+    const histograms: Record<string, HistogramSummary> = {};
+    for (const [name, xs] of this.histos) {
+      const s = [...xs].sort((a, b) => a - b);
+      histograms[name] = { count: s.length, min: s[0]!, max: s[s.length - 1]!, p50: s[Math.floor((s.length - 1) / 2)]! };
+    }
+    return { counters: Object.fromEntries(this.counters), gauges: Object.fromEntries(this.gauges), histograms };
+  }
+}
+
+// ---- Tracing (REQ-APP-122): one trace per player action across app-services → SDK → send ----
+export interface SpanEvent { readonly stage: string; readonly t: number }
+export interface Span { readonly name: string; readonly startedAt: number; endedAt?: number; readonly events: SpanEvent[] }
+
+export class Tracer {
+  readonly spans: Span[] = [];
+  start(name: string): Span {
+    const span: Span = { name, startedAt: Date.now(), events: [] };
+    this.spans.push(span);
+    return span;
+  }
+  event(span: Span, stage: string): void { span.events.push({ stage, t: Date.now() }); }
+  end(span: Span): void { span.endedAt = Date.now(); }
+}

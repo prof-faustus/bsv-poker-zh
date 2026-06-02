@@ -12,3 +12,4 @@ export * from './mp-shuffle.ts';
 export * from './transcript.ts';
 export * from './network-gate.ts';
 export * from './observability.ts';
+export * from './persistence.ts';

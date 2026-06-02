@@ -173,13 +173,13 @@ REQ-APP-112: traced -> [packages/app-services/src/network-gate.ts] tests [packag
 REQ-APP-113: planned (later phase)
 REQ-APP-114: planned (later phase)
 REQ-APP-120: traced -> [packages/app-services/src/observability.ts] tests [packages/app-services/test/observability.test.ts]
-REQ-APP-121: planned (later phase)
-REQ-APP-122: planned (later phase)
+REQ-APP-121: traced -> [packages/app-services/src/observability.ts] tests [packages/app-services/test/observability-metrics.test.ts]
+REQ-APP-122: traced -> [packages/app-services/src/observability.ts] tests [packages/app-services/test/observability-metrics.test.ts]
 REQ-APP-123: planned (later phase)
 REQ-APP-124: traced -> [packages/app-services/src/observability.ts] tests [packages/app-services/test/observability.test.ts]
 REQ-APP-130: planned (later phase)
-REQ-APP-131: planned (later phase)
-REQ-APP-132: planned (later phase)
+REQ-APP-131: traced -> [packages/app-services/src/persistence.ts] tests [packages/app-services/test/persistence.test.ts]
+REQ-APP-132: traced -> [packages/app-services/src/persistence.ts] tests [packages/app-services/test/persistence.test.ts]
 REQ-APP-133: planned (later phase)
 REQ-APP-140: planned (later phase)
 REQ-APP-141: planned (later phase)
