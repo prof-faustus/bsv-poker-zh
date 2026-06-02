@@ -297,6 +297,9 @@ importers:
       '@bsv-poker/script-templates-ts':
         specifier: workspace:*
         version: link:../packages/script-templates-ts
+      '@bsv-poker/tx-builder':
+        specifier: workspace:*
+        version: link:../packages/tx-builder
 
 packages:
 
