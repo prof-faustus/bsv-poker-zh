@@ -114,7 +114,7 @@ REQ-WALLET-001: traced -> [packages/wallet-custody/src/custody.ts] tests [packag
 REQ-WALLET-002: traced -> [packages/wallet-custody/src/custody.ts] tests [packages/wallet-custody/test/custody.test.ts]
 REQ-WALLET-003: traced -> [packages/wallet-custody/src/custody.ts] tests [packages/wallet-custody/test/custody.test.ts]
 REQ-WALLET-004: traced -> [packages/wallet-custody/src/custody.ts] tests [packages/wallet-custody/test/custody.test.ts]
-REQ-WALLET-005: planned (later phase)
+REQ-WALLET-005: traced -> [packages/adapters/src/real-channel.ts, tools/microbet-e2e.ts] tests [tools/microbet-e2e.ts]
 REQ-APP-001: planned (later phase)
 REQ-APP-002: planned (later phase)
 REQ-APP-003: planned (later phase)

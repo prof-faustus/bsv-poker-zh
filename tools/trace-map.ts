@@ -47,6 +47,7 @@ export const TRACE_MAP: Readonly<Record<string, Trace>> = {
   'REQ-WALLET-002': { files: ['packages/wallet-custody/src/custody.ts'], tests: ['packages/wallet-custody/test/custody.test.ts'] },
   'REQ-WALLET-003': { files: ['packages/wallet-custody/src/custody.ts'], tests: ['packages/wallet-custody/test/custody.test.ts'] },
   'REQ-WALLET-004': { files: ['packages/wallet-custody/src/custody.ts'], tests: ['packages/wallet-custody/test/custody.test.ts'] },
+  'REQ-WALLET-005': { files: ['packages/adapters/src/real-channel.ts', 'tools/microbet-e2e.ts'], tests: ['tools/microbet-e2e.ts'] },
   'REQ-POKER-016': { files: ['packages/sdk/src/table.ts'], tests: ['packages/sdk/test/table.test.ts'] },
   'REQ-TX-012': { files: ['packages/wallet-custody/src/custody.ts'], tests: ['packages/wallet-custody/test/custody.test.ts'] },
   'REQ-DEP-001': { files: ['packages/adapters/src/contracts.ts'], tests: ['packages/adapters/test/conformance.test.ts'] },
