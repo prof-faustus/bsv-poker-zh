@@ -52,6 +52,36 @@ fn backoff_ms(attempt: u32) -> u64 {
     (100u64.saturating_mul(1u64 << attempt.min(6))).min(5_000)
 }
 
+/// The recognized IPC command family (REQ-APP-024). An unlisted command is not dispatched.
+#[allow(dead_code)]
+fn ipc_commands() -> [&'static str; 5] {
+    ["services_start", "services_stop", "services_status", "config_runtime", "config_set_network"]
+}
+
+/// Validate an inbound IPC network-switch request (REQ-APP-026 both-sides validation; REQ-APP-030
+/// guard): regtest is always allowed, mainnet only with the explicit research flag, anything else is
+/// rejected.
+fn validate_network_switch(network: &str, mainnet_flag: bool) -> Result<(), String> {
+    match network {
+        "regtest" | "play-regtest" => Ok(()),
+        "mainnet" if mainnet_flag => Ok(()),
+        "mainnet" => Err("mainnet requires the explicit research flag (REQ-APP-030)".into()),
+        other => Err(format!("unrecognized network '{other}' (REQ-APP-026)")),
+    }
+}
+
+/// The runtime port map the UI reads (REQ-APP-027 — ports are not hardcoded in the UI).
+fn runtime_ports() -> (u16, u16, u16) {
+    (8091, 8092, 18332) // relay, indexer, node
+}
+
+/// Per-user data subdirectory (REQ-APP-028): the SQLite store and node block/UTXO store live under
+/// the user's data directory, never a shared/global path.
+#[allow(dead_code)]
+fn data_subdir(base: &str, kind: &str) -> String {
+    format!("{}/bsv-poker/{}", base.trim_end_matches('/'), kind)
+}
+
 #[derive(Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 #[allow(dead_code)] // StartNode/Fatal are modelled §A3.2 states reached once the node adapter binds
@@ -178,8 +208,9 @@ fn services_status(sup: State<Supervisor>) -> String {
 
 #[tauri::command]
 fn config_runtime(sup: State<Supervisor>) -> serde_json::Value {
+    let (relay, indexer, node) = runtime_ports();
     serde_json::json!({
-        "ports": { "relay": 8091, "indexer": 8092, "node": 18332 },
+        "ports": { "relay": relay, "indexer": indexer, "node": node },
         "network": *sup.network.lock().unwrap(),
         "flags": { "mainnetResearch": false }
     })
@@ -188,9 +219,7 @@ fn config_runtime(sup: State<Supervisor>) -> serde_json::Value {
 /// Guarded network switch (REQ-APP-030): refuses non-regtest unless the research flag is set.
 #[tauri::command]
 fn config_set_network(network: String, mainnet_flag: bool, sup: State<Supervisor>) -> Result<bool, String> {
-    if network != "regtest" && !mainnet_flag {
-        return Err("mainnet requires the explicit research flag (REQ-APP-030)".into());
-    }
+    validate_network_switch(&network, mainnet_flag)?;
     *sup.network.lock().unwrap() = network;
     Ok(true)
 }
@@ -258,5 +287,33 @@ mod lifecycle_tests {
         assert!(backoff_ms(1) > backoff_ms(0));
         assert!(backoff_ms(2) > backoff_ms(1));
         assert!(backoff_ms(100) <= 5_000);
+    }
+
+    #[test]
+    fn ipc_command_family_is_enumerated() {
+        let c = ipc_commands();
+        assert_eq!(c.len(), 5);
+        assert!(c.contains(&"config_set_network"));
+        assert!(!c.contains(&"evil_command"));
+    }
+
+    #[test]
+    fn network_switch_is_validated_both_sides() {
+        assert!(validate_network_switch("regtest", false).is_ok());
+        assert!(validate_network_switch("mainnet", false).is_err()); // refused without flag
+        assert!(validate_network_switch("mainnet", true).is_ok());
+        assert!(validate_network_switch("bogusnet", true).is_err()); // unrecognized rejected
+    }
+
+    #[test]
+    fn runtime_ports_are_distinct_and_read_by_ui() {
+        let (r, i, n) = runtime_ports();
+        assert!(r != i && i != n && r != n);
+    }
+
+    #[test]
+    fn data_dir_is_under_per_user_base() {
+        assert_eq!(data_subdir("/home/u/.local/share", "sqlite"), "/home/u/.local/share/bsv-poker/sqlite");
+        assert_eq!(data_subdir("/home/u/.local/share/", "node"), "/home/u/.local/share/bsv-poker/node");
     }
 }

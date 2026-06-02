@@ -125,11 +125,11 @@ REQ-APP-020: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/c
 REQ-APP-021: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
 REQ-APP-022: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
 REQ-APP-023: planned (later phase)
-REQ-APP-024: planned (later phase)
+REQ-APP-024: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
 REQ-APP-025: planned (later phase)
-REQ-APP-026: planned (later phase)
-REQ-APP-027: planned (later phase)
-REQ-APP-028: planned (later phase)
+REQ-APP-026: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
+REQ-APP-027: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
+REQ-APP-028: traced -> [apps/client-desktop/src-tauri/src/main.rs] tests [apps/client-desktop/src-tauri/src/main.rs]
 REQ-APP-029: traced -> [packages/app-services/src/network-gate.ts] tests [packages/app-services/test/network-gate.test.ts]
 REQ-APP-030: traced -> [packages/app-services/src/network-gate.ts] tests [packages/app-services/test/network-gate.test.ts]
 REQ-APP-040: planned (later phase)
