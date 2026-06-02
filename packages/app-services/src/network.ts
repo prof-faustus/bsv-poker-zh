@@ -78,6 +78,42 @@ export class RelayClient {
     return asJson(await this.fetchFn(`${this.base}/tables`));
   }
 
+  /**
+   * Tier-B subscribe: stream opaque table objects (SSE `data: <json>` frames) to `onEvent`.
+   * Returns an unsubscribe function. The relay never interprets the objects (REQ-NET-001).
+   */
+  subscribe(tableId: string, onEvent: (text: string) => void): () => void {
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const res = await this.fetchFn(`${this.base}/tables/${tableId}/subscribe`, {
+          signal: ac.signal,
+          headers: { accept: 'text/event-stream' },
+        });
+        if (!res.ok || !res.body) return;
+        const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buf.indexOf('\n\n')) >= 0) {
+            const frame = buf.slice(0, nl);
+            buf = buf.slice(nl + 2);
+            for (const line of frame.split('\n')) {
+              if (line.startsWith('data: ')) onEvent(line.slice(6));
+            }
+          }
+        }
+      } catch {
+        /* aborted or stream closed */
+      }
+    })();
+    return () => ac.abort();
+  }
+
   /** Speed path: publish an opaque object to the table channel; returns delivery count. */
   async publish(tableId: string, object: Uint8Array): Promise<number> {
     const r = await asJson<{ delivered: number }>(
