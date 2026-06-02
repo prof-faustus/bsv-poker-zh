@@ -34,4 +34,4 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run the full CI pipeline
-        run: pnpm ci
+        run: pnpm run ci
