@@ -1,19 +1,19 @@
 /**
- * Real BSV transaction WIRE serialization + the BIP-143 (FORKID) sighash (core §6.8). This is
- * the production-faithful encoding the embedded node validates, replacing the simplified
- * self-contained preimage used by the interpreter tests (ADR-0003).
+ * 真实的 BSV 交易 WIRE 序列化 + BIP-143（FORKID）sighash（core §6.8）。这是
+ * 嵌入式节点所验证的、忠于生产环境的编码，取代了解释器测试所使用的简化版
+ * 自包含 preimage（ADR-0003）。
  *
- * Sighash trick that keeps using Node's standard ECDSA API: Bitcoin signs ECDSA over
- * double-SHA256(preimage). We hand signers/`OP_CHECKSIG` the value `sha256(preimage)` and the
- * interpreter verifies ECDSA over `sha256(that)` — so the effective digest is
- * double-SHA256(preimage) = the real sighash. `sighashMessage()` returns exactly that value.
+ * 一个仍可继续使用 Node 标准 ECDSA API 的 sighash 技巧：Bitcoin 对
+ * double-SHA256(preimage) 进行 ECDSA 签名。我们把值 `sha256(preimage)` 交给签名方/`OP_CHECKSIG`，
+ * 而解释器对 `sha256(that)` 验证 ECDSA——因此有效摘要为
+ * double-SHA256(preimage) = 真实的 sighash。`sighashMessage()` 恰好返回该值。
  */
 
 import { ByteWriter, bytesToHex, hexToBytes, sha256, hash256 } from '@bsv-poker/protocol-types';
 import { type Script, serializeScript } from '@bsv-poker/script-templates-ts';
 import type { Tx, TxInput, TxOutput } from './txbuilder.ts';
 
-/** SIGHASH_ALL | SIGHASH_FORKID (BSV/BCH replay-protected). */
+/** SIGHASH_ALL | SIGHASH_FORKID（BSV/BCH 防重放）。 */
 export const SIGHASH_ALL_FORKID = 0x41;
 
 function varInt(w: ByteWriter, n: number): void {
@@ -25,7 +25,7 @@ function pushVarBytes(w: ByteWriter, b: Uint8Array): void {
   varInt(w, b.length);
   for (const x of b) w.u8(x);
 }
-/** prevTxid is a display (big-endian) hex; on the wire it is little-endian (reversed). */
+/** prevTxid 是用于显示的（大端）十六进制；在线路协议上它是小端（反转）。 */
 function outpoint(w: ByteWriter, i: TxInput): void {
   const le = [...hexToBytes(i.prevTxid)].reverse();
   for (const x of le) w.u8(x);
@@ -38,7 +38,7 @@ function outputBytes(o: TxOutput): Uint8Array {
   return w.toBytes();
 }
 
-/** Serialize a tx to wire bytes (scriptSigs supplied per input, default empty). */
+/** 将一笔交易序列化为线路协议字节（scriptSigs 按输入逐个提供，默认为空）。 */
 export function serializeTxWire(tx: Tx, scriptSigs: readonly Script[] = []): Uint8Array {
   const w = new ByteWriter();
   w.u32(tx.version);
@@ -54,13 +54,13 @@ export function serializeTxWire(tx: Tx, scriptSigs: readonly Script[] = []): Uin
   return w.toBytes();
 }
 
-/** Real txid: double-SHA256 of the wire tx, displayed big-endian (reversed). */
+/** 真实的 txid：线路协议交易的 double-SHA256，以大端（反转）显示。 */
 export function txidWire(tx: Tx, scriptSigs: readonly Script[] = []): string {
   const h = hash256(serializeTxWire(tx, scriptSigs));
   return bytesToHex(Uint8Array.from([...h].reverse()));
 }
 
-/** The BIP-143 preimage for input `index`, spending a `scriptCode` output worth `value` sats. */
+/** 输入 `index` 的 BIP-143 preimage，花费价值 `value` 聪、锁定脚本为 `scriptCode` 的输出。 */
 export function bip143Preimage(
   tx: Tx,
   index: number,
@@ -95,9 +95,9 @@ export function bip143Preimage(
 }
 
 /**
- * The value to sign / verify at OP_CHECKSIG for input `index` = sha256(bip143Preimage). Because
- * the interpreter (and the custody signer) apply ECDSA-over-SHA256 to this, the effective signed
- * digest is double-SHA256(preimage) — the real BSV BIP-143 sighash.
+ * 输入 `index` 在 OP_CHECKSIG 处用于签名/验证的值 = sha256(bip143Preimage)。因为
+ * 解释器（以及托管签名方）对其应用 ECDSA-over-SHA256，有效的被签名
+ * 摘要为 double-SHA256(preimage)——即真实的 BSV BIP-143 sighash。
  */
 export function sighashMessage(
   tx: Tx,

@@ -1,8 +1,8 @@
 /**
- * Stated boundary/limit assertions (REQ-ENG-004): every P7/P8 boundary the system claims is enforced
- * in source and asserted here, so a change can't silently paper over it. This test aggregates the
- * load-bearing guards: the mainnet gate, loopback binding, the seat range (2–9), trust-boundary
- * envelope validation, and log redaction.
+ * 已声明的边界/限制断言（REQ-ENG-004）：系统声称的每条 P7/P8 边界都在源码中强制执行
+ * 并在此断言，因此改动无法悄无声息地掩盖它。本测试汇总了
+ * 承重的护栏：mainnet 门禁、loopback 绑定、座位范围（2–9）、信任边界
+ * 信封校验，以及日志脱敏。
  */
 
 import { test } from 'node:test';

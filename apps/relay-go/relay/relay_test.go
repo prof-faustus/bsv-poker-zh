@@ -1,8 +1,8 @@
-// Tests for the relay: presence register/expiry, table create/join/list,
-// Tier-B publish->subscribe fan-out, and /healthz.
+// 中继的测试：在线状态注册/过期、牌桌创建/加入/列表、
+// Tier-B publish->subscribe 扇出，以及 /healthz。
 //
-// REQ-NET-001/002 (core §8.1/§8.2): exercises transport behaviour only; no test
-// asserts any game adjudication, because the relay performs none.
+// REQ-NET-001/002（core §8.1/§8.2）：仅验证传输行为；没有测试
+// 断言任何游戏裁决，因为中继不执行任何裁决。
 package relay
 
 import (
@@ -41,7 +41,7 @@ func TestPresenceExpiry(t *testing.T) {
 	if err := r.Heartbeat("alice", "a"); err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
-	// Advance clock beyond TTL.
+	// 将时钟推进到超过 TTL。
 	r.now = func() time.Time { return base.Add(11 * time.Second) }
 	if removed := r.Sweep(); removed != 1 {
 		t.Fatalf("sweep removed %d, want 1", removed)
@@ -56,10 +56,10 @@ func TestPresenceHeartbeatPreventsExpiry(t *testing.T) {
 	base := time.Unix(1000, 0)
 	r.now = func() time.Time { return base }
 	_ = r.Heartbeat("alice", "a")
-	// Refresh just before TTL expiry.
+	// 在 TTL 过期前刚好刷新。
 	r.now = func() time.Time { return base.Add(9 * time.Second) }
 	_ = r.Heartbeat("alice", "a")
-	// Now sweep at original+11s: still fresh relative to refreshed timestamp.
+	// 现在在 original+11s 处清扫：相对于刷新后的时间戳仍然新鲜。
 	r.now = func() time.Time { return base.Add(11 * time.Second) }
 	if removed := r.Sweep(); removed != 0 {
 		t.Fatalf("sweep removed %d, want 0 (refreshed)", removed)
@@ -95,8 +95,8 @@ func TestTableCreateJoinList(t *testing.T) {
 	}
 }
 
-// TestFanoutDeliversToAllSubscribers is the core Tier-B guarantee: one publish
-// reaches every subscriber (REQ-NET-002).
+// TestFanoutDeliversToAllSubscribers 是核心的 Tier-B 保证：一次 publish
+// 会到达每一个订阅者（REQ-NET-002）。
 func TestFanoutDeliversToAllSubscribers(t *testing.T) {
 	reg := NewTableRegistry()
 	if _, err := reg.Create("t1", "table"); err != nil {
@@ -151,7 +151,7 @@ func TestPublishCopiesBuffer(t *testing.T) {
 	tbl, _ := reg.Get("t1")
 	buf := []byte("abc")
 	tbl.Publish(buf)
-	buf[0] = 'z' // mutate caller buffer after publish
+	buf[0] = 'z' // 在 publish 之后修改调用方的缓冲区
 	got := <-ch
 	if string(got) != "abc" {
 		t.Fatalf("delivered %q, want abc (buffer must be copied)", got)
@@ -178,7 +178,7 @@ func TestHealthz(t *testing.T) {
 func TestHTTPTableLifecycle(t *testing.T) {
 	s := NewServer(time.Minute)
 
-	// Create a table over HTTP.
+	// 通过 HTTP 创建一个牌桌。
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/tables", jsonBody(`{"id":"t1","name":"NL"}`))
 	s.ServeHTTP(rec, req)
@@ -186,7 +186,7 @@ func TestHTTPTableLifecycle(t *testing.T) {
 		t.Fatalf("create status = %d, want 201", rec.Code)
 	}
 
-	// List tables.
+	// 列出牌桌。
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/tables", nil)
 	s.ServeHTTP(rec, req)
@@ -201,7 +201,7 @@ func TestHTTPTableLifecycle(t *testing.T) {
 		t.Fatalf("tables = %+v", tables)
 	}
 
-	// Heartbeat presence over HTTP.
+	// 通过 HTTP 发送在线状态心跳。
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/presence", jsonBody(`{"playerId":"alice","addr":"a"}`))
 	s.ServeHTTP(rec, req)

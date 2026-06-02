@@ -1,30 +1,30 @@
 /**
- * Anchored timing for consensus decisions (REQ-TX-007). "Now" for timeouts is derived from a
- * chain/relay-anchored height (and median-time), NEVER local wall-clock — so every participant
- * agrees on whether a deadline has passed. Deadlines are expressed at the transaction level
- * (nLockTime / nSequence; REQ-TX-002), not via in-script CLTV/CSV (REQ-TX-001).
+ * 用于共识决策的锚定时序（REQ-TX-007）。超时的“当前时间”来源于
+ * 链/中继锚定的高度（以及 median-time），绝不使用本地挂钟时间——这样每个参与者
+ * 对某个截止时间是否已过都能达成一致。截止时间在交易层面表达
+ * （nLockTime / nSequence；REQ-TX-002），而非通过脚本内的 CLTV/CSV（REQ-TX-001）。
  */
 
-/** A height/time reading taken from the chain (or a relay-anchored source), not the local clock. */
+/** 取自链上（或中继锚定来源）而非本地时钟的高度/时间读数。 */
 export interface AnchoredClock {
   readonly height: number;
   readonly medianTimeSeconds: number;
 }
 
-/** A deadline `blocks` ahead of the anchored height — the nLockTime a recovery spend matures at. */
+/** 比锚定高度提前 `blocks` 个区块的截止时间——即恢复花费到期所在的 nLockTime。 */
 export function deadlineFromAnchor(clock: AnchoredClock, blocks: number): number {
   return clock.height + Math.max(0, Math.floor(blocks));
 }
 
-/** True iff the anchored height has reached/passed the deadline height (consensus-safe). */
+/** 当且仅当锚定高度已达到/越过截止高度时为 True（共识安全）。 */
 export function isDeadlinePassed(deadlineHeight: number, clock: AnchoredClock): boolean {
   return clock.height >= deadlineHeight;
 }
 
 /**
- * Decision deadline from the anchored clock for a per-action timeout window (seconds → an
- * approximate block budget at ~600s/block on mainnet; regtest mines on demand, so callers may pass
- * blocks directly). Local wall-clock is intentionally NOT consulted.
+ * 基于锚定时钟、针对每次行动超时窗口计算的决策截止时间（秒 → 在主网上
+ * 按约 600 秒/区块换算得到的近似区块预算；regtest 按需出块，因此调用方可直接传入
+ * 区块数）。本地挂钟时间被刻意 NOT 使用。
  */
 export function decisionDeadlineHeight(clock: AnchoredClock, windowSeconds: number, secondsPerBlock = 600): number {
   return deadlineFromAnchor(clock, Math.ceil(windowSeconds / secondsPerBlock));

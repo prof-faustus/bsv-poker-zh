@@ -1,11 +1,11 @@
 /**
- * Network clients (app §A7, core §8) — the connection manager's transport to the relay
- * (transport/index only, never source of truth) and the indexer (per-table tx projections).
- * Uses the global `fetch` (Node 24 + browsers). The relay/indexer treat payloads as OPAQUE;
- * the client owns truth by re-deriving state from the valid tx set (REQ-NET-001, P3).
+ * 网络客户端（app §A7，core §8）——连接管理器到 relay（仅作传输/索引，绝非真相来源）
+ * 与 indexer（每张牌桌的 tx 投影）的传输层。使用全局 `fetch`（Node 24 + 浏览器）。
+ * relay/indexer 将载荷视为不透明的；客户端通过从有效 tx 集合重新派生状态来掌握真相
+ * （REQ-NET-001，P3）。
  *
- * Dual-path send (REQ-NET-003): an action goes to the indexer/node as a tx record (canonical)
- * AND to table peers via the relay channel (speed). The speed path never overrides canonical.
+ * 双路径发送（REQ-NET-003）：一个动作既作为 tx 记录发往 indexer/node（权威），
+ * 也通过 relay 通道发往牌桌对端（速度）。速度路径绝不会覆盖权威路径。
  */
 
 export interface PresenceEntry {
@@ -21,7 +21,7 @@ export interface TxRecord {
   txid: string;
   class: string;
   tableId: string;
-  /** opaque bytes (base64) — the indexer never parses game logic. */
+  /** 不透明字节（base64）——indexer 从不解析游戏逻辑。 */
   raw?: string;
 }
 
@@ -32,7 +32,7 @@ async function asJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** Tier-A discovery + Tier-B opaque fan-out (core §8.2). */
+/** Tier-A 发现 + Tier-B 不透明扇出（core §8.2）。 */
 export class RelayClient {
   private readonly base: string;
   private readonly fetchFn: FetchFn;
@@ -79,8 +79,8 @@ export class RelayClient {
   }
 
   /**
-   * Tier-B subscribe: stream opaque table objects (SSE `data: <json>` frames) to `onEvent`.
-   * Returns an unsubscribe function. The relay never interprets the objects (REQ-NET-001).
+   * Tier-B 订阅：将不透明的牌桌对象（SSE `data: <json>` 帧）流式传给 `onEvent`。
+   * 返回一个取消订阅函数。relay 从不解释这些对象（REQ-NET-001）。
    */
   subscribe(tableId: string, onEvent: (text: string) => void): () => void {
     const ac = new AbortController();
@@ -108,13 +108,13 @@ export class RelayClient {
           }
         }
       } catch {
-        /* aborted or stream closed */
+        /* 已中止或流已关闭 */
       }
     })();
     return () => ac.abort();
   }
 
-  /** Speed path: publish an opaque object to the table channel; returns delivery count. */
+  /** 速度路径：向牌桌通道发布一个不透明对象；返回投递数量。 */
   async publish(tableId: string, object: Uint8Array): Promise<number> {
     const r = await asJson<{ delivered: number }>(
       await this.fetchFn(`${this.base}/tables/${tableId}/publish`, {
@@ -127,7 +127,7 @@ export class RelayClient {
   }
 }
 
-/** Per-table tx projection (core §8.4). The projection is reconstructible by any client (P2). */
+/** 每张牌桌的 tx 投影（core §8.4）。该投影可由任何客户端重建（P2）。 */
 export class IndexerClient {
   private readonly base: string;
   private readonly fetchFn: FetchFn;
@@ -145,7 +145,7 @@ export class IndexerClient {
     }
   }
 
-  /** Canonical path: ingest a tx record; returns whether it was newly added (dedup by txid). */
+  /** 权威路径：摄入一条 tx 记录；返回它是否为新增（按 txid 去重）。 */
   async ingest(rec: TxRecord): Promise<boolean> {
     const r = await asJson<{ added: boolean }>(
       await this.fetchFn(`${this.base}/ingest`, {
@@ -157,7 +157,7 @@ export class IndexerClient {
     return r.added;
   }
 
-  /** The ordered txid projection for a table (deterministic; REQ-NET-006/007). */
+  /** 某张牌桌的有序 txid 投影（确定性的；REQ-NET-006/007）。 */
   async table(tableId: string): Promise<string[]> {
     const r = await asJson<{ tableId: string; txids: string[] }>(
       await this.fetchFn(`${this.base}/table/${tableId}`),
@@ -165,7 +165,7 @@ export class IndexerClient {
     return r.txids;
   }
 
-  /** The FULL ordered records (the transcript) — for reconnect/rebuild (REQ-NET-007). */
+  /** 完整的有序记录（转录）——用于重连/重建（REQ-NET-007）。 */
   async records(tableId: string): Promise<TxRecord[]> {
     const r = await asJson<{ tableId: string; records: TxRecord[] }>(
       await this.fetchFn(`${this.base}/table/${tableId}/records`),

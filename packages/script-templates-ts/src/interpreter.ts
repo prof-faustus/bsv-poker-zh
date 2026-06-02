@@ -1,17 +1,17 @@
 /**
- * A real BSV Script stack interpreter with Genesis rules (core §6.2, §14.3, P9). It executes
- * the actual opcode stream; signature checks use REAL secp256k1 ECDSA (Node crypto). Negative
- * tests fail INSIDE this interpreter (not in a wrapper guard) — that is the P9 obligation.
+ * 一个遵循 Genesis 规则的真实 BSV Script 栈解释器（core §6.2、§14.3、P9）。它执行
+ * 实际的操作码流；签名检查使用真实的 secp256k1 ECDSA（Node crypto）。负向
+ * 测试在该解释器内部失败（而非在包装层的防护中）——这是 P9 的义务。
  *
- * Genesis semantics encoded here:
- *  - OP_CHECKLOCKTIMEVERIFY / OP_CHECKSEQUENCEVERIFY are NO-OPS (REQ-TX-001): they consume
- *    nothing and enforce nothing. Timing is transaction-level (REQ-TX-002).
- *  - OP_RETURN is invalid wherever it appears (core P11/§6.5): the script fails.
+ * 此处编码的 Genesis 语义：
+ *  - OP_CHECKLOCKTIMEVERIFY / OP_CHECKSEQUENCEVERIFY 为 NO-OP（REQ-TX-001）：它们既不消耗
+ *    任何内容也不强制任何约束。时序在交易层面处理（REQ-TX-002）。
+ *  - OP_RETURN 无论出现在何处都是无效的（core P11/§6.5）：脚本失败。
  *
- * TRACKED ASSUMPTION: this is the platform's self-contained interpreter for the opcode subset
- * the templates use; sighash here is ECDSA over SHA-256(preimage). A production swap to the
- * embedded node's full interpreter (double-SHA-256 sighash, every opcode) is a later step; the
- * template tests then re-run against it unchanged.
+ * TRACKED ASSUMPTION：这是该平台针对模板所使用的操作码子集的自包含解释器；
+ * 此处的 sighash 是对 SHA-256(preimage) 的 ECDSA。生产环境切换到
+ * 嵌入式节点的完整解释器（double-SHA-256 sighash、全部操作码）是后续步骤；
+ * 届时模板测试将原封不动地针对它重新运行。
  */
 
 import { createHash, createPublicKey, verify as ecVerify } from 'node:crypto';
@@ -19,7 +19,7 @@ import { OP } from './opcodes.ts';
 import type { Script, ScriptItem } from './script.ts';
 
 export interface ScriptContext {
-  /** The signed message (sighash preimage); OP_CHECKSIG verifies ECDSA over SHA-256 of this. */
+  /** 被签名的消息（sighash preimage）；OP_CHECKSIG 对其 SHA-256 验证 ECDSA。 */
   readonly sighashPreimage: Uint8Array;
 }
 
@@ -36,7 +36,7 @@ const FALSE = new Uint8Array(0);
 function isTruthy(v: Uint8Array): boolean {
   for (let i = 0; i < v.length; i++) {
     if (v[i] !== 0) {
-      // negative zero (0x80 as last byte, rest 0) is false
+      // 负零（最后一字节为 0x80，其余为 0）为 false
       if (i === v.length - 1 && v[i] === 0x80) return false;
       return true;
     }
@@ -44,7 +44,7 @@ function isTruthy(v: Uint8Array): boolean {
   return false;
 }
 
-/** Reconstruct a secp256k1 public KeyObject from a 33-byte SEC-1 compressed point. */
+/** 从 33 字节的 SEC-1 压缩点重建 secp256k1 公钥 KeyObject。 */
 function compressedToKey(pub: Uint8Array): ReturnType<typeof createPublicKey> {
   if (pub.length !== 33 || (pub[0] !== 0x02 && pub[0] !== 0x03)) {
     throw new Error('not a compressed secp256k1 point');
@@ -69,7 +69,7 @@ function checkSig(sig: Uint8Array, pub: Uint8Array, ctx: ScriptContext): boolean
   }
 }
 
-/** Execute one script (unlocking then locking share the stack, legacy/Genesis evaluation). */
+/** 执行一段脚本（解锁脚本随后是锁定脚本，二者共享栈，legacy/Genesis 求值）。 */
 export function evaluate(unlocking: Script, locking: Script, ctx: ScriptContext): EvalResult {
   const stack: Stack = [];
   for (const phase of [unlocking, locking]) {
@@ -81,7 +81,7 @@ export function evaluate(unlocking: Script, locking: Script, ctx: ScriptContext)
 }
 
 function run(script: Script, stack: Stack, ctx: ScriptContext): EvalResult {
-  const exec: boolean[] = []; // IF/ELSE/ENDIF execution flags
+  const exec: boolean[] = []; // IF/ELSE/ENDIF 执行标志
   const executing = (): boolean => exec.every((x) => x);
   const pop = (): Uint8Array => {
     const v = stack.pop();
@@ -94,7 +94,7 @@ function run(script: Script, stack: Stack, ctx: ScriptContext): EvalResult {
       if (executing()) stack.push(item);
       continue;
     }
-    // Conditionals are evaluated even when not executing (to track nesting).
+    // 即使不在执行状态，条件语句也会被求值（以跟踪嵌套）。
     if (item === OP.OP_IF) {
       exec.push(executing() ? isTruthy(pop()) : false);
       continue;
@@ -117,7 +117,7 @@ function run(script: Script, stack: Stack, ctx: ScriptContext): EvalResult {
           return { ok: false, reason: 'OP_RETURN is banned (core P11/§6.5)' };
         case OP.OP_CHECKLOCKTIMEVERIFY:
         case OP.OP_CHECKSEQUENCEVERIFY:
-          // NO-OP post-Genesis (REQ-TX-001): enforce nothing.
+          // Genesis 之后为 NO-OP（REQ-TX-001）：不强制任何约束。
           break;
         case OP.OP_0:
           stack.push(FALSE);
@@ -197,7 +197,7 @@ function run(script: Script, stack: Stack, ctx: ScriptContext): EvalResult {
           const b = num(pop());
           const a = num(pop());
           if (b === 0n) return { ok: false, reason: 'OP_MOD by zero' };
-          // Euclidean-positive modulo (operands here are positive field values).
+          // 欧几里得正模（此处的操作数为正的域值）。
           let r = a % b;
           if (r < 0n) r += b < 0n ? -b : b;
           stack.push(encodeNum(r));
@@ -230,7 +230,7 @@ function run(script: Script, stack: Stack, ctx: ScriptContext): EvalResult {
           const m = Number(num(pop()));
           const sigs: Uint8Array[] = [];
           for (let i = 0; i < m; i++) sigs.push(pop());
-          pop(); // the extra element (legacy CHECKMULTISIG bug, retained)
+          pop(); // 额外的元素（legacy CHECKMULTISIG bug，予以保留）
           stack.push(checkMultisig(sigs, pubs, ctx) ? TRUE : FALSE);
           break;
         }
@@ -245,9 +245,9 @@ function run(script: Script, stack: Stack, ctx: ScriptContext): EvalResult {
   return { ok: true };
 }
 
-/** m-of-n: each sig must match a distinct pubkey, in pubkey order (Bitcoin semantics). */
+/** m-of-n：每个签名必须匹配一个不同的公钥，且按公钥顺序匹配（Bitcoin 语义）。 */
 function checkMultisig(sigs: Uint8Array[], pubs: Uint8Array[], ctx: ScriptContext): boolean {
-  // sigs were popped in reverse; restore signing order.
+  // sigs 是逆序弹出的；恢复其签名顺序。
   const orderedSigs = [...sigs].reverse();
   const orderedPubs = [...pubs].reverse();
   let si = 0;
@@ -264,9 +264,9 @@ function eq(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * Script number decode — little-endian, sign-magnitude, ARBITRARY PRECISION (post-Genesis BSV
- * removed the 4-byte CScriptNum cap), as BigInt. The 256-bit field arithmetic for the in-script
- * EC fair-play (§19.C) needs this.
+ * Script 数值解码——小端、符号-数值表示、ARBITRARY PRECISION（Genesis 之后的 BSV
+ * 移除了 4 字节的 CScriptNum 上限），以 BigInt 表示。脚本内 EC 公平博弈（§19.C）所需的
+ * 256 位域运算依赖于此。
  */
 function num(v: Uint8Array): bigint {
   if (v.length === 0) return 0n;

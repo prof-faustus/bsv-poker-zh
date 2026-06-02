@@ -1,14 +1,14 @@
 /**
- * Post-Genesis BSV opcode palette (core §6.2, REQ-TX-004). Limited to primitives that mean
- * something post-Genesis: signature checks, hash/equality, conditionals, and the numeric/stack
- * ops for the fair-play EC routines (core §6.6/§19.C).
+ * Genesis 之后的 BSV 操作码集合（core §6.2、REQ-TX-004）。仅限于在 Genesis 之后
+ * 仍有意义的原语：签名检查、哈希/相等比较、条件语句，以及用于公平博弈 EC 例程
+ * 的数值/栈操作（core §6.6/§19.C）。
  *
- * CRITICAL (REQ-TX-001): OP_CHECKLOCKTIMEVERIFY / OP_CHECKSEQUENCEVERIFY are NO-OPS on
- * post-Genesis BSV and MUST NOT be used to enforce timing — timing is transaction-level
- * (nLockTime + nSequence, REQ-TX-002).
+ * CRITICAL（REQ-TX-001）：OP_CHECKLOCKTIMEVERIFY / OP_CHECKSEQUENCEVERIFY 在
+ * Genesis 之后的 BSV 上为 NO-OP，绝不可用于强制时序——时序在交易层面处理
+ * （nLockTime + nSequence，REQ-TX-002）。
  *
- * BANNED (core P11/§6.5, REQ-TX-010): OP_RETURN (0x6a) MUST NOT appear in any locking or
- * unlocking script. It is listed here only so the interpreter and lint can REJECT it.
+ * BANNED（core P11/§6.5、REQ-TX-010）：OP_RETURN（0x6a）绝不可出现在任何锁定脚本或
+ * 解锁脚本中。这里列出它仅仅是为了让解释器和 lint 能够 REJECT 它。
  */
 
 export const OP = {
@@ -40,10 +40,10 @@ export const OP = {
   OP_MOD: 0x97,
   OP_NUMEQUAL: 0x9c,
   OP_NUMEQUALVERIFY: 0x9d,
-  // No-ops post-Genesis — present only to assert they enforce nothing (REQ-TX-001).
+  // Genesis 之后的 No-op——列出仅为断言它们不强制任何约束（REQ-TX-001）。
   OP_CHECKLOCKTIMEVERIFY: 0xb1,
   OP_CHECKSEQUENCEVERIFY: 0xb2,
-  // BANNED — rejected by the interpreter and the lint (core P11/§6.5).
+  // BANNED——被解释器和 lint 拒绝（core P11/§6.5）。
   OP_RETURN: 0x6a,
 } as const;
 

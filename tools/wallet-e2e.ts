@@ -1,12 +1,12 @@
 /**
- * Wallet add/remove-funds E2E (core §9, app §A6.2) with a REAL regtest deposit. Demonstrates the
- * live-ready funding seam: a node-backed FundingBackend whose deposit MINES a real regtest block
- * via the embedded BSV node (the player's coinbase). Then buy-in / cash-out / withdraw.
+ * 钱包入金/出金 E2E（core §9, app §A6.2），使用真实的 regtest 入金。演示了
+ * 可上线的资金接缝：一个由节点支撑的 FundingBackend，其入金通过嵌入式 BSV 节点
+ * 挖出一个真实的 regtest 区块（玩家的 coinbase）。随后进行买入 / 兑出 / 提现。
  *
- * The node daemon exposes mine/height (no balance/UTXO RPC yet), so the credited coinbase amount
- * is the regtest subsidy constant (TRACKED ASSUMPTION) — the REAL part is that the deposit
- * triggers an on-chain block via the node (height advances). Mainnet deposit/withdraw replace the
- * backend behind the same WalletService, with the research flag.
+ * 节点守护进程暴露 mine/height（暂无 balance/UTXO RPC），因此入账的 coinbase 金额
+ * 是 regtest 补贴常量（TRACKED ASSUMPTION）—— 真实的部分在于入金
+ * 通过节点触发了一个链上区块（高度推进）。Mainnet 的入金/出金会在带研究标志的前提下
+ * 替换同一个 WalletService 背后的后端。
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -18,7 +18,7 @@ import { WalletService, type FundingBackend } from '@bsv-poker/app-services';
 
 const NODE_DIR = process.env.BSV_NODE_DIR ?? 'D:\\claude\\ACM 01\\bonded-subsat-channel';
 const PORT = Number(process.env.BSV_NODE_PORT ?? 8744);
-const REGTEST_SUBSIDY = 5_000_000_000; // sats per regtest coinbase (TRACKED ASSUMPTION)
+const REGTEST_SUBSIDY = 5_000_000_000; // 每个 regtest coinbase 的 sats（TRACKED ASSUMPTION）
 let daemon: ChildProcess | null = null;
 
 async function main(): Promise<void> {
@@ -36,13 +36,13 @@ async function main(): Promise<void> {
       await new Promise((r) => setTimeout(r, 400));
     }
 
-    // Node-backed funding: deposit mines a real regtest coinbase to the player's key.
+    // 由节点支撑的资金：入金会向玩家的密钥挖出一个真实的 regtest coinbase。
     const backend: FundingBackend = {
       async deposit() {
         await node.generateBlock(payoutPub);
       },
       async withdraw() {
-        // real on-chain spend is the live seam (node tx-submit RPC pending); play-money debit here
+        // 真实的链上花费是上线接缝（节点 tx-submit RPC 待定）；此处为游戏币扣款
       },
     };
     const wallet = new WalletService({ network: 'regtest', backend });

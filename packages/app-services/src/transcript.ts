@@ -1,8 +1,7 @@
 /**
- * Reconnect / resume (core §8.6, §12.3; REQ-NET-007, REQ-DATA-002/003) — rebuild a hand's state
- * from the transcript (the ordered records on the indexer). A (re)connecting client fetches the
- * records and replays them through the deterministic engine to obtain byte-identical state; the
- * truth never depended on staying connected (P2/P3). Browser-safe.
+ * 重连 / 恢复（core §8.6，§12.3；REQ-NET-007，REQ-DATA-002/003）——从转录
+ * （indexer 上的有序记录）重建一手牌的状态。（重）连接的客户端获取这些记录并通过确定性引擎
+ * 重放它们，从而得到逐字节一致的状态；真相从不依赖于保持连接（P2/P3）。浏览器安全。
  */
 
 import {
@@ -37,15 +36,15 @@ function parseRecords(records: readonly TxRecord[]): TEnvelope[] {
     try {
       out.push(JSON.parse(atob(rec.raw)) as TEnvelope);
     } catch {
-      /* not one of our envelopes */
+      /* 不是我们的信封之一 */
     }
   }
   return out;
 }
 
 /**
- * Rebuild the final state of hand `handNo` from the transcript records, verifying each reveal
- * against its commit. Returns the reconstructed state and its hash (must match the live clients').
+ * 从转录记录重建第 `handNo` 手牌的最终状态，用每个 commit 校验对应的 reveal。
+ * 返回重建后的状态及其哈希（必须与实时客户端的一致）。
  */
 export function rebuildHand(
   records: readonly TxRecord[],
@@ -72,9 +71,9 @@ export function rebuildHand(
   const m = createGameModule(ruleset.variant, deck, buttonIndex);
   let state = m.init(ruleset, seatList.map((s) => ({ seat: s.seat, stack: s.stack })));
 
-  // The canonical store interleaves the two paths, so raw record order is NOT guaranteed to be
-  // turn order (§8.5). Each seat's OWN actions ARE in order, so replay by the engine's toAct:
-  // at each step take the next unused action for the seat on the clock. Deterministic + robust.
+  // 权威存储会交错这两条路径，因此原始记录顺序不保证是出牌顺序（§8.5）。
+  // 每个座位自身的动作是有序的，所以按引擎的 toAct 来重放：
+  // 每一步取轮到的座位的下一个尚未使用的动作。确定性且稳健。
   const queues = new Map<number, Action[]>();
   for (const e of envs) {
     if (e.t !== 'action') continue;
@@ -87,7 +86,7 @@ export function rebuildHand(
     if (toAct === null) break;
     const q = queues.get(toAct) ?? [];
     const i = cursor.get(toAct) ?? 0;
-    if (i >= q.length) break; // transcript does not (yet) cover this seat's next move
+    if (i >= q.length) break; // 转录（尚）未覆盖该座位的下一步动作
     cursor.set(toAct, i + 1);
     state = m.apply(state, q[i]!);
   }

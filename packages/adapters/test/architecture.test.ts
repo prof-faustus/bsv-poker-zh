@@ -1,9 +1,9 @@
 /**
- * Architectural-invariant test (core REQ-APP-012 / REQ-DEP-001): no application package may import a
- * dependency repo directly — all access goes through the adapter layer. Only `@bsv-poker/adapters`
- * is permitted to name a dependency repo (it is the boundary). This enforces, as a passing test,
- * that a dependency-repo API change is absorbed in its adapter and never propagates into
- * engine/FSMs/UI (REQ-DEP-002).
+ * 架构不变量测试（core REQ-APP-012 / REQ-DEP-001）：任何应用包都不得直接导入
+ * 依赖仓库——所有访问都经由适配器层。只有 `@bsv-poker/adapters`
+ * 被允许引用依赖仓库（它就是边界）。这以一个通过的测试形式强制保证：
+ * 依赖仓库的 API 变更会被其适配器吸收，绝不会传播到
+ * engine/FSMs/UI（REQ-DEP-002）。
  */
 
 import { test } from 'node:test';
@@ -13,7 +13,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PACKAGES = join(dirname(fileURLToPath(import.meta.url)), '..', '..'); // .../packages
-// Names of the external dependency repos that only the adapter layer may reference.
+// 仅适配器层可引用的外部依赖仓库的名称。
 const DEP_REPO_TOKENS = [/@vaa\//, /overlay-broadcast/, /verifiable-accounting/, /bonded-subsat/];
 
 function tsFiles(dir: string, out: string[] = []): string[] {
@@ -29,7 +29,7 @@ function tsFiles(dir: string, out: string[] = []): string[] {
 test('no application package imports a dependency repo directly (only adapters may) — REQ-APP-012', () => {
   const violations: string[] = [];
   for (const pkg of readdirSync(PACKAGES)) {
-    if (pkg === 'adapters') continue; // the boundary itself is allowed to reference dep repos
+    if (pkg === 'adapters') continue; // 边界本身被允许引用依赖仓库
     const src = join(PACKAGES, pkg, 'src');
     let files: string[];
     try { files = tsFiles(src); } catch { continue; }

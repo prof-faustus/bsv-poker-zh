@@ -1,8 +1,8 @@
 /**
- * Build/packaging artifacts present in-repo (REQ-BUILD-002 locked lockfiles; REQ-VM-003 container
- * packaging). Asserts the locked dependency manifests and the container Dockerfiles + CI/CD
- * workflows exist. (Installer signing + recorded artifact hashes are release-pipeline concerns
- * tracked in RT-02 F3, not asserted here.)
+ * 仓库中存在构建/打包产物（REQ-BUILD-002 锁定的 lockfile；REQ-VM-003 容器
+ * 打包）。断言锁定的依赖清单以及容器 Dockerfile + CI/CD
+ * 工作流存在。（安装器签名 + 记录的产物哈希属于发布流水线关注点，
+ * 在 RT-02 F3 中跟踪，此处不作断言。）
  */
 
 import { test } from 'node:test';

@@ -34,7 +34,7 @@ const BIND: BranchBinding = {
   successorCommitment: 'dd'.repeat(32),
 };
 
-// A fixed sighash preimage stands in for the tx sighash in these interpreter-level tests.
+// 在这些解释器层面的测试中，用一个固定的 sighash preimage 代替交易的 sighash。
 const SIGHASH = Uint8Array.from([0xde, 0xad, 0xbe, 0xef, 1, 2, 3, 4]);
 const ctx = { sighashPreimage: SIGHASH };
 
@@ -67,7 +67,7 @@ test('funding N-of-N multisig: full set of signatures accepted; missing one reje
   const locking = fundingLocking(BIND, ks.map((k) => k.pubCompressed));
   const sigs = ks.map((k) => signPreimage(SIGHASH, k.priv));
   assert.equal(evaluate(fundingUnlocking(sigs), locking, ctx).ok, true);
-  // only one signature for a 2-of-2 → fails inside CHECKMULTISIG
+  // 2-of-2 只提供一个签名 → 在 CHECKMULTISIG 内部失败
   assert.equal(evaluate(fundingUnlocking([sigs[0]!]), locking, ctx).ok, false);
 });
 
@@ -79,18 +79,18 @@ test('reveal-or-timeout: correct opening spends the reveal branch; wrong preimag
   const cmt = revealCommitment(face, blind);
   const locking = revealOrTimeoutLocking(BIND, cmt, reveal.pubCompressed, refund.pubCompressed);
 
-  // positive: valid opening + reveal-key signature
+  // 正向：有效的开启 + reveal-key 签名
   const good = revealUnlocking(signPreimage(SIGHASH, reveal.priv), revealPreimage(face, blind));
   assert.equal(evaluate(good, locking, ctx).ok, true);
 
-  // negative: wrong preimage → OP_EQUALVERIFY fails inside the interpreter
+  // 负向：错误的 preimage → OP_EQUALVERIFY 在解释器内部失败
   const badPre = revealUnlocking(signPreimage(SIGHASH, reveal.priv), revealPreimage(43, blind));
   assert.equal(evaluate(badPre, locking, ctx).ok, false);
 
-  // timeout/refund branch: refund key signs the ELSE branch (maturity enforced at tx level)
+  // timeout/refund 分支：refund 密钥对 ELSE 分支签名（到期在交易层面强制）
   const refundSpend = timeoutRefundUnlocking(signPreimage(SIGHASH, refund.priv));
   assert.equal(evaluate(refundSpend, locking, ctx).ok, true);
-  // refund branch with the reveal key (wrong) fails
+  // 用 reveal 密钥（错误）走 refund 分支会失败
   const badRefund = timeoutRefundUnlocking(signPreimage(SIGHASH, reveal.priv));
   assert.equal(evaluate(badRefund, locking, ctx).ok, false);
 });
@@ -104,15 +104,15 @@ test('fair-play: committed key claims; a mismatched key fails INSIDE the interpr
   const commitment = fairPlayCommitment(honest.pubCompressed);
   const locking = fairPlayLocking(BIND, commitment, refund.pubCompressed);
 
-  // honest party reveals the committed key + a valid signature → claims
+  // 诚实方揭示已承诺的密钥 + 有效签名 → 认领
   const ok = fairPlayClaimUnlocking(signPreimage(SIGHASH, honest.priv), honest.pubCompressed);
   assert.equal(evaluate(ok, locking, ctx).ok, true);
 
-  // a party who USED a different key cannot match HASH160(commitment) → fails inside (forfeits)
+  // 使用了不同密钥的一方无法匹配 HASH160(commitment) → 在内部失败（没收）
   const bad = fairPlayClaimUnlocking(signPreimage(SIGHASH, cheat.priv), cheat.pubCompressed);
   assert.equal(evaluate(bad, locking, ctx).ok, false);
 
-  // forfeit/refund branch (maturity at tx level) pays the refund key
+  // 没收/退款分支（到期在交易层面）向 refund 密钥付款
   const forfeit = fairPlayForfeitUnlocking(signPreimage(SIGHASH, refund.priv));
   assert.equal(evaluate(forfeit, locking, ctx).ok, true);
 });
@@ -127,7 +127,7 @@ test('OP_RETURN is banned: serialize throws, lint detects, interpreter fails', (
   const bad: Script = [Uint8Array.from([1, 2, 3]), OP.OP_RETURN];
   assert.equal(containsOpReturn(bad), true);
   assert.throws(() => serializeScript(bad), /OP_RETURN/);
-  // even if it reached the interpreter, it fails inside it
+  // 即便它到达了解释器，也会在其内部失败
   assert.equal(evaluate([], [OP.OP_1, OP.OP_RETURN], ctx).ok, false);
 });
 
@@ -145,7 +145,7 @@ test('no template produces an OP_RETURN in its script (rule 2)', () => {
 
 test('CLTV/CSV are NO-OPS post-Genesis (REQ-TX-001): they enforce nothing', () => {
   const k = genKeyPair();
-  // A script with a leading CLTV/CSV still validates purely on the signature.
+  // 以 CLTV/CSV 开头的脚本仍然纯粹基于签名进行验证。
   const locking: Script = [OP.OP_CHECKLOCKTIMEVERIFY, OP.OP_CHECKSEQUENCEVERIFY, k.pubCompressed, OP.OP_CHECKSIG];
   assert.equal(evaluate(foldUnlocking(signPreimage(SIGHASH, k.priv)), locking, ctx).ok, true);
 });
@@ -160,7 +160,7 @@ test('byte-size measurement (REQ-TX-011 / §19.C): sizes are computed, not asser
       revealOrTimeoutLocking(BIND, revealCommitment(1, Uint8Array.of(0)), k.pubCompressed, k.pubCompressed),
     ),
   };
-  // binding prefix = push(133 bytes binding) + OP_DROP. gid8+rh32+round4+sh32+seat1+succ32 = 109
+  // binding prefix = push(133 字节 binding) + OP_DROP。gid8+rh32+round4+sh32+seat1+succ32 = 109
   assert.equal(bindingBytes(BIND).length, 8 + 32 + 4 + 32 + 1 + 32);
   for (const [, v] of Object.entries(sizes)) assert.ok(v > 0 && Number.isInteger(v));
 });
@@ -174,22 +174,22 @@ test('in-script EC fair-play: committed on-curve shuffle key verifies; cheats fa
     fairPlayEcUnlocking,
   } = await import('../src/templates.ts');
 
-  // pick a scalar that is a valid shuffle-key x-coordinate (s^3+7 is a QR)
+  // 选取一个是合法洗牌密钥 x 坐标的标量（s^3+7 是 QR）
   let s = 12345678901234567890n;
   let pt = shuffleKeyPoint(s);
   while (!pt) {
     s += 1n;
     pt = shuffleKeyPoint(s);
   }
-  // the point really is on the curve
+  // 该点确实在曲线上
   assert.equal((pt.y * pt.y) % SECP256K1_P, (((pt.x * pt.x % SECP256K1_P) * pt.x) % SECP256K1_P + 7n) % SECP256K1_P);
 
   const locking = fairPlayEcLocking(BIND, shuffleKeyCommitment(s));
 
-  // positive: reveal the genuine committed key + its on-curve y → accepted
+  // 正向：揭示真正已承诺的密钥 + 其在曲线上的 y → 被接受
   assert.equal(evaluate(fairPlayEcUnlocking(pt.x, pt.y), locking, ctx).ok, true);
 
-  // cheat 1: a DIFFERENT scalar (committed to a different key) → SHA256(x) mismatch fails inside
+  // 作弊 1：一个 DIFFERENT 标量（承诺了不同的密钥）→ SHA256(x) 不匹配，在内部失败
   let s2 = s + 1000n;
   let pt2 = shuffleKeyPoint(s2);
   while (!pt2) {
@@ -198,13 +198,13 @@ test('in-script EC fair-play: committed on-curve shuffle key verifies; cheats fa
   }
   assert.equal(evaluate(fairPlayEcUnlocking(pt2.x, pt2.y), locking, ctx).ok, false);
 
-  // cheat 2: the committed x but a FORGED y not on the curve → curve check fails inside
+  // 作弊 2：已承诺的 x 但一个不在曲线上的 FORGED y → 曲线检查在内部失败
   assert.equal(evaluate(fairPlayEcUnlocking(pt.x, pt.y + 1n), locking, ctx).ok, false);
 });
 
 test('interpreter big-integer ops: 256-bit OP_MUL/OP_MOD round-trip', async () => {
   const { encodeScriptNum, SECP256K1_P } = await import('../src/templates.ts');
-  // (p-1) * 2 mod p == p-2  → exercises >256-bit intermediate then OP_MOD
+  // (p-1) * 2 mod p == p-2  → 先产生 >256 位的中间结果，再做 OP_MOD
   const locking = [
     encodeScriptNum(SECP256K1_P - 1n),
     encodeScriptNum(2n),

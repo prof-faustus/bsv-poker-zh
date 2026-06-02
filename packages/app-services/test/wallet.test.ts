@@ -32,12 +32,12 @@ test('withdraw more than balance is rejected (fail-closed)', async () => {
 test('buy-in deducts and cash-out returns; net of a winning session is positive', async () => {
   const w = new WalletService();
   await w.addFunds(1000);
-  const stack = w.buyIn(200, 'table-1'); // sit with 200
+  const stack = w.buyIn(200, 'table-1'); // 带 200 入座
   assert.equal(stack, 200);
   assert.equal(w.getBalance(), 800);
-  // ... play, leave with 260
+  // ... 进行游戏，带着 260 离开
   w.cashOut(260, 'table-1');
-  assert.equal(w.getBalance(), 1060); // up 60 on the session
+  assert.equal(w.getBalance(), 1060); // 本次对局盈利 60
 });
 
 test('cannot buy in for more than the balance', async () => {
@@ -64,7 +64,7 @@ test('persistence round-trips the balance + history', async () => {
   const w1 = new WalletService({ persistence });
   await w1.addFunds(777);
   w1.buyIn(100, 't');
-  // a fresh wallet loads the persisted state
+  // 一个全新的钱包加载已持久化的状态
   const w2 = new WalletService({ persistence });
   assert.equal(w2.getBalance(), 677);
   assert.equal(w2.state().history.length, 2);

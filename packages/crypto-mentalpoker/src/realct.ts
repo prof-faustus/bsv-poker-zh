@@ -1,14 +1,13 @@
 /**
- * Real mental-poker crypto orchestration (the CT contract, core §2.1 / §4) — used for the
- * SECURITY-CRITICAL paths (shuffle, reveal single-use, combined keys), never a fake
- * (REQ-DEP-004). Uses real SHA-256 and real secp256k1 points (via Node's ECDH).
+ * 真实的心智扑克加密编排（CT 契约，core §2.1 / §4）—— 用于安全关键路径
+ *（洗牌、揭示一次性、组合密钥），绝不使用 fake（REQ-DEP-004）。
+ * 使用真实的 SHA-256 和真实的 secp256k1 点（经由 Node 的 ECDH）。
  *
- * Phase-1 note: the distributed shuffle here composes each party's SECRET permutation derived
- * from its committed-then-revealed entropy (INV-CT-1: the order is the composition of secret
- * permutations; commit-reveal — core §4.1 — stops late-entropy selection, REQ-CRYPTO-002). The
- * two-round EC encryption of GB2616862 (core §4.4) and the in-script fair-play proof (§4.7,
- * §19.C) are layered by script-templates-ts / the build's interpreter measurement; the
- * combined per-card public keys Q_j are REAL secp256k1 points derived here.
+ * 阶段一说明：此处的分布式洗牌将各方由其先承诺后揭示的熵派生出的秘密置换组合
+ * 起来（INV-CT-1：顺序是各秘密置换的组合；commit-reveal —— core §4.1 —— 可阻止
+ * 后到熵的择优选择，REQ-CRYPTO-002）。GB2616862 的两轮 EC 加密（core §4.4）以及
+ * 脚本内的公平博弈证明（§4.7、§19.C）由 script-templates-ts / 构建的解释器度量来分层
+ * 叠加；每张牌的组合公钥 Q_j 是在此派生的真实 secp256k1 点。
  */
 
 import { createECDH, createHmac } from 'node:crypto';
@@ -19,7 +18,7 @@ import {
 } from '@bsv-poker/adapters';
 import { ByteWriter, bytesToHex, sha256 } from '@bsv-poker/protocol-types';
 
-/** Canonical reveal preimage: face (u8) ‖ blind bytes (core §4.5/§4.6). */
+/** 规范的揭示原像：face (u8) ‖ blind 字节（core §4.5/§4.6）。 */
 function revealPreimage(face: number, blind: Uint8Array): Uint8Array {
   const w = new ByteWriter();
   w.u8(face);
@@ -28,29 +27,29 @@ function revealPreimage(face: number, blind: Uint8Array): Uint8Array {
 }
 
 /**
- * Canonical party order — lexicographic order of long-term public keys in 33-byte SEC-1
- * compressed (hex) form (REQ-CRYPTO-003). Deterministic; independent of network arrival order.
+ * 规范的各方顺序 —— 以 33 字节 SEC-1 压缩（hex）形式表示的长期公钥的字典序
+ *（REQ-CRYPTO-003）。确定性；与网络到达顺序无关。
  */
 export function canonicalPartyOrder(pubKeysHex: readonly string[]): string[] {
   return [...pubKeysHex].map((h) => h.toLowerCase()).sort();
 }
 
-/** commit = SHA-256(secret); binding without disclosing (core §4.1). */
+/** commit = SHA-256(secret)；具有绑定性而不泄露内容（core §4.1）。 */
 export function entropyCommitSync(secret: Uint8Array): string {
   return bytesToHex(sha256(secret));
 }
 
-/** Constant-ish equality over hex (commitment match). */
+/** 对 hex 的近似常量时间相等比较（承诺匹配）。 */
 function commitMatches(commitment: string, secret: Uint8Array): boolean {
   return entropyCommitSync(secret) === commitment.toLowerCase();
 }
 
-/** HKDF-extract/expand-style PRF (RFC 5869 convention, core §4): HMAC-SHA256. */
+/** HKDF-extract/expand 风格的 PRF（遵循 RFC 5869 约定，core §4）：HMAC-SHA256。 */
 function prf(key: Uint8Array, info: string): Uint8Array {
   return new Uint8Array(createHmac('sha256', key).update(info).digest());
 }
 
-/** A 32-bit draw from a counter-mode PRF stream (deterministic, recorded — REQ-ARCH-002). */
+/** 从计数器模式的 PRF 流中抽取一个 32 位值（确定性、可记录 —— REQ-ARCH-002）。 */
 function* drawStream(seed: Uint8Array, info: string): Generator<number> {
   let counter = 0;
   for (;;) {
@@ -61,7 +60,7 @@ function* drawStream(seed: Uint8Array, info: string): Generator<number> {
   }
 }
 
-/** Fisher–Yates permutation of [0..n) seeded deterministically by a party's entropy. */
+/** 由某一方的熵确定性地作为种子的 [0..n) 的 Fisher–Yates 置换。 */
 export function permutationFromEntropy(entropy: Uint8Array, n: number): number[] {
   const perm = Array.from({ length: n }, (_, i) => i);
   const stream = drawStream(entropy, 'shuffle-perm');
@@ -73,7 +72,7 @@ export function permutationFromEntropy(entropy: Uint8Array, n: number): number[]
   return perm;
 }
 
-/** Compose permutations left-to-right in canonical party order: Π = π_N ∘ … ∘ π_1. */
+/** 按规范的各方顺序从左到右组合置换：Π = π_N ∘ … ∘ π_1。 */
 export function composePermutations(perms: readonly number[][], n: number): number[] {
   let composed = Array.from({ length: n }, (_, i) => i);
   for (const p of perms) {
@@ -83,17 +82,16 @@ export function composePermutations(perms: readonly number[][], n: number): numb
 }
 
 /**
- * The shuffled deck order = the composition of every party's secret permutation applied to the
- * identity deck [0..deckSize) (core §4.4). In true mental poker each card stays concealed until
- * selective reveal; this function reconstructs the order from the revealed entropies (after
- * commit-reveal closes) for deterministic dealing/settlement and dispute replay (§12.3).
+ * 洗牌后的牌堆顺序 = 将每一方的秘密置换组合后作用于恒等牌堆 [0..deckSize)（core §4.4）。
+ * 在真正的心智扑克中，每张牌在被选择性揭示前始终保持隐藏；此函数（在 commit-reveal
+ * 结束后）从已揭示的熵重建该顺序，用于确定性发牌/结算以及争议重放（§12.3）。
  */
 export function shuffledDeck(partyEntropy: readonly Uint8Array[], deckSize: number): number[] {
   const perms = partyEntropy.map((e) => permutationFromEntropy(e, deckSize));
   return composePermutations(perms, deckSize);
 }
 
-/** combined seed σ = H(r_1 ‖ … ‖ r_N) in canonical party order (core §4.1). */
+/** 组合种子 σ = H(r_1 ‖ … ‖ r_N)，按规范的各方顺序（core §4.1）。 */
 export function combinedSeed(entropies: readonly Uint8Array[]): Uint8Array {
   const w = new ByteWriter();
   for (const e of entropies) for (const b of e) w.u8(b);
@@ -101,19 +99,19 @@ export function combinedSeed(entropies: readonly Uint8Array[]): Uint8Array {
 }
 
 /**
- * Combined public key Q_j for card j — a REAL secp256k1 point. Derived deterministically from
- * the combined seed and j; rehashes on the negligible chance of an invalid scalar. (The
- * GB2616862 form is Q_j = Σ_p P_{p,j}; this produces a real point bound to the shuffle seed.)
+ * 牌 j 的组合公钥 Q_j —— 一个真实的 secp256k1 点。由组合种子和 j 确定性派生；
+ * 在出现无效标量（概率可忽略）时会重新哈希。（GB2616862 的形式为
+ * Q_j = Σ_p P_{p,j}；此处生成一个绑定到洗牌种子的真实点。）
  */
 export function combinedKey(seed: Uint8Array, j: number): string {
   for (let salt = 0; salt < 256; salt++) {
-    const scalar = prf(seed, `Qj:${j}:${salt}`); // 32 bytes
+    const scalar = prf(seed, `Qj:${j}:${salt}`); // 32 字节
     try {
       const ec = createECDH('secp256k1');
       ec.setPrivateKey(Buffer.from(scalar));
       return ec.getPublicKey('hex', 'compressed');
     } catch {
-      // invalid scalar (>= n or 0): try the next salt
+      // 无效标量（>= n 或 0）：尝试下一个 salt
     }
   }
   throw new Error('could not derive a valid combined key');
@@ -147,14 +145,14 @@ export function makeRealCT(): CTContract {
       face: number,
       blind: Uint8Array,
     ): Promise<string> {
-      // cmt_j = H(face_j ‖ blind_j) (core §4.5); deckId/serial bind the card's public identity
-      // elsewhere (the encrypted-card UTXO tuple), not the hiding commitment.
+      // cmt_j = H(face_j ‖ blind_j)（core §4.5）；deckId/serial 在别处（加密牌的 UTXO
+      // 元组）绑定该牌的公开身份，而非隐藏承诺。
       void deckId;
       void cardSerial;
       return bytesToHex(sha256(revealPreimage(face, blind)));
     },
     async verifyReveal(commitment: string, face: number, blind: Uint8Array): Promise<boolean> {
-      // Reveal opening H(face‖blind)=cmt (core §4.6).
+      // 揭示开启 H(face‖blind)=cmt（core §4.6）。
       return bytesToHex(sha256(revealPreimage(face, blind))) === commitment.toLowerCase();
     },
   };

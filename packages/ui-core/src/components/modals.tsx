@@ -1,7 +1,7 @@
 /**
- * SigningModal, ShowdownPanel, SettlementSummary (REQ-APP-052; §A6.7/§A6.8).
- * Presentational only. The SigningModal states EXACTLY what is being authorised — no silent
- * signing (REQ-UI-006 / core §11.6).
+ * SigningModal、ShowdownPanel、SettlementSummary（REQ-APP-052；§A6.7/§A6.8）。
+ * 仅用于展示。SigningModal 精确地说明正在授权的内容——不存在静默
+ * 签名（REQ-UI-006 / core §11.6）。
  */
 import React from 'react';
 import { CardChip, CardBack, Banner } from './primitives.tsx';

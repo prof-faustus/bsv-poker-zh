@@ -4,7 +4,7 @@ import type { Card, Variant } from '@bsv-poker/protocol-types';
 import { sha256, ByteWriter } from '@bsv-poker/protocol-types';
 import { playOfflineHand, offlineRuleset } from '../src/offline.ts';
 
-/** Deterministic 52-card shuffle from a seed (no Math.random). */
+/** 从 seed 派生的确定性 52 张牌洗牌（不使用 Math.random）。 */
 function deck(seed: number): Card[] {
   const perm = Array.from({ length: 52 }, (_, i) => i);
   let counter = 0;
@@ -35,7 +35,7 @@ test('every variant plays a full hand to completion vs the universal bot (solo p
     ];
     const final = playOfflineHand(v, offlineRuleset(v, 2), seats, deck(v.length * 7 + 1));
     assert.equal(final.handComplete, true, `${v}: hand should complete`);
-    // chips are conserved across the hand (no value created/destroyed)
+    // 整手牌中筹码守恒（没有价值被创造/销毁）
     const total = final.seats.reduce((a, s) => a + s.stack, 0);
     assert.equal(total, 400, `${v}: chips conserved`);
   }

@@ -1,12 +1,11 @@
 /**
- * Betting structures and the betting machine — core §5.4, REQ-POKER-008/009/010.
+ * 下注结构与下注状态机 —— core §5.4, REQ-POKER-008/009/010。
  *
- * Strategy behind one interface: No-Limit (max = stack), Pot-Limit (max = pot + call),
- * Fixed-Limit (fixed small/big bet, capped raises). The machine tracks per-seat stack,
- * committed-this-round, committed-this-hand, bet-to-call, last full raise, who is all-in,
- * who has acted since the last aggressive action, and the round-closed condition. A short
- * all-in that is not a full raise does NOT reopen betting to players already acted
- * (REQ-POKER-010).
+ * 单一接口下的多种策略：无限注（max = 筹码量）、底池限注（max = 底池 + 跟注）、
+ * 固定限注（固定的小/大注，加注次数有上限）。状态机跟踪每个座位的筹码量、
+ * 本轮已投入、本手已投入、需跟注金额、上一次完整加注、谁全下（all-in）、
+ * 自上一次激进动作以来谁已行动，以及本轮结束条件。一个不构成完整加注的
+ * 短全下不会为已经行动过的玩家重新开放下注（REQ-POKER-010）。
  */
 
 import type { Action, BettingStructure, LegalActions, Ruleset } from '@bsv-poker/protocol-types';
@@ -20,9 +19,9 @@ export interface BettingSeat {
   allIn: boolean;
   hasActedThisRound: boolean;
   /**
-   * Whether this seat currently holds the option to raise. Cleared for seats that have
-   * already acted when a SHORT all-in (less than a full raise) bumps the bet — they may only
-   * call, never re-raise (REQ-POKER-010). Restored on any full bet/raise.
+   * 该座位当前是否拥有加注权。当一个短全下（小于完整加注）抬高下注额时，
+   * 对已经行动过的座位会清除此权——它们只能跟注，不能再加注（REQ-POKER-010）。
+   * 在任何完整下注/加注时恢复。
    */
   mayRaise: boolean;
 }
@@ -34,7 +33,7 @@ export interface BettingCtx {
   toAct: number | null;
   lastAggressor: number | null;
   raisesThisStreet: number;
-  /** For Fixed-Limit: the bet level applicable to the current street. */
+  /** 固定限注下：适用于当前街的下注级别。 */
   betLevel: 'small' | 'big';
 }
 
@@ -59,7 +58,7 @@ function liveSeats(ctx: BettingCtx): BettingSeat[] {
   return ctx.seats.filter((s) => !s.folded);
 }
 
-/** The base bet size for the structure on this street (the minimum opening bet / raise step). */
+/** 本街中该结构的基础下注额（最小起手下注 / 加注步长）。 */
 function betUnit(ctx: BettingCtx, ruleset: Ruleset): number {
   if (ruleset.bettingStructure === 'FL') {
     if (!ruleset.flSizing) throw new Error('FL ruleset missing flSizing');
@@ -72,14 +71,14 @@ function potSize(ctx: BettingCtx): number {
   return ctx.seats.reduce((s, x) => s + x.committedThisHand, 0);
 }
 
-/** Maximum bet/raise-TO for the structure, given the acting seat. */
+/** 给定行动座位时，该结构下的最大下注/加注至（raise-TO）金额。 */
 function maxFor(
   structure: BettingStructure,
   ctx: BettingCtx,
   seat: BettingSeat,
   isRaise: boolean,
 ): number {
-  const allInTo = seat.committedThisRound + seat.stack; // total this round if all-in
+  const allInTo = seat.committedThisRound + seat.stack; // 若全下，本轮的总投入
   if (structure === 'NL') return allInTo;
   if (structure === 'PL') {
     const toCall = Math.max(0, ctx.betToCall - seat.committedThisRound);
@@ -87,7 +86,7 @@ function maxFor(
     const cap = isRaise ? ctx.betToCall + potAfterCall : potAfterCall;
     return Math.min(cap, allInTo);
   }
-  // FL: max == min (fixed). Caller computes the fixed target; clamp to all-in.
+  // FL：max == min（固定）。调用方计算固定目标值；上限钳制到全下额。
   return allInTo;
 }
 
@@ -118,14 +117,14 @@ export function legalActions(ctx: BettingCtx, ruleset: Ruleset, seat: number): L
   }
 
   if (toCall === 0 && s.stack > 0) {
-    // open bet
+    // 起手下注
     const min = Math.min(unit, s.stack);
     const max = structure === 'FL' ? min : maxFor(structure, ctx, s, false);
     out.bet = { min, max };
   }
 
   if (toCall > 0 && s.stack > toCall && !flCapped && s.mayRaise) {
-    // raise-TO
+    // 加注至（raise-TO）
     const minRaiseTo = ctx.betToCall + Math.max(ctx.lastFullRaise, unit);
     const allInTo = s.committedThisRound + s.stack;
     if (structure === 'FL') {
@@ -141,13 +140,13 @@ export function legalActions(ctx: BettingCtx, ruleset: Ruleset, seat: number): L
   return out;
 }
 
-/** Apply a validated action, returning a new context with toAct advanced. */
+/** 应用一个已校验的动作，返回 toAct 已推进的新上下文。 */
 export function applyAction(ctx: BettingCtx, ruleset: Ruleset, action: Action): BettingCtx {
   const next = clone(ctx);
   const s = find(next, action.seat);
   if (s.folded || s.allIn) throw new Error(`seat ${action.seat} cannot act`);
 
-  // Fail-closed: the move must be among the legal actions for this state (REQ-POKER-008).
+  // 失败即关闭（fail-closed）：该动作必须属于此状态下的合法动作之一（REQ-POKER-008）。
   assertLegal(ctx, ruleset, action);
 
   const move = (target: number): void => {
@@ -172,7 +171,7 @@ export function applyAction(ctx: BettingCtx, ruleset: Ruleset, action: Action): 
       break;
     }
     case 'call': {
-      // action.amount is the INCREMENTAL chips to call (== legalActions().call.amount).
+      // action.amount 是跟注所需的增量筹码（== legalActions().call.amount）。
       move(s.committedThisRound + action.amount);
       s.hasActedThisRound = true;
       break;
@@ -199,9 +198,9 @@ export function applyAction(ctx: BettingCtx, ruleset: Ruleset, action: Action): 
       next.raisesThisStreet += 1;
       if (full) {
         next.lastFullRaise = raiseBy;
-        fullReopen(next, s.seat); // full raise reopens the option to raise for everyone
+        fullReopen(next, s.seat); // 完整加注为所有人重新开放加注权
       } else {
-        partialReopen(next, s.seat); // short all-in: others must respond but may only call
+        partialReopen(next, s.seat); // 短全下：其他人必须应对，但只能跟注
       }
       s.hasActedThisRound = true;
       break;
@@ -214,7 +213,7 @@ export function applyAction(ctx: BettingCtx, ruleset: Ruleset, action: Action): 
   return next;
 }
 
-/** Reject an action that is not legal for the current state (fail-closed). */
+/** 拒绝在当前状态下不合法的动作（失败即关闭）。 */
 function assertLegal(ctx: BettingCtx, ruleset: Ruleset, action: Action): void {
   const legal = legalActions(ctx, ruleset, action.seat);
   switch (action.kind) {
@@ -240,7 +239,7 @@ function assertLegal(ctx: BettingCtx, ruleset: Ruleset, action: Action): void {
   }
 }
 
-/** Full bet/raise: every other live, non-all-in seat must act again AND regains the raise option. */
+/** 完整下注/加注：其余每个仍在局且未全下的座位都必须再次行动，并重新获得加注权。 */
 function fullReopen(ctx: BettingCtx, aggressor: number): void {
   for (const s of ctx.seats) {
     if (s.seat !== aggressor && !s.folded && !s.allIn) {
@@ -251,9 +250,8 @@ function fullReopen(ctx: BettingCtx, aggressor: number): void {
 }
 
 /**
- * Short all-in (under a full raise): seats that have ALREADY acted must respond to the new
- * bet-to-call but may only call/fold (mayRaise cleared); seats yet to act keep their option
- * (REQ-POKER-010).
+ * 短全下（不足一个完整加注）：已经行动过的座位必须应对新的需跟注额，但只能
+ * 跟注/弃牌（mayRaise 被清除）；尚未行动的座位保留其加注权（REQ-POKER-010）。
  */
 function partialReopen(ctx: BettingCtx, aggressor: number): void {
   for (const s of ctx.seats) {
@@ -265,7 +263,7 @@ function partialReopen(ctx: BettingCtx, aggressor: number): void {
   }
 }
 
-/** Advance toAct to the next eligible seat, or null if the round is closed. */
+/** 将 toAct 推进到下一个符合条件的座位；若本轮已结束则置为 null。 */
 function advance(ctx: BettingCtx): void {
   if (isRoundClosed(ctx)) {
     ctx.toAct = null;
@@ -286,24 +284,23 @@ function advance(ctx: BettingCtx): void {
 }
 
 /**
- * Round closes when action has returned to the last aggressor with all live non-all-in
- * players having matched the current bet (or checked through), OR only one live player
- * remains (REQ-POKER-010).
+ * 当行动回到上一个激进者、且所有仍在局且未全下的玩家都已跟平当前下注（或全部
+ * 过牌通过），或仅剩一名在局玩家时，本轮结束（REQ-POKER-010）。
  */
 export function isRoundClosed(ctx: BettingCtx): boolean {
   if (liveSeats(ctx).length <= 1) return true;
   const contenders = liveNonAllIn(ctx);
-  if (contenders.length === 0) return true; // all remaining are all-in
+  if (contenders.length === 0) return true; // 剩余玩家全部全下
   if (contenders.length === 1) {
-    // Only one player can voluntarily act; there is no one to bet against. The round closes
-    // once that player owes nothing (has matched the current bet). Avoids waiting for a bet
-    // against all-in opponents (standard "all but one all-in" rule).
+    // 只有一名玩家可以主动行动；没有对手可供下注。一旦该玩家不再欠任何
+    // 筹码（已跟平当前下注），本轮即结束。避免等待对全下对手的下注
+    //（标准的"除一人外全部全下"规则）。
     return contenders[0]!.committedThisRound === ctx.betToCall;
   }
   return contenders.every((s) => s.hasActedThisRound && s.committedThisRound === ctx.betToCall);
 }
 
-/** Set up a fresh betting round: clear committed-this-round and acted flags. */
+/** 开启一个全新的下注轮：清除本轮已投入和已行动标志。 */
 export function openRound(ctx: BettingCtx, firstToAct: number, betLevel: 'small' | 'big'): BettingCtx {
   const next = clone(ctx);
   for (const s of next.seats) {

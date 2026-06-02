@@ -1,8 +1,8 @@
-// Tests for the indexer: dedup, deterministic ordering, Rebuild equivalence,
-// and /healthz + /table/{id}.
+// 索引器的测试：去重、确定性排序、Rebuild 等价性，
+// 以及 /healthz + /table/{id}。
 //
-// REQ-NET-001/004 (core §8.1/§8.4): asserts projection behaviour only; the
-// indexer adjudicates nothing.
+// REQ-NET-001/004（core §8.1/§8.4）：仅断言投影行为；
+// 索引器不做任何裁决。
 package indexer
 
 import (
@@ -38,7 +38,7 @@ func TestDeterministicOrdering(t *testing.T) {
 		}
 	}
 	got := ix.Table("t1")
-	want := []string{"c", "a", "b"} // first-seen insertion order, dups dropped
+	want := []string{"c", "a", "b"} // 首次见到的插入顺序，重复项被丢弃
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("order = %v, want %v", got, want)
 	}
@@ -48,7 +48,7 @@ func TestPerTableIsolation(t *testing.T) {
 	ix := New()
 	_, _ = ix.Ingest(Record{Txid: "x", TableID: "t1"})
 	_, _ = ix.Ingest(Record{Txid: "y", TableID: "t2"})
-	_, _ = ix.Ingest(Record{Txid: "x", TableID: "t2"}) // same txid, different table
+	_, _ = ix.Ingest(Record{Txid: "x", TableID: "t2"}) // 相同 txid，不同牌桌
 	if got := ix.Table("t1"); !reflect.DeepEqual(got, []string{"x"}) {
 		t.Fatalf("t1 = %v", got)
 	}
@@ -77,16 +77,16 @@ func TestUnknownTableEmpty(t *testing.T) {
 	}
 }
 
-// TestRebuildMatchesIngest is the determinism contract (P2, REQ-NET-007): a
-// client running Rebuild over the same record stream gets the same ordered set
-// as the live indexer.
+// TestRebuildMatchesIngest 是确定性契约（P2，REQ-NET-007）：在
+// 同一条记录流上运行 Rebuild 的客户端会得到与实时索引器
+// 相同的有序集合。
 func TestRebuildMatchesIngest(t *testing.T) {
 	records := []Record{
 		{Txid: "c", TableID: "t1"},
 		{Txid: "a", TableID: "t2"},
 		{Txid: "a", TableID: "t1"},
 		{Txid: "b", TableID: "t1"},
-		{Txid: "c", TableID: "t1"}, // dup
+		{Txid: "c", TableID: "t1"}, // 重复
 		{Txid: "z", TableID: "t2"},
 	}
 	ix := New()
@@ -125,7 +125,7 @@ func TestHTTPIngestAndTable(t *testing.T) {
 	for _, b := range []string{
 		`{"txid":"a","class":"action","tableId":"t1"}`,
 		`{"txid":"b","class":"action","tableId":"t1"}`,
-		`{"txid":"a","class":"action","tableId":"t1"}`, // dup
+		`{"txid":"a","class":"action","tableId":"t1"}`, // 重复
 	} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(b))

@@ -38,7 +38,7 @@ test('fold output spend validates through the interpreter using the tx sighash',
   const preimage = sighashPreimage(tx, 0);
   const sig = signPreimage(preimage, k.priv);
   assert.equal(evaluate(foldUnlocking(sig), out.locking, { sighashPreimage: preimage }).ok, true);
-  // a signature over a DIFFERENT tx (replay) fails inside the interpreter
+  // 对一笔 DIFFERENT 交易（重放）的签名会在解释器内部失败
   const other = sighashPreimage({ ...tx, nLockTime: 5 }, 0);
   assert.equal(evaluate(foldUnlocking(signPreimage(other, k.priv)), out.locking, { sighashPreimage: preimage }).ok, false);
 });
@@ -67,7 +67,7 @@ test('withMaturity sets tx-level nLockTime and non-final nSequence (REQ-TX-002, 
   };
   const matured = withMaturity(tx, 850000);
   assert.equal(matured.nLockTime, 850000);
-  assert.equal(matured.inputs[0]!.sequence, 0xfffffffe); // non-final → nLockTime is enforced
+  assert.equal(matured.inputs[0]!.sequence, 0xfffffffe); // 非最终 → nLockTime 被强制
 });
 
 test('txid is a stable 32-byte double-SHA-256 hex', () => {

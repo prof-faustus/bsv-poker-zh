@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RelayClient, IndexerClient } from '../src/network.ts';
 
-/** A scripted fake fetch that records calls and returns canned JSON. */
+/** 一个脚本化的伪 fetch，记录调用并返回预设的 JSON。 */
 function fakeFetch(routes: Record<string, unknown>): {
   fn: typeof fetch;
   calls: Array<{ url: string; method: string; body: string | undefined }>;
@@ -62,7 +62,7 @@ test('IndexerClient ingests records (canonical path) and reads the ordered proje
   const added = await ix.ingest({ txid: 'aa', class: 'Funding', tableId: 't1' });
   assert.equal(added, true);
   const txids = await ix.table('t1');
-  assert.deepEqual(txids, ['aa', 'bb', 'cc']); // deterministic ordered projection (REQ-NET-006/007)
+  assert.deepEqual(txids, ['aa', 'bb', 'cc']); // 确定性的有序投影（REQ-NET-006/007）
   assert.deepEqual(JSON.parse(calls[0]!.body!), { txid: 'aa', class: 'Funding', tableId: 't1' });
 });
 

@@ -1,7 +1,7 @@
 /**
- * Razz module tests — core §7.3.4, REQ-FSM-011. Covers: highest up-card brings in; reversed
- * (lowest-board-first) acting order; ace-to-five low showdown where the wheel beats a worse
- * low (§19.D); determinism.
+ * Razz 模块测试 —— core §7.3.4, REQ-FSM-011。涵盖：最高明牌进行 bring-in；反向的
+ *（最低明面优先）行动顺序；A-to-5 低牌摊牌中最小顺子击败更差的低牌（§19.D）；
+ * 确定性。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,10 +31,10 @@ const seats2 = [
   { seat: 1, stack: 100 },
 ];
 
-// 3rd-street deal order (round-robin, 3 rounds): each seat's 3rd card is its UP door.
-//   seat0 = Ah 2d 3c   (door 3c)
-//   seat1 = Kh Qd Ks   (door Ks — the HIGHEST up-card → Razz bring-in)
-// Tail deals 4th/5th/6th/7th in seat order, building seat0's wheel A-2-3-4-5.
+// 第三街发牌顺序（轮转，3 轮）：每个座位的第 3 张牌是其明门牌。
+//   seat0 = Ah 2d 3c   （门牌 3c）
+//   seat1 = Kh Qd Ks   （门牌 Ks —— 最高明牌 → Razz bring-in）
+// 牌尾按座位顺序发第 4/5/6/7 张，构建出 seat0 的最小顺子 A-2-3-4-5。
 function razzDeck(): Card[] {
   const s0 = ['Ah', '2d', '3c'].map(parseCard);
   const s1 = ['Kh', 'Qd', 'Ks'].map(parseCard);
@@ -55,20 +55,20 @@ test('highest up-card (Ks, seat 1) brings in — reversed from stud (REQ-FSM-011
   const s = m.init(RZ, seats2);
   assert.equal(s.phase, PHASES.THIRD);
   assert.equal(cardToString(upCardsOf(s as StudState, 1)[0]!), 'Ks');
-  // seat1 holds the highest up-card → posts ante 1 + bring-in 2 = 3 committed.
+  // seat1 持有最高明牌 → 下 ante 1 + bring-in 2 = 共投入 3。
   assert.equal(s.seats.find((x) => x.seat === 1)!.committedThisHand, 3);
-  assert.equal(s.seats.find((x) => x.seat === 0)!.committedThisHand, 1); // ante only
-  assert.equal(s.betting.toAct, 0); // action proceeds to the seat after the bring-in
+  assert.equal(s.seats.find((x) => x.seat === 0)!.committedThisHand, 1); // 仅 ante
+  assert.equal(s.betting.toAct, 0); // 行动推进到 bring-in 之后的座位
 });
 
 test('post-3rd order reversed: LOWEST (best) exposed low acts first (REQ-FSM-011 ii)', () => {
   const m = createRazz({ deck: razzDeck() });
   let s = m.init(RZ, seats2);
-  // Close 3rd: seat0 calls the bring-in, seat1 (bring-in) checks.
+  // 结束第三街：seat0 跟 bring-in，seat1（bring-in）过牌。
   s = m.apply(s, { kind: 'call', seat: 0, amount: 2 });
   s = m.apply(s, { kind: 'check', seat: 1, amount: 0 });
   assert.equal(s.phase, PHASES.FOURTH);
-  // seat0 board (3c, 4s — a low draw) is best; it acts FIRST.
+  // seat0 的明面（3c, 4s —— 低牌听牌）最好；它先行动。
   assert.equal(s.betting.toAct, 0);
 });
 
@@ -81,18 +81,18 @@ test('ace-to-five low showdown: the wheel beats a worse low (§19.D / REQ-POKER-
     s = m.apply(s, { kind: 'check', seat: s.betting.toAct!, amount: 0 });
     s = m.apply(s, { kind: 'check', seat: s.betting.toAct!, amount: 0 });
   };
-  checkRound(); // 4th
-  checkRound(); // 5th
-  checkRound(); // 6th
-  checkRound(); // 7th
+  checkRound(); // 第四街
+  checkRound(); // 第五街
+  checkRound(); // 第六街
+  checkRound(); // 第七街
   assert.equal(s.phase, PHASES.HAND_END);
 
-  // seat0's best low is the wheel (0, [5,4,3,2,1]); confirm against the evaluator.
+  // seat0 的最佳低牌是最小顺子 (0, [5,4,3,2,1])；与评估器核对确认。
   const low0 = bestLow(allCardsOf(s as StudState, 0)).value;
   assert.equal(low0.pairPenalty, 0);
   assert.deepEqual([...low0.values], [5, 4, 3, 2, 1]);
 
-  // The wheel wins the whole pot (2 antes + bring-in 2 + call 2 = 6).
+  // 最小顺子赢得整个底池（2 份 ante + bring-in 2 + 跟注 2 = 6）。
   assert.deepEqual([...s.payouts], [{ seat: 0, amount: 6 }]);
   assert.equal(s.seats.find((x) => x.seat === 0)!.stack, 103); // 100 - 3 + 6
 });

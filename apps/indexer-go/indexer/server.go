@@ -1,8 +1,8 @@
-// HTTP transport for the indexer (stdlib only, zero external deps).
+// 索引器的 HTTP 传输层（仅用标准库，零外部依赖）。
 //
-// REQ-NET-004 (core §8.4): serves per-table projections.
-// REQ-NET-001 (core §8.1): the served list is a convenience projection (a hint
-// to be confirmed by the client against the canonical tx graph), never truth.
+// REQ-NET-004（core §8.4）：提供以牌桌为单位的投影服务。
+// REQ-NET-001（core §8.1）：所提供的列表是一个便利投影（一个
+// 需由客户端对照规范化 tx 图加以确认的提示），绝非事实。
 package indexer
 
 import (
@@ -11,23 +11,23 @@ import (
 	"net/http"
 )
 
-// Server wires an Indexer to HTTP handlers.
+// Server 将一个 Indexer 接线到 HTTP 处理器。
 type Server struct {
 	ix  *Indexer
 	mux *http.ServeMux
 }
 
-// NewServer constructs an indexer HTTP server over a fresh Indexer.
+// NewServer 在一个全新的 Indexer 之上构造一个索引器 HTTP 服务器。
 func NewServer() *Server {
 	s := &Server{ix: New()}
 	s.routes()
 	return s
 }
 
-// Index exposes the underlying indexer (for in-process ingestion/tests).
+// Index 暴露底层的索引器（用于进程内摄入/测试）。
 func (s *Server) Index() *Indexer { return s.ix }
 
-// Handler returns the configured mux.
+// Handler 返回已配置的 mux。
 func (s *Server) Handler() http.Handler { return s.mux }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
@@ -56,7 +56,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleIngest accepts an opaque protocol-transaction record (REQ-NET-004).
+// handleIngest 接受一条不透明的协议交易记录（REQ-NET-004）。
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	var rec Record
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&rec); err != nil {
@@ -71,14 +71,14 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"added": added})
 }
 
-// tableResponse is the per-table projection view.
+// tableResponse 是以牌桌为单位的投影视图。
 type tableResponse struct {
 	TableID string   `json:"tableId"`
 	Txids   []string `json:"txids"`
 }
 
-// handleTable returns the ordered, de-duplicated txid list for a table id.
-// REQ-NET-001: this is a convenience projection, not the source of truth.
+// handleTable 返回某一牌桌 id 的有序、去重后的 txid 列表。
+// REQ-NET-001：这是一个便利投影，不是事实来源。
 func (s *Server) handleTable(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -88,8 +88,8 @@ func (s *Server) handleTable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tableResponse{TableID: id, Txids: s.ix.Table(id)})
 }
 
-// handleRecords returns the FULL ordered records (the transcript) so a (re)connecting client
-// can rebuild current state from the valid tx set (REQ-NET-007, REQ-DATA-002/003).
+// handleRecords 返回完整的有序记录（即记录全文），以便（重）连接的客户端
+// 能从有效的 tx 集合重建当前状态（REQ-NET-007、REQ-DATA-002/003）。
 func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {

@@ -1,5 +1,5 @@
 /**
- * Ruleset SDK surface (core §15.3): validate, hash, resolveDefaultAction.
+ * 规则集 SDK 接口（core §15.3）：validate、hash、resolveDefaultAction。
  */
 
 import {
@@ -15,7 +15,7 @@ export interface RulesetError {
   readonly message: string;
 }
 
-/** Validate a ruleset; returns the list of problems (empty = valid). Fail-closed (§A10.4). */
+/** 校验一个规则集；返回问题列表（为空 = 有效）。失败即关闭（§A10.4）。 */
 export function validateRuleset(r: Ruleset): RulesetError[] {
   const errs: RulesetError[] = [];
   if (!VARIANTS.includes(r.variant)) errs.push({ field: 'variant', message: 'unknown variant' });
@@ -33,15 +33,15 @@ export function validateRuleset(r: Ruleset): RulesetError[] {
   return errs;
 }
 
-/** rulesetHash = H(canonicalSerialize(Ruleset)) — core §5.2, REQ-POKER-002. */
+/** rulesetHash = H(canonicalSerialize(Ruleset)) —— core §5.2, REQ-POKER-002。 */
 export function hashRuleset(r: Ruleset): string {
   return rulesetHash(r);
 }
 
 /**
- * The safe default-on-timeout for a facing-a-bet decision (core §6.4): check if checking is
- * legal, else fold — NEVER a forced wager. (The engine's isTimeoutEligible computes the actual
- * eligible seat + default; this is the policy helper.)
+ * 面对下注的决策在超时时的安全默认动作（core §6.4）：若过牌合法则过牌，
+ * 否则弃牌——绝不强制下注。（引擎的 isTimeoutEligible 计算实际的
+ * 合格座位 + 默认动作；这只是策略辅助函数。）
  */
 export function resolveDefaultAction(seat: number, facingBet: boolean): Action {
   return facingBet ? { kind: 'fold', seat, amount: 0 } : { kind: 'check', seat, amount: 0 };

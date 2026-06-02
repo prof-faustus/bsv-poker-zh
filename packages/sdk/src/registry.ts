@@ -1,7 +1,7 @@
 /**
- * Game registry (app §A21.2): variant -> module factory. Adding a game is adding a registry
- * entry + a module, not editing screens (REQ-APP-213). game-holdem is registered here; the
- * other variant modules register as they land (Phase 3).
+ * 游戏注册表（app §A21.2）：variant -> 模块工厂。新增一个游戏就是新增一条注册表
+ * 条目 + 一个模块，而不是修改界面（REQ-APP-213）。game-holdem 在此注册；
+ * 其他 variant 模块在落地时注册（Phase 3）。
  */
 
 import type { Card, GameState, Variant } from '@bsv-poker/protocol-types';
@@ -35,9 +35,9 @@ export function registeredVariants(): Variant[] {
   return [...registry.keys()];
 }
 
-// Register the built-in module(s). The module operates on its own concrete state type
-// (HoldemState extends GameState); the registry hands it back opaquely as GameState — state
-// only ever flows from this same module's init/apply, so the cast is runtime-safe.
+// 注册内置模块。该模块在其自身的具体状态类型上运作
+// （HoldemState 继承 GameState）；注册表以不透明方式将其作为 GameState 返回——状态
+// 始终只来自同一模块的 init/apply，因此该类型转换在运行时是安全的。
 registerGame('holdem', (cfg) => createHoldem({ deck: cfg.deck }) as unknown as ReturnType<ModuleFactory>);
 registerGame('omaha', (cfg) => createOmaha({ deck: cfg.deck }) as unknown as ReturnType<ModuleFactory>);
 registerGame('stud', (cfg) => createStud({ deck: cfg.deck }) as unknown as ReturnType<ModuleFactory>);

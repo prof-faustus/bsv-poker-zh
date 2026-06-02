@@ -58,16 +58,16 @@ test('tableViewModel projects seats, board, hero hole cards, and the action bar'
   });
 
   assert.equal(vm.seats.length, 2);
-  // Hero (seat 0) sees its own hole cards; the bot's are hidden.
+  // 英雄（seat 0）能看到自己的底牌；机器人的底牌被隐藏。
   const hero = vm.seats.find((x) => x.seat === 0)!;
   const bot = vm.seats.find((x) => x.seat === 1)!;
   assert.equal(hero.holeCards.length, 2);
   assert.equal(hero.holeCards[0]!.code, 'As');
   assert.equal(bot.holeCards.length, 0);
-  // Button/SB acts first preflop heads-up → it is the hero's turn.
+  // 单挑翻牌前，按钮位/小盲（SB）先行动 → 轮到英雄行动。
   assert.equal(vm.toAct, 0);
   assert.equal(vm.actionBar.isHeroTurn, true);
-  // Pot reflects posted blinds (1 + 2).
+  // 底池反映已下的盲注（1 + 2）。
   assert.equal(vm.totalPot, 3);
   assert.equal(vm.board.length, 0);
 });
@@ -75,7 +75,7 @@ test('tableViewModel projects seats, board, hero hole cards, and the action bar'
 test('consequence text: facing a bet → fold default, never a forced wager (core §6.4/§11.4)', () => {
   const m = createHoldem({ deck: fixedDeck() });
   const s = m.init(NL, seats);
-  const resolution = m.isTimeoutEligible(s, 0); // SB facing BB → default fold
+  const resolution = m.isTimeoutEligible(s, 0); // 小盲（SB）面对大盲（BB）→ 默认弃牌
   const c = consequenceText(resolution, 0, 30000);
   assert.equal(c.defaultKind, 'fold');
   assert.match(c.text, /never forced to wager/);
@@ -85,7 +85,7 @@ test('consequence text: facing a bet → fold default, never a forced wager (cor
 test('consequence text: no bet to face → check default', () => {
   const m = createHoldem({ deck: fixedDeck() });
   let s = m.init(NL, seats);
-  s = m.apply(s, { kind: 'call', seat: 0, amount: 1 }); // SB completes; BB to act, may check
+  s = m.apply(s, { kind: 'call', seat: 0, amount: 1 }); // 小盲（SB）补齐；轮到大盲（BB）行动，可以让牌（check）
   const resolution = m.isTimeoutEligible(s, 0);
   const c = consequenceText(resolution, 1, 30000);
   assert.equal(c.defaultKind, 'check');

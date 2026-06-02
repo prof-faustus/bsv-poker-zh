@@ -1,16 +1,15 @@
 /**
- * Browser-safe deck shuffle for Phase-1 play-money/regtest hot-seat play.
+ * 用于第一阶段 play-money/regtest 热座对局的浏览器安全牌组洗牌。
  *
- * HONEST SCOPE (§A2.3, build brief): this is a single-party Fisher–Yates seeded by
- * crypto.getRandomValues. It is NOT the multi-party mental-poker shuffle (core §4) — that
- * commit-reveal protocol with no single party knowing the order is the Node SDK / crypto-layer
- * path and is out of scope for the browser bundle (crypto-mentalpoker uses node:crypto). Here a
- * single client deals to itself + a bot, so a trustless shuffle is neither possible nor claimed.
+ * 诚实的适用范围（§A2.3，构建简报）：这是由 crypto.getRandomValues 提供种子的单方 Fisher–Yates。
+ * 它不是多方 mental-poker 洗牌（core §4）——那种没有任何单方知晓顺序的 commit-reveal 协议
+ * 属于 Node SDK / 密码学层路径，不在浏览器包的范围内（crypto-mentalpoker 使用 node:crypto）。
+ * 这里单个客户端给自己 + 一个 bot 发牌，因此既不可能也不声称实现无需信任的洗牌。
  */
 
 import { NUM_CARDS, type Card } from '@bsv-poker/protocol-types';
 
-/** Deterministic Fisher–Yates using an injected 0..1 RNG (so tests can seed it). */
+/** 使用注入的 0..1 RNG 的确定性 Fisher–Yates（以便测试可以为其提供种子）。 */
 export function shuffleWith(rng: () => number): Card[] {
   const deck: Card[] = [];
   for (let c = 0; c < NUM_CARDS; c++) deck.push(c);
@@ -23,7 +22,7 @@ export function shuffleWith(rng: () => number): Card[] {
   return deck;
 }
 
-/** A uniform 0..1 RNG backed by crypto.getRandomValues when available (browser), else Math.random. */
+/** 一个均匀的 0..1 RNG，可用时（浏览器）由 crypto.getRandomValues 支持，否则使用 Math.random。 */
 export function cryptoRng(): () => number {
   const g = globalThis as { crypto?: { getRandomValues?: (a: Uint32Array) => Uint32Array } };
   const c = g.crypto;
@@ -37,7 +36,7 @@ export function cryptoRng(): () => number {
   return Math.random;
 }
 
-/** Shuffle a fresh 52-card deck using the platform CSPRNG (regtest/play-money). */
+/** 使用平台 CSPRNG 洗一副全新的 52 张牌组（regtest/play-money）。 */
 export function shuffleDeck(): Card[] {
   return shuffleWith(cryptoRng());
 }

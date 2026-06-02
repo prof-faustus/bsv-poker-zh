@@ -11,7 +11,7 @@ import {
 import type { Ruleset } from '../src/ruleset.ts';
 import type { Action } from '../src/actions.ts';
 
-// The Phase-1 sample ruleset: heads-up NL Hold'em on regtest (core D1).
+// Phase-1 示例规则集：regtest 上的单挑 NL 德州扑克（core D1）。
 const SAMPLE: Ruleset = {
   variant: 'holdem',
   bettingStructure: 'NL',
@@ -32,7 +32,7 @@ test('ByteWriter primitives are little-endian and bounds-checked', () => {
   assert.equal(bytesToHex(new ByteWriter().u32(0x01020304).toBytes()), '04030201');
   assert.equal(bytesToHex(new ByteWriter().u64(1n).toBytes()), '0100000000000000');
   assert.throws(() => new ByteWriter().u8(256));
-  // u64 handles values beyond 2^53 safely (BigInt path).
+  // u64 能安全处理超过 2^53 的值（BigInt 路径）。
   assert.equal(bytesToHex(new ByteWriter().u64(2n ** 53n + 1n).toBytes()), '0100000000002000');
 });
 
@@ -45,7 +45,7 @@ test('serializeRuleset is deterministic and byte-exact', () => {
   const a = serializeRuleset(SAMPLE);
   const b = serializeRuleset({ ...SAMPLE });
   assert.deepEqual([...a], [...b]);
-  // Computed (not hand-written) reference bytes for the Phase-1 sample ruleset:
+  // Phase-1 示例规则集的参考字节（由计算得出，而非手写）：
   // variant=0,struct=0(NL),forced=0(blinds),seats=2, sb=1,bb=2,ante=0,bringin=0,
   // minBuy=100,maxBuy=200, flSizing absent(0), decision=30000,recovery=120000,
   // signing=0(A),currency=0,suitTiebreak=0,hiLo=0

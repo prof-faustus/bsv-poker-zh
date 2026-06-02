@@ -1,8 +1,8 @@
 /**
- * Traceability map (REQ-ENG-003): every requirement the Phase-0/1 build SATISFIES is mapped to
- * its satisfying source file(s) and passing test(s). Requirements not yet implemented are
- * intentionally absent and reported as "planned (later phase)" — an honest matrix, never a
- * claim of completeness (P8). The PHASE01_REQUIRED set is the gate: each MUST be traced.
+ * 可追溯性映射（REQ-ENG-003）：Phase-0/1 构建所满足的每条需求都被映射到
+ * 满足它的源文件和通过的测试。尚未实现的需求被有意省略，
+ * 并报告为 "planned (later phase)" —— 一个如实的矩阵，从不声称
+ * 已完整（P8）。PHASE01_REQUIRED 集合即门禁：每条都必须被追溯。
  */
 
 export interface Trace {
@@ -227,5 +227,5 @@ export const TRACE_MAP: Readonly<Record<string, Trace>> = {
   'REQ-BUILD-003': { files: ['tools/ci.ts'], tests: ['tools/ci.ts'] },
 };
 
-/** The Phase-0/1 gate: every id here MUST be traced (REQ-TEST-007 / app §A18.3). */
+/** Phase-0/1 门禁：这里的每个 id 都必须被追溯（REQ-TEST-007 / app §A18.3）。 */
 export const PHASE01_REQUIRED: readonly string[] = Object.keys(TRACE_MAP);

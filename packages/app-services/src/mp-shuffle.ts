@@ -1,8 +1,8 @@
 /**
- * Shared deterministic shuffle (core §4.4) — the SAME derivation used by the live client and by
- * the transcript rebuild, so a reconnecting client computes a byte-identical deck. Portable
- * (no node:crypto). The composed seed = H(r_1 ‖ … ‖ r_N) in seat order; the deck is a
- * counter-mode-PRF Fisher–Yates over that seed.
+ * 共享的确定性洗牌（core §4.4）——实时客户端与转录重建使用完全相同的派生方式，
+ * 因此重连的客户端会计算出逐字节一致的牌组。可移植（不依赖 node:crypto）。
+ * 组合 seed = 按座位顺序的 H(r_1 ‖ … ‖ r_N)；牌组是基于该 seed 的
+ * counter-mode-PRF Fisher–Yates 洗牌。
  */
 
 import { type Card, sha256, ByteWriter } from '@bsv-poker/protocol-types';
@@ -30,7 +30,7 @@ export function seededShuffle(seed: Uint8Array, n: number): number[] {
   return perm;
 }
 
-/** Deck = composition of the parties' revealed entropies (seat order) → 52-card shuffle. */
+/** 牌组 = 各方已揭示熵的组合（座位顺序）→ 52 张牌的洗牌。 */
 export function deckFromEntropies(entropies: readonly Uint8Array[]): Card[] {
   const w = new ByteWriter();
   for (const e of entropies) for (const b of e) w.u8(b);

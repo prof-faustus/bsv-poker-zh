@@ -1,7 +1,7 @@
 /**
- * Documentation is produced, kept current, and versioned WITH the code (REQ-APP-150/151). This test
- * asserts the load-bearing docs exist in-repo (so they are reviewed in the same pass as the code,
- * not maintained out-of-band) and that the ADR set is present.
+ * 文档与代码一起产出、保持最新并进行版本化（REQ-APP-150/151）。本测试
+ * 断言承重的文档存在于仓库中（以便它们与代码在同一轮评审中被审阅，
+ * 而非在仓库之外维护），并断言 ADR 集合存在。
  */
 
 import { test } from 'node:test';

@@ -1,15 +1,14 @@
 /**
- * Self-contained stack self-test (core §10.2/§10.3, REQ-VM-001) — the VM bootstrap's "bring
- * the stack up, run self-tests, print a transcript" step. Runnable WITHOUT Docker so the gate
- * is checkable here:
- *   1. build the Go services (proves the stack compiles);
- *   2. start relay (:8091) + indexer (:8092); poll /healthz until ready;
- *   3. run a full heads-up Hold'em hand in-process (the client/engine role) and print the
- *      transcript (ordered actions + final state hash + payouts);
- *   4. tear the services down.
+ * 自包含的栈自检（core §10.2/§10.3, REQ-VM-001）—— 即 VM 引导阶段“拉起栈、
+ * 运行自检、打印转录”这一步。无需 Docker 即可运行，因此该门禁可在此处检查：
+ *   1. 构建 Go 服务（证明栈可编译）；
+ *   2. 启动 relay (:8091) + indexer (:8092)；轮询 /healthz 直到就绪；
+ *   3. 在进程内运行一手完整的单挑 Hold'em 对局（client/engine 角色）并打印
+ *      转录（有序动作 + 最终状态哈希 + payouts）；
+ *   4. 拆除这些服务。
  *
- * Phase-0 note: the local BSV node (bonded-subsat-channel, D6) is bound by the real adapter in
- * a later step; here the node/chain role is represented by the indexer projection + BS fake.
+ * Phase-0 说明：本地 BSV 节点（bonded-subsat-channel, D6）会在后续步骤由真实适配器绑定；
+ * 此处节点/链的角色由 indexer 投影 + BS fake 代表。
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -24,8 +23,8 @@ const children: ChildProcess[] = [];
 
 const isWin = process.platform === 'win32';
 
-/** Build a standalone binary and run IT directly, so killing the child stops the server (no
- *  orphaned `go run` server process / zombie — important per the host's no-zombie discipline). */
+/** 构建一个独立的二进制文件并直接运行它，这样杀死子进程即可停止服务器（不会留下
+ *  孤儿 `go run` 服务器进程 / 僵尸进程 —— 这对宿主机的无僵尸纪律很重要）。 */
 function startService(dir: string, addr: string, bin: string): ChildProcess {
   const exe = isWin ? `${bin}.exe` : bin;
   const b = spawnSync('go', ['build', '-o', exe, '.'], { cwd: join(ROOT, dir), stdio: 'inherit' });
@@ -45,7 +44,7 @@ async function waitHealthy(url: string, timeoutMs: number): Promise<void> {
         if (body.includes('ok')) return;
       }
     } catch {
-      /* not up yet */
+      /* 尚未启动 */
     }
     if (Date.now() > deadline) throw new Error(`service not healthy: ${url}`);
     await new Promise((r) => setTimeout(r, 400));
@@ -95,34 +94,34 @@ function runHand(): { transcript: Action[]; stateHash: string; payouts: unknown 
   return { transcript, stateHash: m.stateHash(s), payouts: s.payouts };
 }
 
-/** Exercise the real relay + indexer over HTTP: discovery, dual-path, deterministic projection. */
+/** 通过 HTTP 演练真实的 relay + indexer：发现、双路径、确定性投影。 */
 async function exerciseNetwork(): Promise<void> {
   const relay = new RelayClient('http://127.0.0.1:8091');
   const indexer = new IndexerClient('http://127.0.0.1:8092');
 
-  // Tier-A discovery: two players announce presence and find each other.
+  // Tier-A 发现：两名玩家公告在线状态并互相找到对方。
   await relay.heartbeat('alice', '127.0.0.1:6001');
   await relay.heartbeat('bob', '127.0.0.1:6002');
   const presence = await relay.listPresence();
   assert.ok(presence.length >= 2, 'both players present');
 
-  // Create a table; both will publish/ingest to it. Unique id per run (no cross-run collision).
+  // 创建一张牌桌；双方都会向其发布/写入。每次运行使用唯一 id（不会跨运行冲突）。
   const tableId = `selftest-table-${Date.now()}`;
   await relay.createTable(tableId, 'Self-test HU');
   assert.ok((await relay.listTables()).some((t) => t.id === tableId), 'table discoverable');
 
-  // Dual-path (REQ-NET-003): speed path = relay publish; canonical path = indexer ingest.
-  await relay.publish(tableId, new TextEncoder().encode('action:bet:6')); // no subscribers ⇒ 0 delivered, fine
+  // 双路径（REQ-NET-003）：速度路径 = relay 发布；规范路径 = indexer 写入。
+  await relay.publish(tableId, new TextEncoder().encode('action:bet:6')); // 无订阅者 ⇒ 投递 0 条，正常
   const recs = [
     { txid: 'tx-funding', class: 'Funding', tableId },
     { txid: 'tx-deal', class: 'Deal', tableId },
     { txid: 'tx-bet1', class: 'Action', tableId },
   ];
   for (const r of recs) assert.equal(await indexer.ingest(r), true, `ingest ${r.txid}`);
-  // dedup: re-ingest returns false
+  // 去重：重复写入返回 false
   assert.equal(await indexer.ingest(recs[0]!), false, 'dedup by txid');
 
-  // The projection is the ordered valid-tx set, reconstructible identically by any client (P2).
+  // 投影是有序的有效交易集合，任何客户端都能以相同方式重建（P2）。
   const projection = await indexer.table(tableId);
   assert.deepEqual(projection, ['tx-funding', 'tx-deal', 'tx-bet1'], 'deterministic ordered projection');
   console.log(`[selftest] indexer projection for ${tableId}: [${projection.join(', ')}]`);
@@ -133,7 +132,7 @@ function cleanup(): void {
     try {
       c.kill();
     } catch {
-      /* ignore */
+      /* 忽略 */
     }
   }
 }

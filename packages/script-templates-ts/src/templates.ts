@@ -1,12 +1,12 @@
 /**
- * Script template families (core §6.6), scaled from GB2616862's 2-party worked examples.
- * Every commitment/anchor is carried as PUSHDATA in a live script (`<data> OP_DROP`), NEVER
- * OP_RETURN (core P11/§6.5, REQ-TX-010). Timing is transaction-level (nLockTime/nSequence,
- * REQ-TX-002) — there is NO CLTV/CSV in any locking script (REQ-TX-001).
+ * 脚本模板族（core §6.6），由 GB2616862 的双方实例放大而来。
+ * 每个承诺/锚点都以 PUSHDATA 形式承载于一段活动脚本中（`<data> OP_DROP`），绝不使用
+ * OP_RETURN（core P11/§6.5、REQ-TX-010）。时序在交易层面处理（nLockTime/nSequence，
+ * REQ-TX-002）——任何锁定脚本中都没有 CLTV/CSV（REQ-TX-001）。
  *
- * Each template ships with a positive spend and a negative battery that fail INSIDE the
- * interpreter (REQ-TX-011, P9 — see test/templates.test.ts), plus a measurable wire-byte size
- * (scriptSizeBytes) recorded as a reproducible vector (§19.C).
+ * 每个模板都配有一个正向花费和一组在解释器内部失败的负向测试集
+ * （REQ-TX-011、P9——见 test/templates.test.ts），外加一个可度量的线路协议字节大小
+ * （scriptSizeBytes），作为可复现向量记录下来（§19.C）。
  */
 
 import { createHash } from 'node:crypto';
@@ -19,9 +19,9 @@ function ripemd160(b: Uint8Array): Uint8Array {
 }
 
 /**
- * Canonical branch-binding bytes (core §6.3, REQ-TX-005). All fields are fixed-width so they
- * are written RAW (no length prefixes): gid(8) ‖ rulesetHash(32) ‖ round(u32) ‖ stateHash(32)
- * ‖ actingSeat(u8) ‖ successorCommitment(32) = 109 bytes.
+ * 规范的 branch-binding 字节（core §6.3、REQ-TX-005）。所有字段均为定宽，因此
+ * 以 RAW 形式写入（无长度前缀）：gid(8) ‖ rulesetHash(32) ‖ round(u32) ‖ stateHash(32)
+ * ‖ actingSeat(u8) ‖ successorCommitment(32) = 109 字节。
  */
 export function bindingBytes(b: BranchBinding): Uint8Array {
   const w = new ByteWriter();
@@ -37,28 +37,28 @@ export function bindingBytes(b: BranchBinding): Uint8Array {
   return w.toBytes();
 }
 
-/** `<binding> OP_DROP` — anti-replay binding as pushdata in a LIVE script (never OP_RETURN). */
+/** `<binding> OP_DROP`——防重放绑定，以 pushdata 形式置于活动脚本中（绝不使用 OP_RETURN）。 */
 export function branchBindingPrefix(b: BranchBinding): Script {
   return [bindingBytes(b), OP.OP_DROP];
 }
 
-/** Funding: N-of-N multisig over player buy-ins; binds gid+rulesetHash (core §6.6). */
+/** Funding：对玩家买入的 N-of-N 多签；绑定 gid+rulesetHash（core §6.6）。 */
 export function fundingLocking(b: BranchBinding, pubKeys: readonly Uint8Array[]): Script {
   const n = pubKeys.length;
   if (n < 1 || n > 3) throw new Error('Phase-1 funding supports 1..3 of N via small ints');
   const nOp = [OP.OP_1, OP.OP_2, OP.OP_3][n - 1]!;
   return [...branchBindingPrefix(b), nOp, ...pubKeys, nOp, OP.OP_CHECKMULTISIG];
 }
-/** Unlocking for the N-of-N funding multisig: OP_0 (legacy dummy) then the N signatures. */
+/** N-of-N funding 多签的解锁脚本：OP_0（legacy dummy）随后是 N 个签名。 */
 export function fundingUnlocking(sigs: readonly Uint8Array[]): Script {
   return [OP.OP_0, ...sigs];
 }
 
 /**
- * Reveal-or-timeout (core §6.6): the IF branch accepts a valid reveal opening
- * (SHA-256(preimage)=cmt) before maturity; the ELSE branch is the refund path that becomes
- * spendable only after maturity — maturity is enforced at the TRANSACTION level (nLockTime),
- * NOT in-script (REQ-TX-001/002).
+ * Reveal-or-timeout（core §6.6）：IF 分支在到期前接受有效的揭示开启
+ * （SHA-256(preimage)=cmt）；ELSE 分支是退款路径，只有在到期后才变为
+ * 可花费——到期在 TRANSACTION 层面（nLockTime）强制，
+ * 而非在脚本内（REQ-TX-001/002）。
  */
 export function revealOrTimeoutLocking(
   b: BranchBinding,
@@ -88,8 +88,8 @@ export function timeoutRefundUnlocking(sig: Uint8Array): Script {
 }
 
 /**
- * Fold (core §6.6, P5): proves the player controls their concealed outputs and surrenders them
- * to a dead-hand state WITHOUT disclosing face values — it is just a control proof + binding.
+ * Fold（core §6.6、P5）：证明玩家控制其隐藏的输出，并在 WITHOUT 披露牌面值的情况下
+ * 将它们让渡至弃牌状态——它仅仅是一个控制权证明 + 绑定。
  */
 export function foldLocking(b: BranchBinding, playerPub: Uint8Array): Script {
   return [...branchBindingPrefix(b), playerPub, OP.OP_CHECKSIG];
@@ -98,7 +98,7 @@ export function foldUnlocking(sig: Uint8Array): Script {
   return [sig];
 }
 
-/** Settlement (core §6.6): pays the winner on a valid signature + binding. */
+/** Settlement（core §6.6）：在有效签名 + 绑定的条件下向赢家付款。 */
 export function settlementLocking(b: BranchBinding, winnerPub: Uint8Array): Script {
   return [...branchBindingPrefix(b), winnerPub, OP.OP_CHECKSIG];
 }
@@ -107,21 +107,21 @@ export function settlementUnlocking(sig: Uint8Array): Script {
 }
 
 /**
- * Fair-play (core §4.7, §6.6, REQ-CRYPTO-006/009): an in-script proof that the key a party USED
- * derives from what it COMMITTED — a mismatch forfeits the bonded funds (honest play is the
- * rational outcome with no referee). The claim branch reveals the public key, requires
- * HASH160(pub) == the committed key-commitment, then a signature under that key; a party who
- * used a different key cannot satisfy the hash check and cannot redeem.
+ * Fair-play（core §4.7、§6.6、REQ-CRYPTO-006/009）：一个脚本内证明，证明某方 USED 的密钥
+ * 派生自它 COMMITTED 的内容——不匹配则没收抵押资金（在没有裁判的情况下，诚实博弈是
+ * 理性的结果）。认领分支揭示公钥，要求
+ * HASH160(pub) == 已承诺的密钥承诺，然后是该密钥下的签名；使用了不同密钥的一方
+ * 无法满足哈希检查，因而无法赎回。
  *
- * REQ-CRYPTO-009 / §19.C: this is the per-card/per-batch fair-play structure (the measured-size
- * fallback to a single 52-card N-party EC-derivation script). The full GB2616862 in-script
- * EC-point-derivation proof (pages 55–60) is the §19.C upgrade once the embedded node's
- * interpreter provides the EC numeric opcodes — TRACKED ASSUMPTION on byte size until then.
+ * REQ-CRYPTO-009 / §19.C：这是按牌/按批次的公平博弈结构（作为对单个 52 张牌的 N 方
+ * EC 派生脚本的、已度量大小的回退方案）。完整的 GB2616862 脚本内
+ * EC 点派生证明（第 55–60 页）是 §19.C 的升级方案，待嵌入式节点的
+ * 解释器提供 EC 数值操作码后即可启用——在此之前字节大小为 TRACKED ASSUMPTION。
  */
 export function fairPlayCommitment(pub: Uint8Array): Uint8Array {
-  // HASH160(pub) = RIPEMD160(SHA256(pub)).
+  // HASH160(pub) = RIPEMD160(SHA256(pub))。
   const inner = sha256(pub);
-  // reuse the interpreter's hash via a local ripemd path
+  // 通过本地的 ripemd 路径复用解释器的哈希
   return ripemd160(inner);
 }
 
@@ -144,17 +144,17 @@ export function fairPlayLocking(
     OP.OP_ENDIF,
   ];
 }
-/** Claim the fair-play funds by revealing the committed key + a signature under it. */
+/** 通过揭示已承诺的密钥 + 该密钥下的签名来认领公平博弈资金。 */
 export function fairPlayClaimUnlocking(sig: Uint8Array, pub: Uint8Array): Script {
   return [sig, pub, OP.OP_1];
 }
-/** Forfeit/refund branch (after maturity; tx-level, never in-script). */
+/** 没收/退款分支（到期后；交易层面，绝不在脚本内）。 */
 export function fairPlayForfeitUnlocking(sig: Uint8Array): Script {
   return [sig, OP.OP_0];
 }
 
-// ---- In-script EC fair-play (GB2616862 §19.C, post-Genesis opcodes) ---------
-// secp256k1 field prime p (y² = x³ + 7 mod p). p ≡ 3 (mod 4), so √a = a^((p+1)/4) mod p.
+// ---- 脚本内 EC 公平博弈（GB2616862 §19.C，Genesis 之后的操作码） ---------
+// secp256k1 域素数 p（y² = x³ + 7 mod p）。p ≡ 3 (mod 4)，故 √a = a^((p+1)/4) mod p。
 export const SECP256K1_P = BigInt(
   '0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f',
 );
@@ -172,18 +172,18 @@ function modpow(base: bigint, exp: bigint, mod: bigint): bigint {
 }
 
 /**
- * The shuffle-key point P' = (s, √(s³+7)) for scalar `s` (GB2616862 §4.2): the private key is
- * the x-coordinate `s`. Returns the point if s³+7 is a quadratic residue (a valid curve x), else
- * null (the caller picks another s — a genuine shuffle key is chosen so this holds).
+ * 标量 `s` 对应的洗牌密钥点 P' = (s, √(s³+7))（GB2616862 §4.2）：私钥即
+ * x 坐标 `s`。若 s³+7 是二次剩余（即合法的曲线 x）则返回该点，否则返回
+ * null（调用方另选一个 s——真正的洗牌密钥被选取得使此条件成立）。
  */
 export function shuffleKeyPoint(s: bigint): { x: bigint; y: bigint } | null {
   const a = (((s * s % SECP256K1_P) * s) % SECP256K1_P + 7n) % SECP256K1_P;
   const y = modpow(a, (SECP256K1_P + 1n) / 4n, SECP256K1_P);
-  if ((y * y) % SECP256K1_P !== a) return null; // a is not a QR → s is not a valid shuffle-key x
+  if ((y * y) % SECP256K1_P !== a) return null; // a 不是 QR → s 不是合法的洗牌密钥 x
   return { x: s, y };
 }
 
-/** Script-number encoding (little-endian, sign-magnitude) matching the interpreter's `num`. */
+/** Script 数值编码（小端、符号-数值表示），与解释器的 `num` 相匹配。 */
 export function encodeScriptNum(n: bigint): Uint8Array {
   if (n === 0n) return new Uint8Array(0);
   const neg = n < 0n;
@@ -198,30 +198,30 @@ export function encodeScriptNum(n: bigint): Uint8Array {
   return Uint8Array.from(out);
 }
 
-/** Commitment to a shuffle-key scalar x: SHA-256(encodeScriptNum(x)) — hides x until reveal. */
+/** 对洗牌密钥标量 x 的承诺：SHA-256(encodeScriptNum(x))——在揭示前隐藏 x。 */
 export function shuffleKeyCommitment(x: bigint): Uint8Array {
   return sha256(encodeScriptNum(x));
 }
 
 /**
- * Fair-play (real, in-script EC — GB2616862 §4.7/§19.C). Proves the party used the shuffle key
- * it committed: the unlocking reveals the scalar `x` (= the key's x-coordinate) and `y`; the
- * script verifies (a) SHA-256(x) equals the commitment (the party did not swap keys), and (b) the
- * point is genuinely on secp256k1: y² ≡ x³ + 7 (mod p). A mismatched key fails INSIDE the
- * interpreter and the funds are forfeited (honest play is the rational outcome, no referee).
- * Uses the post-Genesis big-integer opcodes (OP_MUL/OP_MOD/OP_ADD/OP_NUMEQUALVERIFY) — NOW
- * available, replacing the earlier HASH160-only fallback.
+ * Fair-play（真实的脚本内 EC——GB2616862 §4.7/§19.C）。证明该方使用了它所承诺的
+ * 洗牌密钥：解锁脚本揭示标量 `x`（= 该密钥的 x 坐标）和 `y`；
+ * 脚本验证 (a) SHA-256(x) 等于承诺（该方未掉换密钥），以及 (b) 该
+ * 点确实在 secp256k1 上：y² ≡ x³ + 7 (mod p)。不匹配的密钥会在
+ * 解释器内部失败，资金被没收（在没有裁判的情况下，诚实博弈是理性的结果）。
+ * 使用 Genesis 之后的大整数操作码（OP_MUL/OP_MOD/OP_ADD/OP_NUMEQUALVERIFY）——现已
+ * 可用，取代了早先仅使用 HASH160 的回退方案。
  */
 export function fairPlayEcLocking(b: BranchBinding, xCommitment: Uint8Array): Script {
   const p = encodeScriptNum(SECP256K1_P);
   const seven = encodeScriptNum(7n);
   return [
     ...branchBindingPrefix(b),
-    // stack from unlocking: [x, y]
+    // 来自解锁脚本的栈：[x, y]
     OP.OP_OVER, // [x, y, x]
     OP.OP_SHA256, // [x, y, H(x)]
     xCommitment,
-    OP.OP_EQUALVERIFY, // verify H(x)==commitment → [x, y]
+    OP.OP_EQUALVERIFY, // 验证 H(x)==commitment → [x, y]
     OP.OP_SWAP, // [y, x]
     OP.OP_DUP,
     OP.OP_DUP,
@@ -236,15 +236,15 @@ export function fairPlayEcLocking(b: BranchBinding, xCommitment: Uint8Array): Sc
     OP.OP_MUL, // [rhs, y^2]
     p,
     OP.OP_MOD, // [rhs, y^2 mod p]
-    OP.OP_NUMEQUALVERIFY, // verify y^2 mod p == rhs → []
-    OP.OP_1, // success
+    OP.OP_NUMEQUALVERIFY, // 验证 y^2 mod p == rhs → []
+    OP.OP_1, // 成功
   ];
 }
 export function fairPlayEcUnlocking(x: bigint, y: bigint): Script {
   return [encodeScriptNum(x), encodeScriptNum(y)];
 }
 
-/** The hiding-commitment preimage SHA-256(face‖blind) for reveal-or-timeout (core §4.5/§4.6). */
+/** 用于 reveal-or-timeout 的隐藏承诺 preimage SHA-256(face‖blind)（core §4.5/§4.6）。 */
 export function revealPreimage(face: number, blind: Uint8Array): Uint8Array {
   const w = new ByteWriter();
   w.u8(face);

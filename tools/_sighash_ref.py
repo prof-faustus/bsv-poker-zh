@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Reference BIP-143 (FORKID) sighash via bitcoinx — the library the embedded BSV node validates
-with. Reads {rawTx,index,value,scriptCode,sighashType} as JSON argv[1]; prints the sighash hex.
-Used by tools/sighash-interop.ts to prove the platform's TS sighash matches the node's byte-for-byte.
+"""通过 bitcoinx 计算参考 BIP-143 (FORKID) sighash —— 即嵌入式 BSV 节点用于校验的库。
+从 JSON argv[1] 读取 {rawTx,index,value,scriptCode,sighashType}；打印 sighash 的十六进制。
+被 tools/sighash-interop.ts 使用，以证明平台的 TS sighash 与节点的逐字节匹配。
 """
 import json
 import sys

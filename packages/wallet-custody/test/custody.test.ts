@@ -48,7 +48,7 @@ test('a signature from custody validates through the real interpreter against th
 
 test('Mode A reconstructAndSign sums scalars and produces a valid signature', () => {
   const c = createSoftwareCustody(master);
-  // two single-game per-card scalars (32 bytes each)
+  // 两个单局的每张牌标量（各 32 字节）
   const s1 = Uint8Array.from(Array.from({ length: 32 }, (_, i) => (i + 1) % 200 || 1));
   const s2 = Uint8Array.from(Array.from({ length: 32 }, (_, i) => (i * 3 + 5) % 200 || 1));
   const preimage = Uint8Array.from([9, 8, 7]);

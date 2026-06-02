@@ -10,8 +10,8 @@ import {
   combinedSeed,
 } from '../src/index.ts';
 
-// REQ-DEP-003 / REQ-DEP-004: the real CT passes the SAME conformance suite as the fake, and
-// the security-critical paths (shuffle, reveal, combined keys) are exercised on REAL crypto.
+// REQ-DEP-003 / REQ-DEP-004：真实 CT 通过与 fake 相同的一致性测试套件，且
+// 安全关键路径（洗牌、揭示、组合密钥）在真实加密上得到执行。
 test('real CT passes the CT conformance suite', async () => {
   await runCTConformance(makeRealCT());
 });
@@ -31,9 +31,9 @@ test('shuffle composes secret permutations (INV-CT-1): order depends on every pa
   const b = permutationFromEntropy(Uint8Array.from([2, 2, 2, 2]), 10);
   const composedAB = composePermutations([a, b], 10);
   const composedA = composePermutations([a], 10);
-  // adding party b's secret permutation changes the order (no single party fixes it)
+  // 加入 b 方的秘密置换会改变顺序（没有任何单一方能固定它）
   assert.notDeepEqual(composedAB, composedA);
-  // composition is itself a permutation
+  // 组合本身也是一个置换
   assert.equal(new Set(composedAB).size, 10);
 });
 
@@ -41,7 +41,7 @@ test('combined keys are REAL secp256k1 compressed points (33 bytes, 02/03 prefix
   const seed = combinedSeed([Uint8Array.from([7, 7, 7, 7]), Uint8Array.from([8, 8, 8, 8])]);
   const q0 = combinedKey(seed, 0);
   const q1 = combinedKey(seed, 1);
-  assert.equal(q0.length, 66); // 33 bytes hex
-  assert.match(q0, /^0[23]/); // compressed prefix
+  assert.equal(q0.length, 66); // 33 字节的 hex
+  assert.match(q0, /^0[23]/); // 压缩前缀
   assert.notEqual(q0, q1);
 });

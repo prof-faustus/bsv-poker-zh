@@ -1,8 +1,7 @@
 /**
- * Structured, levelled logging (REQ-APP-120) with a hard redaction guarantee: logs, metrics, traces,
- * and diagnostic bundles MUST NOT contain key material (REQ-APP-124). Every record is per-component
- * and levelled; field payloads pass through `redact()`, which strips anything named like a secret
- * (recursively) so a stray private scalar/seed never reaches a sink.
+ * 带有硬性脱敏保证的结构化、分级日志（REQ-APP-120）：日志、指标、trace 以及诊断包
+ * 绝不能包含密钥材料（REQ-APP-124）。每条记录都按组件分类并分级；字段载荷会经过 `redact()`，
+ * 它会（递归地）剥离任何命名像 secret 的内容，从而使游离的私有 scalar/seed 永远不会到达 sink。
  */
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -21,11 +20,11 @@ export interface LogSink {
 
 const LEVEL_ORDER: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
-// Field names that carry key material and MUST never be logged in the clear.
+// 承载密钥材料、绝不能以明文记录的字段名。
 const SECRET_NAME = /(priv|secret|seed|mnemonic|scalar|wif|privatekey|password)/i;
 export const REDACTED = '[redacted]';
 
-/** Recursively replace any secret-named field with a redaction marker. */
+/** 递归地将任何命名为 secret 的字段替换为脱敏标记。 */
 export function redact(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redact);
   if (value && typeof value === 'object') {
@@ -61,13 +60,13 @@ export class Logger {
   error(msg: string, fields?: Record<string, unknown>): void { this.log('error', msg, fields); }
 }
 
-/** Collects records in memory — used by tests and diagnostic bundles (which inherit redaction). */
+/** 在内存中收集记录——供测试和诊断包使用（诊断包继承脱敏）。 */
 export class MemorySink implements LogSink {
   readonly records: LogRecord[] = [];
   write(record: LogRecord): void { this.records.push(record); }
 }
 
-// ---- Metrics (REQ-APP-121): counters / gauges / histograms ----
+// ---- 指标（REQ-APP-121）：counter / gauge / histogram ----
 export interface HistogramSummary {
   readonly count: number;
   readonly min: number;
@@ -98,7 +97,7 @@ export class Metrics {
   }
 }
 
-// ---- Tracing (REQ-APP-122): one trace per player action across app-services → SDK → send ----
+// ---- 追踪（REQ-APP-122）：每个玩家动作一条 trace，贯穿 app-services → SDK → send ----
 export interface SpanEvent { readonly stage: string; readonly t: number }
 export interface Span { readonly name: string; readonly startedAt: number; endedAt?: number; readonly events: SpanEvent[] }
 
@@ -113,7 +112,7 @@ export class Tracer {
   end(span: Span): void { span.endedAt = Date.now(); }
 }
 
-// ---- Diagnostic bundle (REQ-APP-123) ----
+// ---- 诊断包（REQ-APP-123） ----
 export interface DiagnosticBundle {
   readonly generatedAt: number;
   readonly logs: readonly LogRecord[];
@@ -122,9 +121,9 @@ export interface DiagnosticBundle {
 }
 
 /**
- * Assemble a diagnostic bundle from logs + metrics + traces. Logs were redacted at write time, so
- * the bundle inherits the no-key-material guarantee (REQ-APP-124); we re-redact log fields
- * defensively so the bundle is safe to export regardless of how records were produced.
+ * 从日志 + 指标 + trace 组装诊断包。日志在写入时已脱敏，因此诊断包继承了无密钥材料的保证
+ * （REQ-APP-124）；我们出于防御性考虑会重新对日志字段脱敏，使诊断包无论记录是如何产生的
+ * 都可安全导出。
  */
 export function diagnosticBundle(sink: MemorySink, metrics: Metrics, tracer: Tracer): DiagnosticBundle {
   const logs = sink.records.map((r) => (r.fields ? { ...r, fields: redact(r.fields) as Record<string, unknown> } : r));

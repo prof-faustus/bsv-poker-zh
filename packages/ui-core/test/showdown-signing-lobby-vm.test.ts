@@ -22,7 +22,7 @@ const NL: Ruleset = {
 };
 
 function fixedDeck(): Card[] {
-  // seat0 = AA, seat1 = KK, board Qd Jc 9h 4s 3h → seat0 wins.
+  // seat0 = AA，seat1 = KK，公共牌 Qd Jc 9h 4s 3h → seat0 获胜。
   const head = ['As', 'Ks', 'Ah', 'Kh', 'Qd', 'Jc', '9h', '4s', '3h'].map(parseCard);
   const used = new Set(head);
   const rest: Card[] = [];
@@ -60,7 +60,7 @@ test('showdownViewModel reveals contested hands and the winning amount', () => {
   assert.equal(vm.board.length, 5);
   const s0 = vm.seats.find((x) => x.seat === 0)!;
   assert.equal(s0.holeCards.length, 2);
-  assert.equal(s0.won, 4); // pot 2+2
+  assert.equal(s0.won, 4); // 底池 2+2
 });
 
 test('settlementViewModel reports per-seat net deltas from starting stacks', () => {

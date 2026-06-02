@@ -1,12 +1,12 @@
-// HTTP + SSE transport for the relay (stdlib only, zero external deps).
+// 中继的 HTTP + SSE 传输层（仅用标准库，零外部依赖）。
 //
-// REQ-NET-001 (core §8.1): transport/index only, never the source of truth.
-// REQ-NET-002 (core §8.2): Tier A (presence/tables) + Tier B (fan-out) APIs.
-// app §A7.7: the connection manager can swap relay-discovery for a peer layer
-// without UI change, so the wire surface here is deliberately minimal.
+// REQ-NET-001（core §8.1）：仅作传输/索引，绝非事实来源。
+// REQ-NET-002（core §8.2）：Tier A（在线状态/牌桌）+ Tier B（扇出）API。
+// app §A7.7：连接管理器可以在不改动 UI 的情况下将中继发现替换为对等层，
+// 因此这里的线缆接口刻意保持最小化。
 //
-// Tier B delivery uses Server-Sent Events over net/http — a stdlib streaming
-// channel — instead of a WebSocket dependency, keeping the module dependency-free.
+// Tier B 投递在 net/http 上使用 Server-Sent Events —— 一种标准库流式
+// 通道 —— 而非依赖 WebSocket，从而使该模块保持无依赖。
 package relay
 
 import (
@@ -17,15 +17,15 @@ import (
 	"time"
 )
 
-// Server wires the registries to HTTP handlers.
+// Server 将各注册表接线到 HTTP 处理器。
 type Server struct {
 	Presence *PresenceRegistry
 	Tables   *TableRegistry
 	mux      *http.ServeMux
 }
 
-// NewServer constructs a relay server with fresh registries.
-// ttl is the presence heartbeat expiry window.
+// NewServer 构造一个带有全新注册表的中继服务器。
+// ttl 是在线状态心跳的过期窗口。
 func NewServer(ttl time.Duration) *Server {
 	s := &Server{
 		Presence: NewPresenceRegistry(ttl),
@@ -35,14 +35,14 @@ func NewServer(ttl time.Duration) *Server {
 	return s
 }
 
-// Handler exposes the configured mux behind CORS (also makes Server an http.Handler).
+// Handler 在 CORS 之后暴露已配置的 mux（同时也使 Server 成为 http.Handler）。
 func (s *Server) Handler() http.Handler { return withCORS(s.mux) }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { withCORS(s.mux).ServeHTTP(w, r) }
 
-// withCORS allows the browser web client (a different origin) to reach the relay over
-// fetch/SSE (app §A4). The relay carries only opaque transport objects and is never the source
-// of truth (REQ-NET-001), so a permissive cross-origin policy is acceptable for this transport.
+// withCORS 允许浏览器 web 客户端（不同来源）通过
+// fetch/SSE 访问中继（app §A4）。中继只承载不透明的传输对象且绝非事实
+// 来源（REQ-NET-001），因此对该传输层而言宽松的跨域策略是可接受的。
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -60,16 +60,16 @@ func (s *Server) routes() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 
-	// Tier A: presence (discovery).
+	// Tier A：在线状态（发现）。
 	mux.HandleFunc("POST /presence", s.handleHeartbeat)
 	mux.HandleFunc("DELETE /presence/{id}", s.handleLeave)
 	mux.HandleFunc("GET /presence", s.handleListPresence)
 
-	// Tier A: table directory.
+	// Tier A：牌桌目录。
 	mux.HandleFunc("POST /tables", s.handleCreateTable)
 	mux.HandleFunc("GET /tables", s.handleListTables)
 
-	// Tier B: opaque table-scoped object relay.
+	// Tier B：以牌桌为范围的不透明对象中继。
 	mux.HandleFunc("POST /tables/{id}/publish", s.handlePublish)
 	mux.HandleFunc("GET /tables/{id}/subscribe", s.handleSubscribe)
 
@@ -79,7 +79,7 @@ func (s *Server) routes() {
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	// Encode errors here are non-recoverable mid-response; best effort only.
+	// 此处的编码错误在响应进行到一半时不可恢复；仅尽力而为。
 	_ = json.NewEncoder(w).Encode(v)
 }
 
@@ -87,7 +87,7 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
 }
 
-// REQ-NET-001: /healthz is the supervisor liveness probe (app §A3.2).
+// REQ-NET-001：/healthz 是监管进程的存活探针（app §A3.2）。
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -151,9 +151,9 @@ func (s *Server) handleListTables(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Tables.List())
 }
 
-// handlePublish forwards an opaque body to all table subscribers (Tier B).
-// REQ-NET-001: the body is never parsed as game logic; it is stored/forwarded
-// as bytes only.
+// handlePublish 将一个不透明的请求体转发给该牌桌的所有订阅者（Tier B）。
+// REQ-NET-001：该请求体绝不会被解析为游戏逻辑；它仅以字节形式
+// 被存储/转发。
 func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	t, err := s.Tables.Get(id)
@@ -161,7 +161,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, err.Error())
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // bound: 1 MiB/object
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 上限：每个对象 1 MiB
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "read error")
 		return
@@ -170,9 +170,9 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"delivered": delivered})
 }
 
-// handleSubscribe streams opaque table objects to the client over SSE until the
-// client disconnects (Tier B fan-out). Each object is base64-free raw bytes
-// framed as one SSE "data:" event; the relay does not interpret them.
+// handleSubscribe 通过 SSE 将不透明的牌桌对象流式发送给客户端，直到
+// 客户端断开连接（Tier B 扇出）。每个对象都是不经 base64 的原始字节，
+// 封装为一个 SSE "data:" 事件；中继不会解读它们。
 func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	ch, unsub, err := s.Tables.Join(id)
@@ -197,7 +197,7 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
 
-	for { // unbounded by design: a live streaming connection, gated by ctx.Done.
+	for { // 按设计无界：一个实时流式连接，由 ctx.Done 把关。
 		select {
 		case <-ctx.Done():
 			return
@@ -210,7 +210,7 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 			if !open {
 				return
 			}
-			// SSE frame: one event carrying the opaque object as raw data.
+			// SSE 帧：一个以原始数据形式承载不透明对象的事件。
 			if _, err := fmt.Fprintf(w, "data: %s\n\n", msg); err != nil {
 				return
 			}
@@ -219,8 +219,8 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// RunSweeper runs the presence-expiry sweep on a bounded ticker until stop is
-// closed (app §A7.2 heartbeat expiry). Intended to be launched in a goroutine.
+// RunSweeper 在一个有界的 ticker 上运行在线状态过期清扫，直到 stop 被
+// 关闭（app §A7.2 心跳过期）。意图在一个 goroutine 中启动。
 func (s *Server) RunSweeper(interval time.Duration, stop <-chan struct{}) {
 	if interval <= 0 {
 		interval = 10 * time.Second

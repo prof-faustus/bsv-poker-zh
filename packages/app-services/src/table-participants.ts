@@ -1,20 +1,19 @@
 /**
- * Participant-set policy (REQ-CRYPTO-011): the set of players in a hand is computed BETWEEN hands
- * (sit-out / join / bust take effect only here) and then FROZEN for the whole hand — the N-party
- * shuffle and settlement are over exactly that set. A change arriving mid-hand never alters the
- * in-progress hand; it applies to the next one.
+ * 参与者集合策略（REQ-CRYPTO-011）：一手牌的玩家集合是在两手牌之间计算的
+ * （sit-out / join / 破产仅在此生效），然后在整手牌期间被冻结——N 方洗牌和结算
+ * 恰好作用于该集合。在牌局进行中到达的变更永远不会改变进行中的这手牌；它将应用于下一手。
  */
 
 export interface SeatRef {
   readonly seat: number;
 }
 
-/** The seated set for the NEXT hand: seats with a positive stack (busted seats drop out). */
+/** 下一手牌的就座集合：筹码为正的座位（破产的座位被剔除）。 */
 export function seatedForNextHand<T extends SeatRef>(seats: readonly T[], stackOf: (seat: number) => number): T[] {
   return seats.filter((s) => stackOf(s.seat) > 0);
 }
 
-/** Freeze the participant set at hand start — returned as an immutable snapshot for the hand. */
+/** 在牌局开始时冻结参与者集合——以该手牌的不可变快照形式返回。 */
 export function freezeParticipants<T extends SeatRef>(seated: readonly T[]): readonly T[] {
   return Object.freeze([...seated]);
 }
@@ -25,8 +24,8 @@ export interface SeatChange {
 }
 
 /**
- * Apply sit-out/join changes — ONLY valid between hands. Returns the new seated set; the frozen set
- * of an in-progress hand is unaffected because callers freeze before the hand and re-derive after.
+ * 应用 sit-out/join 变更——仅在两手牌之间有效。返回新的就座集合；进行中牌局的冻结集合
+ * 不受影响，因为调用方在牌局前冻结、在牌局后重新派生。
  */
 export function applyBetweenHands<T extends SeatRef>(current: readonly T[], changes: readonly SeatChange[], make: (seat: number) => T): T[] {
   const set = new Map(current.map((s) => [s.seat, s]));

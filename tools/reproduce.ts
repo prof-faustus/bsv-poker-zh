@@ -1,11 +1,11 @@
 /**
- * `reproduce` (core §14.5, P10, REQ-TEST-005): regenerate EVERY committed vector from code and
- * exit non-zero on any mismatch. Run with `--write` to (re)generate the committed file after a
- * deliberate change. Zero fabrication: every number here is produced by running code.
+ * `reproduce`（core §14.5, P10, REQ-TEST-005）：从代码重新生成每一个已提交的向量，
+ * 如出现任何不匹配则以非零状态退出。在做出有意更改后，使用 `--write` 来（重新）生成已提交文件。
+ * 零捏造：这里的每个数字都是由运行代码产生的。
  *
- * Covered vectors: §19.D hand-eval (high categories, Omaha 2+3, ace-to-five low), §19.A
- * rulesetHash worked example, §19.C script template wire-byte sizes, and a full-hand transcript
- * state hash (determinism / replay anchor).
+ * 覆盖的向量：§19.D 手牌评估（高牌类别、Omaha 2+3、A-to-five 低牌）、§19.A
+ * rulesetHash 实例、§19.C 脚本模板线缆字节大小，以及完整一手对局的转录
+ * 状态哈希（确定性 / 重放锚点）。
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -113,10 +113,10 @@ function generate(): unknown {
     fairPlayPerCard: scriptSizeBytes(fairPlayLocking(FIXED_BINDING, fairPlayCommitment(PUB), PUB)),
     fairPlayEcPerCard: scriptSizeBytes(fairPlayEcLocking(FIXED_BINDING, shuffleKeyCommitment(12345n))),
   };
-  // §19.C per-hand transaction-count envelope for heads-up Hold'em (structurally derived from
-  // §19.E: 1 funding + 2 entropy commits + shuffle-stage commits + 1 deal + 3 board reveals +
-  // per-action bets + fold/settlement + per-card fair-play). Byte totals stay TRACKED
-  // ASSUMPTION pending the embedded node's full interpreter (REQ-CRYPTO-009 / RT-01 m2).
+  // §19.C 单挑 Hold'em 每手对局的交易数量包络（在结构上由
+  // §19.E 推导得出：1 笔 funding + 2 笔熵承诺 + 洗牌阶段承诺 + 1 笔发牌 + 3 笔公共牌揭示 +
+  // 每个动作的下注 + fold/结算 + 每张牌的公平博弈）。字节总数在嵌入式节点的完整解释器
+  // 就绪前仍为 TRACKED ASSUMPTION（REQ-CRYPTO-009 / RT-01 m2）。
   const perHandTxEnvelope = {
     funding: 1,
     entropyCommits: 2,
@@ -127,7 +127,7 @@ function generate(): unknown {
     note: 'byte totals are TRACKED ASSUMPTION until the embedded node interpreter measures them',
   };
 
-  // Full heads-up hand → state hash (determinism / replay anchor, P2).
+  // 完整单挑一手对局 → 状态哈希（确定性 / 重放锚点，P2）。
   const m = createHoldem({ deck: fixedDeck() });
   let s = m.init(SAMPLE_RULESET, [
     { seat: 0, stack: 100 },
@@ -174,7 +174,7 @@ function main(): void {
   const committed = readFileSync(VECTORS, 'utf8');
   if (committed !== json) {
     console.error('REPRODUCE MISMATCH (core §14.5): regenerated vectors differ from committed.');
-    // show a tiny diff hint
+    // 显示一个微小的 diff 提示
     const a = committed.split('\n');
     const b = json.split('\n');
     for (let i = 0; i < Math.max(a.length, b.length); i++) {

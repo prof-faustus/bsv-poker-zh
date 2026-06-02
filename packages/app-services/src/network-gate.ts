@@ -1,29 +1,28 @@
 /**
- * Network-selection gate (core REQ-PROD-012; RT-02 F3). The platform is research/regtest by default;
- * mainnet is reachable ONLY behind an explicit, typed acknowledgement, and every selection surfaces
- * a banner the UI MUST display. This makes "mainnet behind an explicit flag" a tested code path, not
- * a convention.
+ * 网络选择闸门（core REQ-PROD-012；RT-02 F3）。平台默认处于 research/regtest 模式；
+ * 只有在提供显式的、类型化的确认后才能访问 mainnet，且每次选择都会产生一条 UI 必须显示的横幅。
+ * 这使得"mainnet 置于显式标志之后"成为一条经过测试的代码路径，而不仅仅是一种约定。
  */
 
 export type Network = 'play-regtest' | 'regtest' | 'mainnet';
 
 export interface NetworkSelection {
   readonly network: Network;
-  /** Human-facing banner the UI must show (REQ-PROD-012). */
+  /** 面向用户的横幅，UI 必须显示（REQ-PROD-012）。 */
   readonly banner: string;
-  /** True only when mainnet was explicitly, correctly acknowledged. */
+  /** 仅当 mainnet 被显式且正确地确认后才为 true。 */
   readonly mainnetEnabled: boolean;
   readonly realFunds: boolean;
 }
 
-/** The exact token a caller must pass to enable mainnet — no funds move without it. */
+/** 调用方为启用 mainnet 必须传入的精确令牌——没有它任何资金都不会移动。 */
 export const MAINNET_ACK_TOKEN = 'I-UNDERSTAND-MAINNET-USES-REAL-FUNDS';
 
 const LOOPBACK = /^(127(?:\.\d{1,3}){3}|::1|localhost)$/;
 
 /**
- * Desktop services (node/relay/indexer) bind to loopback by default (REQ-APP-106). A non-loopback
- * bind exposes the local node to the network and is REFUSED unless explicitly opted in.
+ * 桌面端服务（node/relay/indexer）默认绑定到 loopback（REQ-APP-106）。非 loopback 的绑定
+ * 会把本地节点暴露到网络中，因此除非显式选择启用，否则会被拒绝。
  */
 export function resolveBindHost(opts?: { host?: string; allowNonLoopback?: boolean }): string {
   const host = opts?.host ?? '127.0.0.1';

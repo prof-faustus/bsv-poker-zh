@@ -5,7 +5,7 @@ import { Logger, MemorySink, redact, REDACTED } from '../src/observability.ts';
 test('logs are structured + levelled, per component, and honour the minimum level (REQ-APP-120)', () => {
   const sink = new MemorySink();
   const log = new Logger('app-services', sink, 'info');
-  log.debug('noisy'); // below min → dropped
+  log.debug('noisy'); // 低于最小级别 → 丢弃
   log.info('hand started', { gid: 'a1', seat: 0 });
   log.error('settlement failed', { reason: 'timeout' });
   assert.equal(sink.records.length, 2);

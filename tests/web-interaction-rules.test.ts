@@ -1,8 +1,8 @@
 /**
- * Web-client interaction + persistence rules, enforced as a passing test (REQ-UI-003 / REQ-APP-053:
- * interactions use explicit handlers, never `<form>` submit — avoids webview navigation; REQ-UI-002
- * / REQ-APP-042: `localStorage`/`sessionStorage` MUST NOT hold load-bearing state — keys, table
- * state, transcripts live in IndexedDB). Scans the built `apps/client-web` source.
+ * Web 客户端的交互 + 持久化规则，作为一个通过的测试来强制执行（REQ-UI-003 / REQ-APP-053：
+ * 交互使用显式处理器，绝不使用 `<form>` 提交 —— 避免 webview 导航；REQ-UI-002
+ * / REQ-APP-042：`localStorage`/`sessionStorage` 绝不能持有承重状态 —— 密钥、牌桌
+ * 状态、转录都存放在 IndexedDB 中）。扫描已构建的 `apps/client-web` 源码。
  */
 
 import { test } from 'node:test';
@@ -22,8 +22,8 @@ function files(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-// Source with comment-only lines removed, so the rules match real code, not the doc-comments that
-// reference them (e.g. "// no <form> submit, REQ-UI-003").
+// 移除了仅含注释的行的源码，这样规则匹配的是真实代码，而非引用它们的
+// 文档注释（例如 "// no <form> submit, REQ-UI-003"）。
 function codeLines(text: string): string[] {
   return text.split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l));
 }
@@ -43,7 +43,7 @@ test('web client never persists LOAD-BEARING state in localStorage/sessionStorag
   for (const f of files(WEB_SRC)) {
     for (const line of codeLines(readFileSync(f, 'utf8'))) {
       if (/sessionStorage/.test(line)) bad.push(`${f.slice(WEB_SRC.length + 1)}: sessionStorage is not permitted → ${line.trim()}`);
-      // localStorage may hold the play-money wallet balance, but NEVER keys/secrets/transcripts/seeds.
+      // localStorage 可以持有游戏币钱包余额，但绝不能持有密钥/机密/转录/种子。
       if (/localStorage/.test(line) && /(priv|secret|seed|transcript|mnemonic)/i.test(line)) {
         bad.push(`${f.slice(WEB_SRC.length + 1)}: load-bearing material in localStorage → ${line.trim()}`);
       }

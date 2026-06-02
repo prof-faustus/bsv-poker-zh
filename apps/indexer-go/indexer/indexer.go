@@ -1,15 +1,15 @@
-// Package indexer builds per-table projections of protocol transactions.
+// Package indexer 为协议交易构建以牌桌为单位的投影。
 //
-// REQ-NET-004 (core §8.4): via BS.node the platform ingests opaque
-// protocol-transaction records and builds per-table projections (ordered tx
-// list per table id, deduplicated by txid).
+// REQ-NET-004（core §8.4）：平台经由 BS.node 摄入不透明的
+// 协议交易记录，并构建以牌桌为单位的投影（每个牌桌 id 一份有序 tx
+// 列表，按 txid 去重）。
 //
-// REQ-NET-001 (core §8.1, P3): the indexer is a CONVENIENCE PROJECTION, never
-// the source of truth. The truth is the validated transaction graph; the
-// indexer must reconstruct an identical ordered set that any client can rebuild
-// independently (P2, REQ-NET-007). Determinism is therefore the central
-// contract: see Rebuild, which any client can run over the same record stream
-// to obtain the same ordered txid list.
+// REQ-NET-001（core §8.1，P3）：索引器是一个便利投影，绝非
+// 事实来源。事实是已验证的交易图；
+// 索引器必须重建出一个完全相同的有序集合，任何客户端都能独立地
+// 重建出它（P2，REQ-NET-007）。因此确定性是核心
+// 契约：见 Rebuild，任何客户端都可以在同一条记录流上运行它
+// 以获得相同的有序 txid 列表。
 package indexer
 
 import (
@@ -19,15 +19,15 @@ import (
 )
 
 var (
-	// ErrEmptyTxid rejects records without a txid (defensive validation).
+	// ErrEmptyTxid 拒绝没有 txid 的记录（防御性校验）。
 	ErrEmptyTxid = errors.New("indexer: empty txid")
-	// ErrEmptyTable rejects records without a table id.
+	// ErrEmptyTable 拒绝没有牌桌 id 的记录。
 	ErrEmptyTable = errors.New("indexer: empty table id")
 )
 
-// Record is an opaque protocol-transaction record ingested from BS.node.
-// The indexer treats Raw as opaque bytes; it never parses game logic
-// (REQ-NET-001). Class is an opaque tag the producer assigns.
+// Record 是从 BS.node 摄入的一条不透明协议交易记录。
+// 索引器将 Raw 视为不透明字节；它绝不解析游戏逻辑
+// （REQ-NET-001）。Class 是生产者赋予的一个不透明标签。
 type Record struct {
 	Txid    string `json:"txid"`
 	Class   string `json:"class"`
@@ -35,29 +35,29 @@ type Record struct {
 	Raw     []byte `json:"raw,omitempty"`
 }
 
-// tableProjection holds the ordered, de-duplicated tx set for one table.
+// tableProjection 持有某一牌桌的有序、去重后的 tx 集合。
 type tableProjection struct {
-	order []string            // txids in deterministic insertion order
-	seen  map[string]struct{} // dedup set
-	recs  map[string]Record   // full records by txid (for transcript rebuild / reconnect)
+	order []string            // 按确定性插入顺序排列的 txid
+	seen  map[string]struct{} // 去重集合
+	recs  map[string]Record   // 按 txid 索引的完整记录（用于记录重建 / 重连）
 }
 
-// Indexer is the concurrency-safe collection of per-table projections.
+// Indexer 是以牌桌为单位的投影的并发安全集合。
 type Indexer struct {
 	mu     sync.Mutex
 	tables map[string]*tableProjection
 }
 
-// New constructs an empty indexer.
+// New 构造一个空的索引器。
 func New() *Indexer {
 	return &Indexer{tables: make(map[string]*tableProjection)}
 }
 
-// Ingest adds a record to its table's projection. Duplicate txids (per table)
-// are ignored, preserving first-seen ordering. Returns true if the record was
-// newly added, false if it was a duplicate. Determinism: ordering is strictly
-// first-seen insertion order; replaying the same record sequence yields an
-// identical ordered set (REQ-NET-007).
+// Ingest 将一条记录添加到其所属牌桌的投影中。重复的 txid（按牌桌）
+// 会被忽略，保留首次见到的顺序。如果记录是
+// 新添加的则返回 true，如果是重复则返回 false。确定性：排序严格按
+// 首次见到的插入顺序；重放同一条记录序列会产生
+// 完全相同的有序集合（REQ-NET-007）。
 func (ix *Indexer) Ingest(rec Record) (bool, error) {
 	if rec.Txid == "" {
 		return false, ErrEmptyTxid
@@ -81,9 +81,9 @@ func (ix *Indexer) Ingest(rec Record) (bool, error) {
 	return true, nil
 }
 
-// Records returns the FULL ordered records for a table (the transcript) so any client can
-// rebuild current state from the valid tx set (REQ-NET-007, REQ-DATA-002/003). A copy is
-// returned; an unknown table yields an empty slice.
+// Records 返回某一牌桌的完整有序记录（即记录全文），以便任何客户端都能
+// 从有效的 tx 集合重建当前状态（REQ-NET-007、REQ-DATA-002/003）。返回的是
+// 一份副本；未知牌桌产生一个空切片。
 func (ix *Indexer) Records(tableID string) []Record {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
@@ -92,14 +92,14 @@ func (ix *Indexer) Records(tableID string) []Record {
 		return []Record{}
 	}
 	out := make([]Record, 0, len(tp.order))
-	for _, id := range tp.order { // bounded by len(order)
+	for _, id := range tp.order { // 受 len(order) 限界
 		out = append(out, tp.recs[id])
 	}
 	return out
 }
 
-// Table returns the ordered txid list for a table id. A copy is returned so the
-// caller cannot mutate internal state. An unknown table yields an empty slice.
+// Table 返回某一牌桌 id 的有序 txid 列表。返回的是一份副本，使得
+// 调用方无法改动内部状态。未知牌桌产生一个空切片。
 func (ix *Indexer) Table(tableID string) []string {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
@@ -112,27 +112,27 @@ func (ix *Indexer) Table(tableID string) []string {
 	return out
 }
 
-// Tables returns the sorted list of known table ids (stable snapshot).
+// Tables 返回已知牌桌 id 的排序后列表（稳定快照）。
 func (ix *Indexer) Tables() []string {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
 	out := make([]string, 0, len(ix.tables))
-	for id := range ix.tables { // bounded by len(tables)
+	for id := range ix.tables { // 受 len(tables) 限界
 		out = append(out, id)
 	}
 	sort.Strings(out)
 	return out
 }
 
-// Rebuild deterministically reconstructs the ordered txid list for tableID from
-// an arbitrary record stream, WITHOUT any indexer state. This is the function a
-// client uses to verify the projection independently (P2, REQ-NET-007): given
-// the same records in the same order, every client computes the same result.
-// Records for other tables are ignored; duplicates keep first-seen position.
+// Rebuild 在不依赖任何索引器状态的情况下，从一条任意的记录流
+// 确定性地为 tableID 重建有序 txid 列表。这是客户端
+// 用来独立验证投影的函数（P2，REQ-NET-007）：给定
+// 同一批记录、同一顺序，每个客户端都计算出相同的结果。
+// 其他牌桌的记录会被忽略；重复项保留首次见到的位置。
 func Rebuild(tableID string, records []Record) []string {
 	order := make([]string, 0, len(records))
 	seen := make(map[string]struct{}, len(records))
-	for _, rec := range records { // bounded by len(records)
+	for _, rec := range records { // 受 len(records) 限界
 		if rec.TableID != tableID || rec.Txid == "" {
 			continue
 		}

@@ -12,8 +12,8 @@ import {
   runOBConformance,
 } from '../src/conformance.ts';
 
-// REQ-DEP-003: the SAME suite runs against the fake (here) and the real adapter
-// (crypto-mentalpoker's RealCT runs it in its own test) — both MUST pass.
+// REQ-DEP-003：同一套测试套件同时对 fake（此处）和真实适配器运行
+//（crypto-mentalpoker 的 RealCT 在其自己的测试中运行它）——两者都必须通过。
 test('CT fake passes the CT conformance suite', async () => {
   await runCTConformance(makeFakeCT());
 });

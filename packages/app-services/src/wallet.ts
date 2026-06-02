@@ -1,15 +1,15 @@
 /**
- * Wallet service (core §9, app §A6.2) — a player's funds with the ability to ADD and REMOVE
- * money, and buy in / cash out of tables. Browser-safe (no node:crypto).
+ * 钱包服务（core §9，app §A6.2）——玩家的资金，具备增加和移除资金，以及在牌桌买入/兑出的能力。
+ * 浏览器安全（不依赖 node:crypto）。
  *
- * Funds movement goes through a pluggable FundingBackend so the SAME wallet works:
- *  - **play-regtest** (default now): play-money — add/remove credit/debit the local balance,
- *    persisted, with a transaction history. No external value (core D8).
- *  - **regtest node faucet** (live-ready, Node side): deposit mines real regtest coins to the
- *    player's key via the embedded BSV node (see tools/wallet-e2e.ts).
- *  - **mainnet** (later, behind the research flag): deposit/withdraw are real on-chain moves.
+ * 资金移动通过可插拔的 FundingBackend 进行，因此同一个钱包可在以下场景工作：
+ *  - **play-regtest**（当前默认）：play-money——增加/移除会对本地余额贷记/借记，
+ *    会被持久化，并带有交易历史。无外部价值（core D8）。
+ *  - **regtest node faucet**（已可实战，Node 侧）：deposit 通过内嵌的 BSV node
+ *    向玩家的密钥挖出真实的 regtest 币（见 tools/wallet-e2e.ts）。
+ *  - **mainnet**（稍后，置于 research 标志之后）：deposit/withdraw 是真实的链上操作。
  *
- * Amounts are integer satoshis (or play-money chips at 1:1) — never fractional (INV-BS-1).
+ * 金额为整数 satoshi（或按 1:1 计的 play-money 筹码）——绝不为分数（INV-BS-1）。
  */
 
 export type WalletNetwork = 'play-regtest' | 'regtest' | 'mainnet-research';
@@ -20,7 +20,7 @@ export interface FundsEvent {
   readonly kind: FundsEventKind;
   readonly amount: number;
   readonly balanceAfter: number;
-  readonly at: number; // ms timestamp (UI display only; not consensus)
+  readonly at: number; // 毫秒时间戳（仅用于 UI 显示；非共识）
   readonly memo?: string;
 }
 
@@ -30,25 +30,25 @@ export interface WalletState {
   readonly history: readonly FundsEvent[];
 }
 
-/** Where deposits/withdrawals actually move value. Play-money is a no-op (balance-only). */
+/** deposit/withdraw 实际移动价值的去处。Play-money 是空操作（仅余额）。 */
 export interface FundingBackend {
-  /** Bring `amount` in (regtest faucet / real deposit). Resolves when credited. */
+  /** 将 `amount` 引入（regtest faucet / 真实存入）。在贷记完成时 resolve。 */
   deposit(amount: number, address?: string): Promise<void>;
-  /** Send `amount` out to `dest`. Resolves when the spend is accepted. */
+  /** 将 `amount` 发送到 `dest`。在花费被接受时 resolve。 */
   withdraw(amount: number, dest: string): Promise<void>;
 }
 
-/** Default play-money backend — funds are local chips with no external value (core D8). */
+/** 默认的 play-money 后端——资金是无外部价值的本地筹码（core D8）。 */
 export const playMoneyBackend: FundingBackend = {
   async deposit() {
-    /* play-money: crediting the balance is the whole operation */
+    /* play-money：对余额贷记就是全部操作 */
   },
   async withdraw() {
-    /* play-money: debiting the balance is the whole operation */
+    /* play-money：对余额借记就是全部操作 */
   },
 };
 
-/** Optional persistence (IndexedDB on web / SQLite on desktop, core §12.1). */
+/** 可选的持久化（Web 上为 IndexedDB / 桌面端为 SQLite，core §12.1）。 */
 export interface WalletPersistence {
   load(): WalletState | null;
   save(state: WalletState): void;
@@ -100,18 +100,18 @@ export class WalletService {
     if (!Number.isInteger(amount) || amount <= 0) throw new Error('amount must be a positive integer (satoshis)');
   }
 
-  /** ADD funds. On mainnet this requires the research flag (fail-closed otherwise). */
+  /** 增加资金。在 mainnet 上这需要 research 标志（否则 fail-closed）。 */
   async addFunds(amount: number, opts?: { address?: string; memo?: string }): Promise<void> {
     this.requirePositiveInt(amount);
     if (this.network === 'mainnet-research') {
-      // real deposit path; the backend performs the on-chain credit
+      // 真实存入路径；由后端执行链上贷记
     }
     await this.backend.deposit(amount, opts?.address);
     this.balance += amount;
     this.record('deposit', amount, opts?.memo);
   }
 
-  /** REMOVE funds (cash out / withdraw to an external address). */
+  /** 移除资金（兑出 / 提现到外部地址）。 */
   async withdraw(amount: number, dest: string, memo?: string): Promise<void> {
     this.requirePositiveInt(amount);
     if (amount > this.balance) throw new Error('insufficient balance');
@@ -120,16 +120,16 @@ export class WalletService {
     this.record('withdraw', amount, memo ?? `to ${dest}`);
   }
 
-  /** Buy in to a table: move `amount` from the wallet into a table stack. */
+  /** 买入牌桌：将 `amount` 从钱包移入牌桌筹码。 */
   buyIn(amount: number, tableId?: string): number {
     this.requirePositiveInt(amount);
     if (amount > this.balance) throw new Error('insufficient balance to buy in');
     this.balance -= amount;
     this.record('buy-in', amount, tableId ? `table ${tableId}` : undefined);
-    return amount; // the starting stack at the table
+    return amount; // 牌桌上的起始筹码
   }
 
-  /** Cash out of a table: return the remaining `stack` to the wallet. */
+  /** 从牌桌兑出：将剩余的 `stack` 返还到钱包。 */
   cashOut(stack: number, tableId?: string): void {
     if (!Number.isInteger(stack) || stack < 0) throw new Error('stack must be a non-negative integer');
     this.balance += stack;

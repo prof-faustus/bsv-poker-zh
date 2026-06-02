@@ -42,7 +42,7 @@ const PLAY: Action[] = [
 test('validateRuleset accepts the Phase-1 ruleset and rejects bad ones', () => {
   assert.deepEqual(validateRuleset(NL), []);
   assert.ok(validateRuleset({ ...NL, seats: 1 }).length > 0);
-  assert.ok(validateRuleset({ ...NL, bettingStructure: 'FL' }).length > 0); // missing flSizing
+  assert.ok(validateRuleset({ ...NL, bettingStructure: 'FL' }).length > 0); // 缺少 flSizing
   assert.equal(hashRuleset(NL).length, 64);
 });
 
@@ -52,13 +52,13 @@ test('runHand wires entropy/shuffle/deal/betting/settlement into one hand (Phase
   const res = sdk.runHand(players, NL, PLAY);
   assert.equal(res.state.handComplete, true);
   assert.equal(res.state.board.length, 5);
-  // entropy reveals recorded in canonical party order
+  // 熵揭示按规范化方序记录
   assert.equal(res.transcript.entropy.length, 2);
   assert.equal(res.transcript.partyOrder.length, 2);
-  // the pot conserves: total awarded == total committed
+  // 底池守恒：发放总额 == 投入总额
   const awarded = res.state.pots.reduce((s, p) => s + p.amount, 0);
   assert.equal(awarded, 4);
-  // settlement spend (N-of-N close-out) verified through the REAL interpreter
+  // 结算花费（N-of-N 收尾）通过真实解释器验证
   assert.equal(res.settlementVerified, true);
 });
 
@@ -67,7 +67,7 @@ test('deriveState replays the transcript to byte-identical state (REQ-DATA-003, 
   const players = [player(0, 100, 7), player(1, 100, 19)];
   const res = sdk.runHand(players, NL, PLAY);
   const replayed = sdk.deriveState(res.transcript);
-  // re-derive must match the live state on the load-bearing fields
+  // 重新推导出的结果在关键字段上必须与实时状态一致
   assert.equal(replayed.handComplete, res.state.handComplete);
   assert.deepEqual(replayed.board, res.state.board);
   assert.deepEqual(

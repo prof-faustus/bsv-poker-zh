@@ -24,17 +24,17 @@ const KIND_LABEL: Record<string, string> = {
 
 export function WalletPanel(props: {
   snapshot: WalletSnapshot;
-  /** Controlled add-funds amount. */
+  /** 受控的充值金额。 */
   addAmount: number;
   onAddAmountChange: (n: number) => void;
   onAddFunds: (amount: number) => void;
-  /** Controlled withdraw amount + destination. */
+  /** 受控的提现金额 + 目标地址。 */
   withdrawAmount: number;
   onWithdrawAmountChange: (n: number) => void;
   withdrawDest: string;
   onWithdrawDestChange: (s: string) => void;
   onWithdraw: (amount: number, dest: string) => void;
-  /** Compact header variant (less chrome) when true. */
+  /** 为 true 时使用紧凑页眉样式（更少装饰）。 */
   compact?: boolean;
 }): React.JSX.Element {
   const vm = walletPanelVM(props.snapshot);
@@ -172,7 +172,7 @@ export function VariantPicker(props: {
   options: readonly VariantOption[];
   value: VariantId;
   onChange: (v: VariantId) => void;
-  /** Omaha hi-lo toggle (only shown when omaha is selected). */
+  /** Omaha hi-lo 开关（仅在选择 omaha 时显示）。 */
   hiLo: boolean;
   onHiLoChange: (b: boolean) => void;
 }): React.JSX.Element {

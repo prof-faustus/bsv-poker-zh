@@ -11,7 +11,7 @@ import {
 } from '../src/high.ts';
 import { bestLow, bestOmaha8Low, compareLow, type LowValue } from '../src/low.ts';
 
-// §19.D high-hand category vectors — category + tiebreak tuple from the oracle.
+// §19.D 高牌类别向量 —— 来自 oracle 的 category + tiebreak 元组。
 const HIGH: Array<[string, string, string, number[]]> = [
   ['royal flush', 'As Ks Qs Js Ts', 'straight flush', [14]],
   ['sf 9-high', '9h 8h 7h 6h 5h', 'straight flush', [9]],
@@ -43,17 +43,17 @@ test('§19.D high-hand category vectors reproduce the oracle bit-for-bit', () =>
 test('§19.D ordering checks (all must hold)', () => {
   const val = (h: string): HandValue => eval5High(parseHand(h));
   const ladder = [
-    'As Ks Qs Js Ts', // royal
-    '9h 8h 7h 6h 5h', // sf-9
-    '5c 4c 3c 2c Ac', // steel wheel
-    'Qs Qh Qd Qc Ks', // quads
-    'As Ah Ad Ks Kh', // boat
-    'Ad Jd 9d 6d 3d', // flush
-    'As Kd Qh Jc Ts', // broadway straight
-    '7s 7h 7d Ks Qd', // trips
-    'As Ah Ks Kh 5d', // two pair
-    '8s 8h Ad 7c 5h', // pair
-    'As Kd Jh 8c 6s', // high
+    'As Ks Qs Js Ts', // 皇家同花顺
+    '9h 8h 7h 6h 5h', // 同花顺-9
+    '5c 4c 3c 2c Ac', // 钢轮（最小同花顺）
+    'Qs Qh Qd Qc Ks', // 四条
+    'As Ah Ad Ks Kh', // 葫芦
+    'Ad Jd 9d 6d 3d', // 同花
+    'As Kd Qh Jc Ts', // 百老汇顺子
+    '7s 7h 7d Ks Qd', // 三条
+    'As Ah Ks Kh 5d', // 两对
+    '8s 8h Ad 7c 5h', // 一对
+    'As Kd Jh 8c 6s', // 高牌
   ];
   for (let i = 1; i < ladder.length; i++) {
     assert.equal(compareHigh(val(ladder[i - 1]!), val(ladder[i]!)), 1, `ladder ${i}`);
@@ -67,7 +67,7 @@ test('§19.D ordering checks (all must hold)', () => {
 });
 
 test('transitivity over 20000 random triples (oracle property)', () => {
-  // Deterministic LCG so the property is reproducible (no Math.random).
+  // 确定性 LCG，使该性质可复现（不使用 Math.random）。
   let s = 1n;
   const rnd = (n: number): number => {
     s = (s * 6364136223846793005n + 1442695040888963407n) & 0xffffffffffffffffn;
@@ -130,26 +130,26 @@ test('§19.D ace-to-five low (Razz) vectors reproduce the oracle', () => {
 });
 
 test('§19.D Omaha-8 qualifying low: exactly-8-high qualifies, 9-high does not (REQ-FSM-007)', () => {
-  // Wheel-qualifying: hole A,5 + board 2,3,4 → A-2-3-4-5 qualifies (best low).
+  // 满足最小顺子的合格情形：底牌 A,5 + 公共牌 2,3,4 → A-2-3-4-5 合格（最佳低牌）。
   const wheel = bestOmaha8Low(parseHand('As 5h 7d 9c'), parseHand('2c 3d 4h 8s Kc'));
   assert.ok(wheel, 'a qualifying low exists');
   assert.equal(wheel!.value.pairPenalty, 0);
   assert.deepEqual([...wheel!.value.values], [5, 4, 3, 2, 1], 'best qualifying low is the wheel');
 
-  // Exactly 8-high boundary qualifies: hole A,8 + board 2,4,6 → 8-6-4-2-A (all distinct, all ≤8).
+  // 恰好以 8 为最高的边界合格：底牌 A,8 + 公共牌 2,4,6 → 8-6-4-2-A（全部不同，全部 ≤8）。
   const eightHigh = bestOmaha8Low(parseHand('As 8h 9d Tc'), parseHand('2c 4d 6h Qs Kc'));
   assert.ok(eightHigh, '8-high qualifies (≤8)');
   assert.equal(Math.max(...eightHigh!.value.values), 8, 'top card is exactly 8');
 
-  // No qualifying low: only two cards ≤ 8 available → cannot make five distinct ranks ≤8.
+  // 无合格低牌：只有两张 ≤ 8 的牌可用 → 无法凑出五个 ≤8 的不同点数。
   const none = bestOmaha8Low(parseHand('As 2h Kd Qc'), parseHand('9c Td Jh Qs Kh'));
   assert.equal(none, null, 'no eight-or-better low qualifies');
 });
 
 test('§19.D tie / odd-chip: two identical best hands compare equal (split, §5.5.1)', () => {
-  // Same board, different suits → identical category+tiebreak → a tie that splits the pot.
+  // 相同公共牌、不同花色 → 完全相同的 category+tiebreak → 平局并平分底池。
   const board = 'Ah Kd 7c 4s 2d';
-  const a = bestHigh(parseHand('Qs Js ' + board)); // Q-high no pair? uses A K Q J 7 high card
+  const a = bestHigh(parseHand('Qs Js ' + board)); // Q 高无对子？使用 A K Q J 7 的高牌
   const b = bestHigh(parseHand('Qh Jh ' + board));
   assert.equal(compareHigh(a.value, b.value), 0, 'identical hands tie (suits never break ties)');
 });

@@ -1,7 +1,7 @@
 /**
- * Seven-Card Stud module tests — core §7.3.2, REQ-FSM-005/008. Covers: ante + bring-in posted;
- * lowest up-card brings in; board-driven acting order (highest board acts first post-3rd);
- * best-5-of-7 showdown; determinism.
+ * 七张梭哈模块测试 —— core §7.3.2, REQ-FSM-005/008。涵盖：已下底注 + bring-in；
+ * 最低明牌进行 bring-in；由明面驱动的行动顺序（第三街后最高明面先行动）；
+ * 7 张里取最佳 5 张的摊牌；确定性。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,11 +30,11 @@ const seats3 = [
   { seat: 2, stack: 100 },
 ];
 
-// 3rd-street deal order (round-robin by seat, 3 rounds): each seat's 3rd card is its UP door.
-//   seat0 = Ah Kd 2c  (door 2c — the LOWEST up-card → bring-in)
-//   seat1 = Qs Qh Ks  (door Ks)
-//   seat2 = 7d 3s 9h  (door 9h)
-// Subsequent streets draw from the deck tail in seat order.
+// 第三街发牌顺序（按座位轮转，3 轮）：每个座位的第 3 张牌是其明门牌。
+//   seat0 = Ah Kd 2c  （门牌 2c —— 最低明牌 → bring-in）
+//   seat1 = Qs Qh Ks  （门牌 Ks）
+//   seat2 = 7d 3s 9h  （门牌 9h）
+// 后续各街按座位顺序从牌堆尾部抽取。
 function studDeck(): Card[] {
   const s0 = ['Ah', 'Kd', '2c'].map(parseCard);
   const s1 = ['Qs', 'Qh', 'Ks'].map(parseCard);
@@ -55,25 +55,25 @@ test('ante + bring-in posted; lowest up-card (2c, seat 0) brings in', () => {
   const m = createStud({ deck: studDeck() });
   const s = m.init(FL, seats3);
   assert.equal(s.phase, PHASES.THIRD);
-  // Every seat antes 1; the bring-in seat additionally posts 2 (committed 3 this hand).
-  assert.equal(s.seats.find((x) => x.seat === 0)!.committedThisHand, 3); // ante 1 + bring-in 2
-  assert.equal(s.seats.find((x) => x.seat === 1)!.committedThisHand, 1); // ante only
+  // 每个座位下底注 1；bring-in 座位额外下注 2（本手共投入 3）。
+  assert.equal(s.seats.find((x) => x.seat === 0)!.committedThisHand, 3); // 底注 1 + bring-in 2
+  assert.equal(s.seats.find((x) => x.seat === 1)!.committedThisHand, 1); // 仅底注
   assert.equal(s.seats.find((x) => x.seat === 2)!.committedThisHand, 1);
-  assert.equal(s.betting.betToCall, 2); // bring-in is the live bet
-  // Action proceeds to the seat after the bring-in.
+  assert.equal(s.betting.betToCall, 2); // bring-in 是当前的有效下注
+  // 行动推进到 bring-in 之后的座位。
   assert.equal(s.betting.toAct, 1);
 });
 
 test('board-driven order: highest exposed board acts first post-3rd (REQ-FSM-005)', () => {
   const m = createStud({ deck: studDeck() });
   let s: StudState = m.init(FL, seats3);
-  // Close 3rd street: seat1 calls, seat2 calls, bring-in (seat0) checks.
+  // 结束第三街：seat1 跟注，seat2 跟注，bring-in（seat0）过牌。
   s = m.apply(s, { kind: 'call', seat: 1, amount: 2 });
   s = m.apply(s, { kind: 'call', seat: 2, amount: 2 });
   s = m.apply(s, { kind: 'check', seat: 0, amount: 0 });
   assert.equal(s.phase, PHASES.FOURTH);
-  // 4th-street up-cards: seat0 = 2c 2d (PAIR), seat1 = Ks 2h, seat2 = 9h 2s.
-  // The paired board (seat0) is the highest exposed board and acts FIRST.
+  // 第四街明牌：seat0 = 2c 2d（对子），seat1 = Ks 2h，seat2 = 9h 2s。
+  // 成对的明面（seat0）是最高明面，先行动。
   assert.deepEqual(upCardsOf(s, 0).length, 2);
   assert.equal(s.betting.toAct, 0);
 });
@@ -82,22 +82,22 @@ test('best-5-of-7 showdown: two pair (seat 0) beats one pair; whole pot awarded'
   const m = createStud({ deck: studDeck() });
   let s = m.init(FL, seats3);
   const checkRound = (): void => {
-    // each street: three checks in board-driven order
+    // 每条街：按明面驱动顺序进行三次过牌
     s = m.apply(s, { kind: 'check', seat: s.betting.toAct!, amount: 0 });
     s = m.apply(s, { kind: 'check', seat: s.betting.toAct!, amount: 0 });
     s = m.apply(s, { kind: 'check', seat: s.betting.toAct!, amount: 0 });
   };
-  // 3rd street: seat1 call, seat2 call, seat0 check.
+  // 第三街：seat1 跟注，seat2 跟注，seat0 过牌。
   s = m.apply(s, { kind: 'call', seat: 1, amount: 2 });
   s = m.apply(s, { kind: 'call', seat: 2, amount: 2 });
   s = m.apply(s, { kind: 'check', seat: 0, amount: 0 });
-  // 4th, 5th, 6th, 7th: check through.
+  // 第四、五、六、七街：全部过牌通过。
   checkRound();
   checkRound();
   checkRound();
   checkRound();
   assert.equal(s.phase, PHASES.HAND_END);
-  // Pot = 3 antes + (bring-in 2 + two calls 2) = 3 + 6 = 9 → seat 0 (two pair 4s & 2s).
+  // 底池 = 3 份底注 + (bring-in 2 + 两次跟注 2) = 3 + 6 = 9 → seat 0（两对 4 与 2）。
   assert.deepEqual([...s.payouts], [{ seat: 0, amount: 9 }]);
   assert.equal(s.seats.find((x) => x.seat === 0)!.stack, 106); // 100 - 3 + 9
 });

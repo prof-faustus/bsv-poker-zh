@@ -1,6 +1,6 @@
 /**
- * Real secp256k1 key + signature helpers used by the templates and the interpreter (core §6.7,
- * P9). Signatures are real ECDSA over SHA-256(preimage) (the interpreter's sighash convention).
+ * 模板和解释器所使用的真实 secp256k1 密钥 + 签名辅助函数（core §6.7、
+ * P9）。签名是对 SHA-256(preimage) 的真实 ECDSA（即解释器的 sighash 约定）。
  */
 
 import {
@@ -12,7 +12,7 @@ import {
 export interface KeyPair {
   readonly priv: KeyObject;
   readonly pub: KeyObject;
-  /** 33-byte SEC-1 compressed public key. */
+  /** 33 字节的 SEC-1 压缩公钥。 */
   readonly pubCompressed: Uint8Array;
 }
 
@@ -21,7 +21,7 @@ function b64urlToBytes(s: string): Uint8Array {
   return new Uint8Array(Buffer.from(b64, 'base64'));
 }
 
-/** Compressed SEC-1 encoding from a public KeyObject's JWK (x,y). */
+/** 从公钥 KeyObject 的 JWK（x,y）得到压缩的 SEC-1 编码。 */
 export function compressedPub(pub: KeyObject): Uint8Array {
   const jwk = pub.export({ format: 'jwk' }) as { x?: string; y?: string };
   if (!jwk.x || !jwk.y) throw new Error('not an EC public key');
@@ -42,8 +42,8 @@ export function genKeyPair(): KeyPair {
 }
 
 /**
- * Sign a sighash preimage; returns a LOW-S (BIP-62) DER ECDSA signature — what OP_CHECKSIG
- * verifies and what the BSV node requires (it rejects high-S signatures).
+ * 对 sighash preimage 进行签名；返回 LOW-S（BIP-62）的 DER ECDSA 签名——即 OP_CHECKSIG
+ * 所验证的内容，也是 BSV 节点所要求的（它拒绝 high-S 签名）。
  */
 export function signPreimage(preimage: Uint8Array, priv: KeyObject): Uint8Array {
   return normalizeLowS(new Uint8Array(ecSign('sha256', Buffer.from(preimage), priv)));
@@ -64,16 +64,16 @@ function bigToMinimalBE(n: bigint): Uint8Array {
     x >>= 8n;
   }
   if (out.length === 0) out.push(0);
-  if (out[0]! & 0x80) out.unshift(0x00); // DER positive-integer sign byte
+  if (out[0]! & 0x80) out.unshift(0x00); // DER 正整数符号字节
   return Uint8Array.from(out);
 }
 function derInt(b: Uint8Array): Uint8Array {
   return Uint8Array.from([0x02, b.length, ...b]);
 }
 
-/** Re-encode a DER ECDSA signature with S in the lower half of the curve order (BIP-62). */
+/** 重新编码 DER ECDSA 签名，使 S 位于曲线阶的下半部（BIP-62）。 */
 export function normalizeLowS(der: Uint8Array): Uint8Array {
-  // DER: 0x30 len 0x02 rlen <r> 0x02 slen <s>
+  // DER：0x30 len 0x02 rlen <r> 0x02 slen <s>
   if (der[0] !== 0x30) return der;
   let i = 2;
   if (der[i] !== 0x02) return der;

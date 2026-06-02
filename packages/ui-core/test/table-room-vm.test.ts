@@ -1,12 +1,12 @@
 /**
- * Pure view-model tests for the poker-room UI logic (REQ-APP-051):
- *   - seatPositions: ellipse seat geometry (hero anchored bottom-centre, N=2..9).
- *   - bet-sizing: sizerRange / clampToRange / quickButtons read bounds from the engine descriptor
- *     and NEVER widen the legal range.
- *   - wallet-panel: walletPanelVM projection + add/withdraw/buy-in validation.
- *   - network-lobby variant: validateNetworkTable seat ranges per variant + metaFromNetworkForm.
+ * 针对扑克房间 UI 逻辑的纯视图模型测试（REQ-APP-051）：
+ *   - seatPositions：椭圆座位几何（英雄锚定在底部中央，N=2..9）。
+ *   - bet-sizing：sizerRange / clampToRange / quickButtons 从引擎描述符读取边界，
+ *     绝不扩大合法范围。
+ *   - wallet-panel：walletPanelVM 投影 + 充值/提现/买入校验。
+ *   - network-lobby variant：validateNetworkTable 按变体的座位范围 + metaFromNetworkForm。
  *
- * React-free — runs under `node --test` type-stripping.
+ * 无 React 依赖——在 `node --test` 的类型剥离下运行。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,10 +27,10 @@ test('seatPositions: hero is anchored at the bottom centre for any seat count', 
     const pos = seatPositions({ count, heroSeat: 0 });
     assert.equal(pos.length, count);
     const hero = pos.find((p) => p.isHero)!;
-    // Bottom-centre: x ~ 50%, y near the bottom (> 90%).
+    // 底部中央：x ~ 50%，y 接近底部（> 90%）。
     assert.ok(Math.abs(hero.xPct - 50) < 0.5, `hero x ~50 (got ${hero.xPct})`);
     assert.ok(hero.yPct > 90, `hero y near bottom (got ${hero.yPct})`);
-    // All coordinates are within the 0..100 box.
+    // 所有坐标都在 0..100 的范围框内。
     for (const p of pos) {
       assert.ok(p.xPct >= 0 && p.xPct <= 100, `x in range (${p.xPct})`);
       assert.ok(p.yPct >= 0 && p.yPct <= 100, `y in range (${p.yPct})`);
@@ -43,7 +43,7 @@ test('seatPositions: rotates so a non-zero heroSeat sits at the bottom', () => {
   const hero = pos.find((p) => p.seat === 3)!;
   assert.equal(hero.isHero, true);
   assert.ok(Math.abs(hero.xPct - 50) < 0.5 && hero.yPct > 90);
-  // Returned in seat-index order.
+  // 按座位索引顺序返回。
   assert.deepEqual(pos.map((p) => p.seat), [0, 1, 2, 3, 4, 5]);
 });
 
@@ -66,14 +66,14 @@ test('bet-sizing: sizerRange reads bounds straight from the engine descriptor', 
 
 test('bet-sizing: clampToRange never escapes the engine range and snaps to integer', () => {
   const r = sizerRange({ fold: true, check: false, raise: { min: 6, max: 80 } });
-  assert.equal(clampToRange(1, r), 6); // below min → min
-  assert.equal(clampToRange(999, r), 80); // above max → max
-  assert.equal(clampToRange(40.7, r), 41); // rounds
-  assert.equal(clampToRange(NaN, r), 6); // bad input → min
+  assert.equal(clampToRange(1, r), 6); // 低于最小值 → 最小值
+  assert.equal(clampToRange(999, r), 80); // 高于最大值 → 最大值
+  assert.equal(clampToRange(40.7, r), 41); // 四舍五入
+  assert.equal(clampToRange(NaN, r), 6); // 非法输入 → 最小值
 });
 
 test('bet-sizing: quick buttons clamp pot-relative targets into the legal band', () => {
-  // Opening bet: pot 20, legal bet 2..100. Pot button = 20 (within band); all-in = max.
+  // 开局下注：底池 20，合法下注 2..100。底池按钮 = 20（在区间内）；全押 = 最大值。
   const range = sizerRange({ fold: true, check: true, bet: { min: 2, max: 100 } });
   const q = quickButtons({ range, pot: 20, toCall: 0 });
   const byKey = Object.fromEntries(q.map((b) => [b.key, b.amount]));
@@ -82,12 +82,12 @@ test('bet-sizing: quick buttons clamp pot-relative targets into the legal band',
   assert.equal(byKey.pot, 20);
   assert.equal(byKey['all-in'], 100);
 
-  // A pot bet that exceeds the stack lands on all-in (max), never illegal.
+  // 超过筹码量的底池下注会落到全押（最大值），绝不会非法。
   const tight = sizerRange({ fold: true, check: true, bet: { min: 2, max: 15 } });
   const q2 = quickButtons({ range: tight, pot: 50, toCall: 0 });
   assert.equal(q2.find((b) => b.key === 'pot')!.amount, 15);
 
-  // No sizer → no buttons.
+  // 无尺度控件 → 无按钮。
   assert.equal(quickButtons({ range: sizerRange({ fold: true, check: true }), pot: 10, toCall: 0 }).length, 0);
 });
 
@@ -104,7 +104,7 @@ test('wallet-panel: projection signs history and flags play-money', () => {
   const vm = walletPanelVM(snap);
   assert.equal(vm.balance, 160);
   assert.equal(vm.playMoney, true);
-  // Newest first.
+  // 最新的排在最前。
   assert.equal(vm.rows[0]!.kind, 'cash-out');
   assert.equal(vm.rows[0]!.signedAmount, '+60');
   assert.equal(vm.rows[1]!.kind, 'buy-in');
@@ -118,8 +118,8 @@ test('wallet-panel: amount + withdraw validation', () => {
   assert.equal(validateAmount(50).ok, true);
 
   assert.equal(validateWithdraw(50, 100, 'addr').ok, true);
-  assert.equal(validateWithdraw(150, 100, 'addr').ok, false); // over balance
-  assert.equal(validateWithdraw(50, 100, '').ok, false); // no address
+  assert.equal(validateWithdraw(150, 100, 'addr').ok, false); // 超出余额
+  assert.equal(validateWithdraw(50, 100, '').ok, false); // 无地址
 });
 
 test('wallet-panel: buyInCheck blocks an unaffordable buy-in with a clear message', () => {
@@ -131,7 +131,7 @@ test('wallet-panel: buyInCheck blocks an unaffordable buy-in with a clear messag
 });
 
 test('network-lobby: seat range validation is per-variant; meta carries variant + hi-lo', () => {
-  // Draw caps at 6 seats — 7 is invalid.
+  // Draw 变体上限为 6 个座位——7 个无效。
   const draw7 = validateNetworkTable({
     name: 'd', variant: 'draw', smallBlind: 1, bigBlind: 2, startingStack: 100, maxSeats: 7,
   });
@@ -149,7 +149,7 @@ test('network-lobby: seat range validation is per-variant; meta carries variant 
   assert.equal(meta.variant, 'omaha');
   assert.equal(meta.hiLo, true);
 
-  // hi-lo only meaningful for omaha — forced false elsewhere.
+  // hi-lo 仅对 omaha 有意义——在其他情况下强制为 false。
   const hm = metaFromNetworkForm({
     name: 'h', variant: 'holdem', hiLo: true, smallBlind: 1, bigBlind: 2, startingStack: 100, maxSeats: 2,
   });

@@ -136,10 +136,10 @@ test('determinism: replay yields byte-identical stateHash (P2)', () => {
   assert.equal(h1.length, 64);
 });
 
-// Omaha-8 hi-lo (REQ-FSM-007). Deal order (button-first, 4 rounds):
-//   seat0 = As Js Kd Qd  → high: A-K-Q-J-4 SPADE FLUSH (As Js | 4s Ks Qs); no qualifying low.
-//   seat1 = Ah 5h 6c 7d  → low: A-2-3-4-5 WHEEL (Ah 5h | 2c 3d 4s); high: 5-high straight.
-//   board = 2c 3d 4s Ks Qs.  seat0 scoops HIGH (flush > straight); seat1 wins the LOW.
+// Omaha-8 hi-lo（REQ-FSM-007）。发牌顺序（从庄家开始，4 轮）:
+//   seat0 = As Js Kd Qd  → 高牌:A-K-Q-J-4 黑桃同花(As Js | 4s Ks Qs);无合格低牌。
+//   seat1 = Ah 5h 6c 7d  → 低牌:A-2-3-4-5 轮子(Ah 5h | 2c 3d 4s);高牌:5 高顺子。
+//   公共牌 = 2c 3d 4s Ks Qs。 seat0 通吃高牌池(同花 > 顺子);seat1 赢得低牌池。
 function hiLoDeck(): Card[] {
   const s0 = ['As', 'Js', 'Kd', 'Qd'].map(parseCard);
   const s1 = ['Ah', '5h', '6c', '7d'].map(parseCard);
@@ -173,7 +173,7 @@ test('Omaha-8 hi-lo SPLITS the pot: high to the flush, low to the wheel (REQ-FSM
   let s = m.init(hiLo, seats);
   for (const a of PLAY_TO_SHOWDOWN) s = m.apply(s, a);
   assert.equal(s.handComplete, true);
-  // pot = 4; split → high half 2 (seat0 flush), low half 2 (seat1 wheel low)
+  // pot = 4；对半分 → 高牌半池 2(seat0 同花),低牌半池 2(seat1 轮子低牌)
   const byseat = new Map(s.payouts.map((p) => [p.seat, p.amount]));
   assert.equal(byseat.get(0), 2, 'seat0 takes the high half (flush)');
   assert.equal(byseat.get(1), 2, 'seat1 takes the low half (wheel)');
@@ -181,8 +181,8 @@ test('Omaha-8 hi-lo SPLITS the pot: high to the flush, low to the wheel (REQ-FSM
 
 test('Omaha-8 with hiLo OFF: the high hand scoops the whole pot', () => {
   const m = createOmaha({ deck: hiLoDeck() });
-  let s = m.init(PLO, seats); // hiLo false
+  let s = m.init(PLO, seats); // hiLo 为 false
   for (const a of PLAY_TO_SHOWDOWN) s = m.apply(s, a);
   assert.equal(s.handComplete, true);
-  assert.deepEqual([...s.payouts], [{ seat: 0, amount: 4 }]); // flush scoops
+  assert.deepEqual([...s.payouts], [{ seat: 0, amount: 4 }]); // 同花通吃
 });

@@ -21,7 +21,7 @@ test('readBatch partitions valid records from quarantined ones (no silent loss)'
     { kind: 'table', id: 't1', payload: {} },
     { kind: 'player', id: 'p0', payload: { seat: 0 } },
     'not even an object',
-    { kind: 'card-lineage', id: '', payload: {} }, // empty id → quarantine
+    { kind: 'card-lineage', id: '', payload: {} }, // 空 id → 隔离
   ]);
   assert.equal(records.length, 2);
   assert.equal(quarantined.length, 2, 'every bad record is accounted for, none lost');

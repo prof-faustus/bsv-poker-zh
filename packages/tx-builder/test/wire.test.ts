@@ -39,26 +39,26 @@ test('real BSV wire serialization + txid (double-SHA256, displayed big-endian)',
   assert.ok(wire.length > 0);
   const id = txidWire(tx);
   assert.equal(id.length, 64);
-  assert.equal(id, txidWire(tx)); // deterministic
+  assert.equal(id, txidWire(tx)); // 确定性
 });
 
 test('a spend signed over the BIP-143 sighash validates INSIDE the interpreter (real sighash)', () => {
   const k = genKeyPair();
   const fundedValue = 200;
-  const prevLocking = buildFold(BIND, k.pubCompressed).locking; // the output being spent
+  const prevLocking = buildFold(BIND, k.pubCompressed).locking; // 正在被花费的输出
   const spend: Tx = {
     version: 1,
     inputs: [{ prevTxid: 'cd'.repeat(32), vout: 0, sequence: 0xffffffff }],
     outputs: [buildFold(BIND, genKeyPair().pubCompressed)],
     nLockTime: 0,
   };
-  // BIP-143 sighash for input 0 spending the funded output
+  // 输入 0 花费已注资输出的 BIP-143 sighash
   const msg = sighashMessage(spend, 0, prevLocking, fundedValue);
   const sig = signPreimage(msg, k.priv);
-  // OP_CHECKSIG verifies ECDSA over sha256(msg) = double-SHA256(preimage) = the real sighash
+  // OP_CHECKSIG 对 sha256(msg) = double-SHA256(preimage) = 真实的 sighash 验证 ECDSA
   assert.equal(evaluate(foldUnlocking(sig), prevLocking, { sighashPreimage: msg }).ok, true);
 
-  // tampering an output changes hashOutputs → different sighash → signature no longer valid
+  // 篡改某个输出会改变 hashOutputs → 不同的 sighash → 签名不再有效
   const tampered: Tx = { ...spend, outputs: [buildFunding(BIND, [k.pubCompressed], 999)] };
   const msg2 = sighashMessage(tampered, 0, prevLocking, fundedValue);
   assert.equal(evaluate(foldUnlocking(sig), prevLocking, { sighashPreimage: msg2 }).ok, false);
@@ -74,7 +74,7 @@ test('BIP-143 preimage is deterministic and binds the spent value + scriptCode',
     nLockTime: 500,
   };
   assert.deepEqual([...bip143Preimage(tx, 0, sc, 100)], [...bip143Preimage(tx, 0, sc, 100)]);
-  assert.notDeepEqual([...bip143Preimage(tx, 0, sc, 100)], [...bip143Preimage(tx, 0, sc, 101)]); // value bound
+  assert.notDeepEqual([...bip143Preimage(tx, 0, sc, 100)], [...bip143Preimage(tx, 0, sc, 101)]); // 绑定了 value
 });
 
 test('funding 2-of-2 spend over the BIP-143 sighash validates', () => {

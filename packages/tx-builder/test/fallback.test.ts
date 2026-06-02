@@ -28,7 +28,7 @@ test('pre-signed timeout-refund validates INSIDE the interpreter (N-of-N funding
 
   const pre = presignFallbackGraph(BIND, funding, contributors, keys.map((k) => (_i, msg) => signPreimage(msg, k.priv)), { fee: 10 });
 
-  // The pre-signed refund satisfies the N-of-N CHECKMULTISIG inside the real interpreter.
+  // 预签名的退款在真实解释器内部满足 N-of-N CHECKMULTISIG。
   assert.equal(evaluate(pre.scriptSig, lock, { sighashPreimage: pre.sighash }).ok, true);
 });
 
@@ -37,7 +37,7 @@ test('refund outputs conserve value (sum == pot − fee) and return each stake p
   const contributors: Contributor[] = keys.map((k, i) => ({ pub: k.pubCompressed, amount: [100, 200, 300][i]! }));
   const outs = refundOutputs(BIND, contributors, 10);
   assert.equal(outs.reduce((s, o) => s + o.satoshis, 0), 590, 'outputs sum to pot − fee');
-  // proportional: tail get floor(amount/total*payable); first absorbs remainder
+  // 按比例：尾部各项得到 floor(amount/total*payable)；首项吸收余数
   assert.equal(outs[1]!.satoshis, Math.floor((200 / 600) * 590));
   assert.equal(outs[2]!.satoshis, Math.floor((300 / 600) * 590));
 });
@@ -58,7 +58,7 @@ test('tampering a pre-signed refund output breaks the signatures (interpreter re
   const funding: FundingRef = { txid: 'ef'.repeat(32), vout: 0, value: 500, scriptCode: lock };
   const pre = presignFallbackGraph(BIND, funding, contributors, keys.map((k) => (_i, msg) => signPreimage(msg, k.priv)), { fee: 2 });
 
-  // Re-sighash a tx with a different payout → the pre-signed sigs no longer verify.
+  // 对一笔有不同支付的交易重新计算 sighash → 预签名的签名不再通过验证。
   const tampered = buildTimeoutRefund(BIND, funding, [{ ...contributors[0]!, amount: 9999 }, contributors[1]!], { fee: 2 });
   const badMsg = sighashMessage(tampered, 0, lock, funding.value);
   assert.equal(evaluate(pre.scriptSig, lock, { sighashPreimage: badMsg }).ok, false);

@@ -14,6 +14,6 @@ test('Blackjack is RESERVED as a planned game with its variant profile (REQ-APP-
 test('Blackjack is NOT a playable variant and cannot be instantiated (fail-closed, P7/P8)', () => {
   assert.ok(!(SUPPORTED_VARIANTS as readonly string[]).includes('blackjack'), 'not in the playable set');
   assert.throws(() => createPlannedGame('blackjack'), /not yet playable/);
-  // The poker factory also refuses it — no silent fallback to a poker model (core D7).
+  // 扑克工厂也会拒绝它——不会静默回退到某个扑克模型（core D7）。
   assert.throws(() => createGameModule('blackjack' as never, []), /no module for variant/);
 });

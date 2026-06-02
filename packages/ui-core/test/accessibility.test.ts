@@ -5,7 +5,7 @@ import { accessibleCardLabel, accessibleSeatLabel, accessibleActionLabel } from 
 test('card labels are colour-independent rank+suit words (REQ-APP-054)', () => {
   assert.equal(accessibleCardLabel(0), 'Two of clubs'); // rank 0, suit 0
   assert.equal(accessibleCardLabel(51), 'Ace of spades'); // rank 12, suit 3
-  // No colour words anywhere across the whole deck.
+  // 整副牌中任何地方都不出现颜色词。
   for (let c = 0; c < 52; c++) {
     const label = accessibleCardLabel(c).toLowerCase();
     assert.ok(!/\b(red|black)\b/.test(label), `card ${c} label leaks colour: ${label}`);
@@ -13,7 +13,7 @@ test('card labels are colour-independent rank+suit words (REQ-APP-054)', () => {
 });
 
 test('diamonds and hearts are distinguishable by name, not colour (colour-blind safe)', () => {
-  // 4 of diamonds vs 4 of hearts: same rank, would be same colour family on a screen.
+  // 方块 4 对比红桃 4：点数相同，在屏幕上会属于同一颜色族。
   const diamonds = accessibleCardLabel(2 * 4 + 1); // rank 2, suit 1
   const hearts = accessibleCardLabel(2 * 4 + 2); // rank 2, suit 2
   assert.notEqual(diamonds, hearts);

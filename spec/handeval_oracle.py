@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
 """
-Reference evaluator used ONLY to GENERATE verified test vectors for spec §19.D.
-Canonical spec encoding: card_index = rank*4 + suit, rank 0..12 (2=0..A=12),
-suit 0..3 (c=0,d=1,h=2,s=3). Internally we use rank values 2..14 (A=14) for
-comparison and map the wheel (A-2-3-4-5) to straight-high 5.
+参考评估器，仅用于为 spec §19.D 生成经过验证的测试向量。
+规范编码：card_index = rank*4 + suit，rank 0..12（2=0..A=12），
+suit 0..3（c=0,d=1,h=2,s=3）。内部使用 rank 值 2..14（A=14）进行
+比较，并将 wheel（A-2-3-4-5）映射为顺子高牌 5。
 
-This file is the oracle: every printed vector is computed, not asserted.
+本文件即神谕/参考实现：每个打印出的向量都是计算得来，而非断言。
 """
 from itertools import combinations
 
-RANKS = "23456789TJQKA"          # index 0..12 -> char
-SUITS = "cdhs"                    # index 0..3 -> char
-# internal comparison rank: 2..14 (A=14)
+RANKS = "23456789TJQKA"          # index 0..12 -> 字符
+SUITS = "cdhs"                    # index 0..3 -> 字符
+# 内部比较用 rank：2..14（A=14）
 def idx_rank(i): return i // 4
 def idx_suit(i): return i % 4
 def card_str(i): return RANKS[idx_rank(i)] + SUITS[idx_suit(i)]
 def parse(s):    # "As" -> index
     r = RANKS.index(s[0].upper()); su = SUITS.index(s[1].lower()); return r*4+su
-def vrank(i):    # internal 2..14
+def vrank(i):    # 内部 2..14
     return idx_rank(i) + 2
 
 CAT = {8:"straight flush",7:"four of a kind",6:"full house",5:"flush",
        4:"straight",3:"three of a kind",2:"two pair",1:"one pair",0:"high card"}
 
 def eval5_high(cards):
-    """cards: list of 5 indices. Returns comparable (cat, tiebreak-tuple)."""
+    """cards：5 个 index 的列表。返回可比较的 (cat, tiebreak-tuple)。"""
     vs = sorted((vrank(c) for c in cards), reverse=True)
     suits = [idx_suit(c) for c in cards]
     is_flush = len(set(suits)) == 1
-    # straight detection (with wheel)
+    # 顺子检测（含 wheel）
     uniq = sorted(set(vs), reverse=True)
     is_straight = False; straight_high = None
     if len(uniq) == 5:
@@ -36,10 +36,10 @@ def eval5_high(cards):
             is_straight = True; straight_high = uniq[0]
         elif uniq == [14,5,4,3,2]:        # wheel
             is_straight = True; straight_high = 5
-    # counts
+    # 计数
     from collections import Counter
     cnt = Counter(vs)
-    # order ranks by (count desc, rank desc)
+    # 按 (count 降序, rank 降序) 对 rank 排序
     ordered = sorted(cnt.items(), key=lambda kv:(kv[1],kv[0]), reverse=True)
     counts = [c for _,c in ordered]
     rseq   = [r for r,_ in ordered]
@@ -56,14 +56,14 @@ def eval5_high(cards):
     if counts == [3,1,1]:
         return (3,tuple(rseq))
     if counts == [2,2,1]:
-        # rseq already: high pair, low pair, kicker
+        # rseq 已经是：高对、低对、踢脚牌
         return (2,tuple(rseq))
     if counts == [2,1,1,1]:
         return (1,tuple(rseq))
     return (0,tuple(vs))
 
 def best_high(cards):
-    """best 5-card high hand from >=5 cards (Hold'em/Stud)."""
+    """从 >=5 张牌中选出最佳的 5 张高牌（Hold'em/Stud）。"""
     best=None; bestcards=None
     for combo in combinations(cards,5):
         v=eval5_high(list(combo))
@@ -72,7 +72,7 @@ def best_high(cards):
     return best, bestcards
 
 def best_omaha(hole, board):
-    """exactly 2 of 4 hole + exactly 3 of 5 board."""
+    """恰好 4 张底牌中的 2 张 + 恰好 5 张公共牌中的 3 张。"""
     best=None; bestcards=None
     for h in combinations(hole,2):
         for b in combinations(board,3):
@@ -82,31 +82,31 @@ def best_omaha(hole, board):
                 best=v; bestcards=combo
     return best, bestcards
 
-# ---- ace-to-five low (Razz). Aces low; straights/flushes do NOT count.
-# Best low = lowest five DISTINCT ranks; pairs penalised. Lower is better.
+# ---- A-to-five 低牌（Razz）。A 当作小牌；顺子/同花不计入。
+# 最佳低牌 = 最小的五个互不相同的 rank；对子受罚。越小越好。
 def low_rank_value(i):
-    r = idx_rank(i)             # 0..12 with 2=0..A=12
+    r = idx_rank(i)             # 0..12，其中 2=0..A=12
     return 1 if r==12 else r+2  # A->1, 2->2 ... K->13
 def eval5_low(cards):
-    """comparable where SMALLER is better; returns sorted-desc tuple of the
-    five low values, but pairs make the hand worse. Standard ace-to-five:
-    rank the 5 cards by their low values high-to-low; fewer/no pairs win;
-    compare as a tuple (count-pattern then values)."""
+    """可比较，越小越好；返回这五个低牌值的降序排序元组，
+    但对子会使这手牌变差。标准 A-to-five：
+    按低牌值从高到低对这 5 张牌排序；对子越少/没有对子越好；
+    以元组形式比较（先比 count-pattern，再比 values）。"""
     from collections import Counter
     vals=[low_rank_value(c) for c in cards]
     cnt=Counter(vals)
-    # ace-to-five: a hand is compared by its highest card, then next, etc.,
-    # with any pair making that rank effectively a 'pair' that loses to no-pair.
-    # Standard implementation: sort the multiset descending; a hand with a pair
-    # compares worse than the same top cards without a pair. We encode this by
-    # (number_of_pairs_or_more, sorted-desc values).
-    pair_penalty = sum(c-1 for c in cnt.values())   # 0 if all distinct
+    # A-to-five：一手牌先比最高的牌，再比次高，依此类推，
+    # 任何对子都会让该 rank 实际成为一个会输给无对子的 'pair'。
+    # 标准实现：将多重集降序排序；有对子的一手牌
+    # 比同样顶牌但无对子的一手牌更差。我们以
+    # (对子或更多的数量, 降序排序的 values) 来编码这一点。
+    pair_penalty = sum(c-1 for c in cnt.values())   # 全部互不相同时为 0
     return (pair_penalty, tuple(sorted(vals, reverse=True)))
 def best_low(cards):
     best=None; bestcards=None
     for combo in combinations(cards,5):
         v=eval5_low(list(combo))
-        if best is None or v<best:    # lower is better
+        if best is None or v<best:    # 越小越好
             best=v; bestcards=combo
     return best, bestcards
 
@@ -154,7 +154,7 @@ print("  two pair kicker 5 > kicker 4:", hi['two_pair_hi']>hi['two_pair_lo'])
 print("  pair A-kicker > pair K-kicker:", hi['pair_kick_A']>hi['pair_kick_K'])
 print("  broadway > wheel:", hi['broadway']>hi['wheel'])
 
-# transitivity spot check
+# 传递性抽查
 import random
 random.seed(1)
 deck=list(range(52))
@@ -166,11 +166,11 @@ for _ in range(20000):
 print("  transitivity (20000 random triples):", trans_ok)
 
 print("\n=== OMAHA 2+3 CONSTRAINT (proves generic best-of-7 is WRONG for Omaha) ===")
-board=[parse(x) for x in "As Ks Qs 2s 7d".split()]   # four spades on board
-hole =[parse(x) for x in "Js 9h 4c 3d".split()]      # exactly one spade in hand
+board=[parse(x) for x in "As Ks Qs 2s 7d".split()]   # 公共牌上有四张黑桃
+hole =[parse(x) for x in "Js 9h 4c 3d".split()]      # 手牌中恰好一张黑桃
 allc = board+hole
-vg,gc = best_high(allc)             # generic best-of-7 (Hold'em-style) -- WRONG for Omaha
-vo,oc = best_omaha(hole,board)      # correct Omaha
+vg,gc = best_high(allc)             # 通用的七选五（Hold'em 风格）—— 对 Omaha 是错误的
+vo,oc = best_omaha(hole,board)      # 正确的 Omaha
 print(f"  board={fmt(board)}  hole={fmt(hole)}")
 print(f"  generic best-of-7 (Hold'em) : {CAT[vg[0]]:15s} tiebreak={vg[1]}  using {fmt(gc)}")
 print(f"  correct Omaha (exactly 2+3) : {CAT[vo[0]]:15s} tiebreak={vo[1]}  using {fmt(oc)}")

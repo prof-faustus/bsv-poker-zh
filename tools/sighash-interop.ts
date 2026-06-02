@@ -1,11 +1,11 @@
 /**
- * Sighash interop check (core §6.8) — proves the platform's BIP-143 (FORKID) sighash matches
- * **bitcoinx** (the library the embedded BSV node validates with) byte-for-byte. If they match,
- * a platform-signed spend is accepted by the node: the on-chain last-mile is closed.
+ * Sighash 互操作检查（core §6.8）—— 证明平台的 BIP-143 (FORKID) sighash 与
+ * **bitcoinx**（嵌入式 BSV 节点用于校验的库）逐字节匹配。如果两者匹配，
+ * 平台签名的花费就会被节点接受：链上的最后一公里就此打通。
  *
- * The platform builds a tx, computes its sighash digest = double-SHA256(preimage) =
- * hash256(bip143Preimage); the Python reference computes bitcoinx's signature_hash for the same
- * tx; we assert equality across several txs (varying value, sequence, locktime, multi-IO).
+ * 平台构建一笔交易，计算其 sighash 摘要 = double-SHA256(preimage) =
+ * hash256(bip143Preimage)；Python 参考实现为同一笔交易计算 bitcoinx 的 signature_hash；
+ * 我们对若干交易断言相等（变化的 value、sequence、locktime、多输入输出）。
  */
 
 import { spawnSync } from 'node:child_process';
@@ -39,7 +39,7 @@ function bitcoinxSighash(tx: Tx, index: number, scriptCode: Script, value: numbe
 }
 
 function platformSighash(tx: Tx, index: number, scriptCode: Script, value: number): string {
-  // double-SHA256(preimage) = the digest OP_CHECKSIG/ECDSA actually signs (see wire.ts).
+  // double-SHA256(preimage) = OP_CHECKSIG/ECDSA 实际签名的摘要（参见 wire.ts）。
   return bytesToHex(hash256(bip143Preimage(tx, index, scriptCode, value)));
 }
 

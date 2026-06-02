@@ -1,7 +1,7 @@
 /**
- * Offline practice — a variant-generic universal bot + a full-hand driver so a single player can
- * practice ANY of the five variants vs bots (not just Hold'em). Browser-safe; deterministic
- * (injected deck). The engine enforces legality; the bot only ever picks among legal actions.
+ * 离线练习——一个对各变体通用的 universal bot + 一个完整牌局驱动器，使单个玩家可以
+ * 对战 bot 练习五种变体中的任意一种（不只是德州扑克）。浏览器安全；确定性的（注入牌组）。
+ * 引擎强制执行合法性；bot 永远只在合法动作中进行选择。
  */
 
 import {
@@ -14,12 +14,12 @@ import {
 } from '@bsv-poker/protocol-types';
 import { createGameModule } from './game-registry.ts';
 
-/** A simple, always-legal bot: check → stand-pat (draw) → call → min-bet (e.g. bring-in) → fold. */
+/** 一个简单、始终合法的 bot：check → stand-pat（draw）→ call → min-bet（如 bring-in）→ fold。 */
 export function universalBot(legal: LegalActions, seat: number): Action {
   if (legal.check) return { kind: 'check', seat, amount: 0 };
-  if (legal.draw) return { kind: 'stand', seat, amount: 0 }; // draw phase: keep the hand
+  if (legal.draw) return { kind: 'stand', seat, amount: 0 }; // 抽牌阶段：保留当前手牌
   if (legal.call) return { kind: 'call', seat, amount: legal.call.amount };
-  if (legal.bet) return { kind: 'bet', seat, amount: legal.bet.min }; // open / bring-in
+  if (legal.bet) return { kind: 'bet', seat, amount: legal.bet.min }; // 开注 / bring-in
   return { kind: 'fold', seat, amount: 0 };
 }
 
@@ -28,7 +28,7 @@ export interface OfflineSeatInit {
   readonly stack: number;
 }
 
-/** Play one full offline hand of `variant` with bots; returns the settled state. */
+/** 与 bot 一起进行一整手 `variant` 的离线牌局；返回结算后的状态。 */
 export function playOfflineHand(
   variant: Variant,
   ruleset: Ruleset,
@@ -38,9 +38,9 @@ export function playOfflineHand(
 ): GameState {
   const m = createGameModule(variant, deck);
   let state = m.init(ruleset, seats.map((s) => ({ seat: s.seat, stack: s.stack })));
-  // Bounded loop (Power-of-Ten): a hand has a finite number of actionable transitions.
+  // 有界循环（Power-of-Ten）：一手牌的可行动转换数量是有限的。
   for (let guard = 0; guard < 5000 && !state.handComplete; guard++) {
-    // betting turn, else a non-betting decision turn (e.g. the Draw discard, drawToAct)
+    // 下注轮，否则是非下注的决策轮（如抽牌弃牌，drawToAct）
     const toAct = state.betting.toAct ?? state.drawToAct ?? null;
     if (toAct === null) break;
     state = m.apply(state, strategy(m.getLegalActions(state, toAct), toAct, state));
@@ -48,7 +48,7 @@ export function playOfflineHand(
   return state;
 }
 
-/** A default ruleset for a variant for offline practice (blinds vs ante+bring-in per variant). */
+/** 用于离线练习的某变体默认规则集（按变体使用 blinds 或 ante+bring-in）。 */
 export function offlineRuleset(variant: Variant, seats: number): Ruleset {
   const bringInVariant = variant === 'stud' || variant === 'razz';
   return {

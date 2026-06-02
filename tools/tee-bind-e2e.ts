@@ -1,9 +1,9 @@
 /**
- * TEE binding E2E (REQ-APP-230/231/240) — proves the platform's revocation/audit track runs against
- * the REAL cloud-TEE `revocable-nft-tee` implementation: attestation backends are enumerated, and a
- * revocable token's full lifecycle (mint → member access → REVOKE → access denied → content key
- * burned) executes through the real enclave/CVM-backed driver. This is the TEE integration point the
- * platform uses to gate + revoke access to sealed content, not a conformant fake.
+ * TEE 绑定 E2E（REQ-APP-230/231/240）—— 证明平台的撤销/审计链路是针对
+ * 真实的 cloud-TEE `revocable-nft-tee` 实现运行的：枚举证明（attestation）后端，并且一个
+ * 可撤销令牌的完整生命周期（铸造 → 成员访问 → REVOKE → 拒绝访问 → 内容密钥
+ * 销毁）通过真实的 enclave/CVM 驱动执行。这是平台用来对密封内容
+ * 进行访问门禁 + 撤销的 TEE 集成点，而非一致性 fake。
  */
 
 import assert from 'node:assert/strict';

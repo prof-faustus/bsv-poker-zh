@@ -1,8 +1,8 @@
 /**
- * Adversarial / fault-injection suite (core §14.6, REQ-TEST-006). Each case maps to a REQ and a
- * deterministic expected outcome: fail-closed, recover, or default. Engine/interpreter-level
- * cases run here; network-level cases (mempool eviction, conflicting broadcast) are exercised
- * against the Go services in the VM self-test.
+ * 对抗性 / 故障注入测试套件（core §14.6，REQ-TEST-006）。每个用例都对应一个 REQ 和一个
+ * 确定性的预期结果：失败即关闭、恢复，或采用默认动作。引擎/解释器级别的
+ * 用例在此运行；网络级别的用例（mempool 驱逐、冲突 broadcast）则在 VM 自检中
+ * 针对 Go 服务进行验证。
  */
 
 import { test } from 'node:test';
@@ -72,8 +72,8 @@ test('out-of-turn action is rejected (fail-closed)', () => {
 test('under-min raise is rejected inside the engine (REQ-POKER-008)', () => {
   const m = createHoldem({ deck: deck() });
   let s = m.init(NL, seats);
-  s = m.apply(s, { kind: 'call', seat: 0, amount: 1 }); // complete SB; BB to act, betToCall met
-  // BB tries to "raise" to 3 — below the min raise-to of 4 (bet 2 + bb 2)
+  s = m.apply(s, { kind: 'call', seat: 0, amount: 1 }); // 补齐 SB；轮到 BB 行动，betToCall 已满足
+  // BB 试图“加注”到 3 —— 低于最小加注到 4（下注 2 + bb 2）
   assert.throws(() => m.apply(s, { kind: 'raise', seat: 1, amount: 3 }), /illegal raise/);
 });
 
@@ -81,14 +81,14 @@ test('stale/duplicate action for a seat not on the clock is rejected', () => {
   const m = createHoldem({ deck: deck() });
   let s = m.init(NL, seats);
   s = m.apply(s, { kind: 'call', seat: 0, amount: 1 });
-  // seat 0 already acted this turn; it is seat 1's turn
+  // seat 0 本轮已经行动过；现在轮到 seat 1
   assert.throws(() => m.apply(s, { kind: 'check', seat: 0, amount: 0 }), /turn/);
 });
 
 test('timeout-default applied keeps the hand progressing (no freeze, P4)', () => {
   const m = createHoldem({ deck: deck() });
   let s = m.init(NL, seats);
-  // SB on the clock facing the BB → default is fold; applying it ends the hand uncontested
+  // SB 处于计时中且面对 BB → 默认动作为弃牌；执行后该手牌无争议地结束
   const t = m.isTimeoutEligible(s, 0)!;
   assert.equal(t.defaultAction.kind, 'fold');
   s = m.apply(s, t.defaultAction);
@@ -100,7 +100,7 @@ test('withheld/incorrect entropy reveal is detected by the commitment (recovery 
   const secret = Uint8Array.from([7, 7, 7, 7]);
   const commitment = await ct.entropyCommit(secret);
   assert.equal(await ct.entropyReveal(commitment, secret), true);
-  assert.equal(await ct.entropyReveal(commitment, Uint8Array.from([0])), false); // withheld/wrong
+  assert.equal(await ct.entropyReveal(commitment, Uint8Array.from([0])), false); // 隐瞒/错误
 });
 
 test('card-substitution at reveal fails INSIDE the interpreter (REQ-CRYPTO-005)', () => {
@@ -109,7 +109,7 @@ test('card-substitution at reveal fails INSIDE the interpreter (REQ-CRYPTO-005)'
   const blind = Uint8Array.from([5, 5, 5, 5]);
   const cmt = revealCommitment(20, blind);
   const locking = revealOrTimeoutLocking(BIND, cmt, reveal.pubCompressed, refund.pubCompressed);
-  // attacker substitutes a different face (21) — opening fails inside OP_EQUALVERIFY
+  // 攻击者替换为另一张牌面（21）—— 在 OP_EQUALVERIFY 内部打开失败
   const bad = revealUnlocking(signPreimage(SIGHASH, reveal.priv), revealPreimage(21, blind));
   assert.equal(evaluate(bad, locking, ctx).ok, false);
 });
@@ -124,8 +124,8 @@ test('fair-play violation (mismatched key) forfeits — fails INSIDE the interpr
 });
 
 test('replayed branch against a different state fails the binding (anti-replay, THR-PROTO-1)', () => {
-  // A fold spend valid under one binding must not validate when the sighash (which commits to
-  // the tx/outputs incl. the bound locking script) differs — signature is over the wrong message.
+  // 在某一绑定下有效的弃牌花费，当 sighash（它承诺了
+  // 包含被绑定锁定脚本在内的 tx/输出）不同时必须验证不通过 —— 签名所针对的是错误的消息。
   const k = genKeyPair();
   const locking = foldLocking(BIND, k.pubCompressed);
   const sig = signPreimage(SIGHASH, k.priv);
@@ -149,5 +149,5 @@ test('all-in side-pot conservation across a 3-handed showdown (REQ-POKER-011)', 
   s = m.apply(s, { kind: 'raise', seat: 1, amount: 60 });
   s = m.apply(s, { kind: 'call', seat: 2, amount: 58 });
   const totalChips = s.seats.reduce((a, x) => a + x.stack, 0);
-  assert.equal(totalChips, 200); // 40+60+100 conserved end-to-end
+  assert.equal(totalChips, 200); // 40+60+100 端到端守恒
 });

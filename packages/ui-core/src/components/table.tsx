@@ -1,14 +1,14 @@
 /**
- * Table-screen presentational components (REQ-APP-052). All pure render of view-model props.
- * Explicit onClick/onChange handlers, NO <form> submit (REQ-UI-003). No business logic: the
- * ActionBar reads the legal-action descriptor from the engine and never computes legality —
- * the bet/raise slider bounds and quick-button amounts come from the pure bet-sizing view-model
- * which itself only clamps to the engine's legal range.
+ * 牌桌界面的展示型组件（REQ-APP-052）。全部为视图模型 props 的纯渲染。
+ * 显式的 onClick/onChange 处理器，不使用 <form> 提交（REQ-UI-003）。无业务逻辑：
+ * ActionBar 从引擎读取合法动作描述符，从不自行计算合法性——
+ * 下注/加注滑块的范围和快捷按钮金额来自纯下注尺度视图模型，
+ * 而该视图模型本身只会将值钳制到引擎的合法范围内。
  *
- * <PokerTable> is the centrepiece: a green felt oval with the pot + community board in the middle
- * and seats positioned around the ellipse (see seatPositions in the table-layout view-model). It
- * is responsive (percentage-positioned) and keyboard/AT accessible (the to-act seat is announced
- * via aria-current + aria-live; cards carry suit names and letters so nothing is colour-only).
+ * <PokerTable> 是核心：一张绿色绒面椭圆牌桌，中央放置底池和公共牌，
+ * 座位沿椭圆周围分布（参见 table-layout 视图模型中的 seatPositions）。它
+ * 是响应式的（按百分比定位），并且支持键盘/辅助技术无障碍访问（当前待行动座位通过
+ * aria-current + aria-live 播报；牌带有花色名称和字母，因此没有任何信息仅靠颜色传达）。
  */
 import React from 'react';
 import { PlayingCard, CardBack, CardChip, Banner, ChipStack } from './primitives.tsx';
@@ -23,7 +23,7 @@ import type {
 } from '../view-models/table.ts';
 
 export function MainnetBanner(props: { regtest: boolean }): React.JSX.Element {
-  // REQ-VM-007 / §A3.5 — unmissable. Phase-1 is always regtest play-money.
+  // REQ-VM-007 / §A3.5 —— 不容错过。Phase-1 始终是 regtest 游戏币。
   return (
     <Banner tone={props.regtest ? 'warn' : 'error'}>
       {props.regtest
@@ -72,7 +72,7 @@ export function PotDisplay(props: { pots: readonly PotVM[]; total: number }): Re
   );
 }
 
-/** Cards a seat shows: hero face-up, everyone else face-down backs (custody boundary). */
+/** 某个座位展示的牌：英雄（hero）正面朝上，其他人均为背面朝下的牌背（托管边界）。 */
 function SeatCards(props: { seat: SeatVM }): React.JSX.Element {
   const { seat } = props;
   const backs = Math.max(2, seat.holeCards.length || 2);
@@ -85,7 +85,7 @@ function SeatCards(props: { seat: SeatVM }): React.JSX.Element {
   );
 }
 
-/** One seat pod placed on the rail. Shows name, stack, button, to-act ring, state + cards. */
+/** 放置在牌桌边缘的单个座位区块。显示名称、筹码量、按钮、待行动光环、状态和牌。 */
 function SeatPod(props: {
   seat: SeatVM;
   label: string;
@@ -170,9 +170,9 @@ function SeatPod(props: {
 }
 
 /**
- * The realistic card table: a green felt oval on a dark backdrop, seats fanned around the rail,
- * pot + board in the centre. `seatLabel` overrides the per-seat name (opponent ids in networked
- * play). Hero is anchored bottom-centre.
+ * 拟真的牌桌：深色背景上的绿色绒面椭圆，座位呈扇形分布在牌桌边缘，
+ * 底池和公共牌位于中央。`seatLabel` 覆盖每个座位的名称（联网
+ * 对局中的对手 id）。英雄（hero）锚定在底部中央。
  */
 export function PokerTable(props: {
   vm: TableViewModel;
@@ -199,7 +199,7 @@ export function PokerTable(props: {
         padding: 8,
       }}
     >
-      {/* The felt oval + rail */}
+      {/* 绒面椭圆和牌桌边缘 */}
       <div
         style={{
           position: 'absolute',
@@ -211,7 +211,7 @@ export function PokerTable(props: {
             'inset 0 0 40px rgba(0,0,0,0.55), 0 0 0 3px #3a2412, 0 10px 30px rgba(0,0,0,0.6)',
         }}
       >
-        {/* Centre: pot above, community board below */}
+        {/* 中央：底池在上，公共牌在下 */}
         <div
           style={{
             position: 'absolute',
@@ -233,7 +233,7 @@ export function PokerTable(props: {
         </div>
       </div>
 
-      {/* Seat pods on the rail */}
+      {/* 牌桌边缘的座位区块 */}
       {vm.seats.map((s) => {
         const p = posBySeat.get(s.seat);
         if (!p) return null;
@@ -244,8 +244,8 @@ export function PokerTable(props: {
 }
 
 /**
- * Legacy flat seat list — kept for back-compat (and as a responsive fallback). The screens now
- * render <PokerTable>; this stays available so older call sites / tests don't break.
+ * 旧版的扁平座位列表——为向后兼容而保留（同时作为响应式回退方案）。各界面现在
+ * 渲染 <PokerTable>；保留此组件以免旧的调用点/测试失效。
  */
 export function SeatRing(props: {
   seats: readonly SeatVM[];
@@ -286,7 +286,7 @@ export function SeatRing(props: {
 }
 
 export function TimerBanner(props: { timer: TimerVM }): React.JSX.Element {
-  // Surfaces the consequence/default text (core §11.4) — never hidden.
+  // 展示后果/默认行为文本（core §11.4）——从不隐藏。
   return (
     <Banner tone="info">
       <span aria-live="polite">{props.timer.consequenceText}</span>
@@ -300,8 +300,8 @@ export interface ActionBarProps {
   readonly betAmount: number;
   readonly onBetAmountChange: (n: number) => void;
   readonly onAction: (choice: 'fold' | 'check' | 'call' | 'bet' | 'raise', amount: number) => void;
-  /** Current total pot, used only to label the pot-relative quick buttons (sizes still clamp to
-   * the engine's legal range — legality is NEVER computed in the UI). */
+  /** 当前底池总额，仅用于标注按底池比例的快捷按钮（金额仍会钳制到
+   * 引擎的合法范围内——合法性绝不在 UI 中计算）。 */
   readonly pot?: number;
 }
 
@@ -441,7 +441,7 @@ export function ActionBar(props: ActionBarProps): React.JSX.Element {
   );
 }
 
-/** Keep HandViewer export (used to render a single seat's cards) for back-compat. */
+/** 为向后兼容保留 HandViewer 导出（用于渲染单个座位的牌）。 */
 export function HandViewer(props: { seat: SeatVM }): React.JSX.Element {
   return <SeatCards seat={props.seat} />;
 }

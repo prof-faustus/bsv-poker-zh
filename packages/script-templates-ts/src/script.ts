@@ -1,10 +1,10 @@
 /**
- * Minimal BSV Script model + wire serialization (core §6.6). A Script is a sequence of items:
- * either an opcode (number) or a data push (Uint8Array). Serialization yields the exact wire
- * bytes so the build can MEASURE template sizes as reproducible vectors (REQ-TX-011, §19.C).
+ * 极简的 BSV Script 模型 + 线路协议序列化（core §6.6）。一段 Script 是一系列项的序列：
+ * 要么是操作码（number），要么是数据推送（Uint8Array）。序列化产生精确的线路协议
+ * 字节，以便构建过程能将模板大小作为可复现向量来 MEASURE（REQ-TX-011、§19.C）。
  *
- * Commitments are carried as pushdata in a live script (`<data> OP_DROP`), NEVER OP_RETURN
- * (core P11/§6.5, REQ-TX-010).
+ * 承诺以 pushdata 形式承载于一段活动脚本中（`<data> OP_DROP`），绝不使用 OP_RETURN
+ * （core P11/§6.5、REQ-TX-010）。
  */
 
 import { ByteWriter, bytesToHex } from '@bsv-poker/protocol-types';
@@ -13,7 +13,7 @@ import { OP, BANNED_OPCODES } from './opcodes.ts';
 export type ScriptItem = number | Uint8Array;
 export type Script = ScriptItem[];
 
-/** Encode a single data push with minimal pushdata opcodes. */
+/** 用最小化的 pushdata 操作码编码单次数据推送。 */
 export function pushData(w: ByteWriter, data: Uint8Array): void {
   const n = data.length;
   if (n < OP.OP_PUSHDATA1) {
@@ -28,7 +28,7 @@ export function pushData(w: ByteWriter, data: Uint8Array): void {
   for (const b of data) w.u8(b);
 }
 
-/** Serialize a Script to wire bytes. Throws if a banned opcode (OP_RETURN) appears. */
+/** 将一段 Script 序列化为线路协议字节。若出现被禁的操作码（OP_RETURN）则抛出异常。 */
 export function serializeScript(script: Script): Uint8Array {
   const w = new ByteWriter();
   for (const item of script) {
@@ -52,9 +52,9 @@ export function scriptHex(script: Script): string {
   return bytesToHex(serializeScript(script));
 }
 
-/** Does the serialized script contain the OP_RETURN byte (0x6a)? Used by the lint (rule 2). */
+/** 序列化后的脚本是否包含 OP_RETURN 字节（0x6a）？由 lint 使用（规则 2）。 */
 export function containsOpReturn(script: Script): boolean {
-  // Note: a 0x6a byte INSIDE a data push is data, not an opcode — but the ban is absolute and
-  // our builders never push 0x6a as an opcode; we check the opcode stream only.
+  // 注意：数据推送 INSIDE 的 0x6a 字节是数据，而非操作码——但该禁令是绝对的，
+  // 且我们的构建器从不将 0x6a 作为操作码推送；我们只检查操作码流。
   return script.some((item) => typeof item === 'number' && item === OP.OP_RETURN);
 }

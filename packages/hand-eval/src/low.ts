@@ -1,11 +1,11 @@
 /**
- * Ace-to-five LOW evaluation (Razz; hi-lo low later) — core §5.3.3, REQ-POKER-006.
- * Aces low; straights/flushes do NOT count; best low = lowest five DISTINCT ranks; pairs
- * penalised. LOWER is better. Ported faithfully from handeval_oracle.py (eval5_low/best_low).
+ * A-to-5 低牌评估（Razz；hi-lo 的低牌部分稍后处理）—— core §5.3.3, REQ-POKER-006。
+ * A 算作最小；顺子/同花不计入；最佳低牌 = 五个最小的不同点数；对子会被惩罚。
+ * 越小越好。忠实移植自 handeval_oracle.py（eval5_low/best_low）。
  *
- * Comparable = (pairPenalty, sorted-desc low values). Compared: pairPenalty first (fewer
- * pairs is better → smaller is better), then values descending lexicographically (smaller is
- * better). The wheel A-2-3-4-5 → (0, [5,4,3,2,1]) is the best possible.
+ * 可比较项 = (pairPenalty, 降序排列的低牌值)。比较时：先比 pairPenalty（对子越少
+ * 越好 → 越小越好），再按值降序的字典序比较（越小越好）。最小顺子
+ * A-2-3-4-5 → (0, [5,4,3,2,1]) 是可能的最佳低牌。
  */
 
 import { type Card, lowRankValue } from '@bsv-poker/protocol-types';
@@ -13,11 +13,11 @@ import { combinations } from './high.ts';
 
 export interface LowValue {
   readonly pairPenalty: number;
-  /** Low values sorted descending. */
+  /** 降序排列的低牌值。 */
   readonly values: readonly number[];
 }
 
-/** Returns -1, 0, +1 for a vs b where LOWER (better low) sorts as -1. */
+/** 对 a 与 b 返回 -1、0、+1，其中越小（更好的低牌）排为 -1。 */
 export function compareLow(a: LowValue, b: LowValue): -1 | 0 | 1 {
   if (a.pairPenalty !== b.pairPenalty) return a.pairPenalty < b.pairPenalty ? -1 : 1;
   const n = Math.max(a.values.length, b.values.length);
@@ -39,7 +39,7 @@ export function eval5Low(cards: readonly Card[]): LowValue {
   return { pairPenalty, values: [...vals].sort((a, b) => b - a) };
 }
 
-/** Best 5-card low from >=5 cards (Razz: best 5 of 7). */
+/** 从 >=5 张牌中选出最佳的 5 张低牌（Razz：7 张里选最佳 5 张）。 */
 export function bestLow(cards: readonly Card[]): { value: LowValue; cards: Card[] } {
   if (cards.length < 5) throw new RangeError(`bestLow needs >=5 cards`);
   let best: LowValue | null = null;
@@ -55,9 +55,9 @@ export function bestLow(cards: readonly Card[]): { value: LowValue; cards: Card[
 }
 
 /**
- * Omaha-8 qualifying low (eight-or-better) — core REQ-FSM-007, §5.3.3.
- * Qualifies only with five DISTINCT ranks each ≤ 8 (A counts as 1). Returns null if no
- * qualifying low exists. Uses exactly-2-hole + exactly-3-board, lowest qualifying low.
+ * 奥马哈-8 合格低牌（eight-or-better，八或更好）—— core REQ-FSM-007, §5.3.3。
+ * 仅当五个不同点数且每个 ≤ 8（A 算作 1）时才合格。若不存在合格低牌则返回 null。
+ * 使用恰 2 张底牌 + 恰 3 张公共牌，取最小的合格低牌。
  */
 export function bestOmaha8Low(
   hole: readonly Card[],
@@ -71,7 +71,7 @@ export function bestOmaha8Low(
       const v = eval5Low(combo);
       const distinct = new Set(v.values).size === 5;
       const allLeq8 = v.values.every((x) => x <= 8);
-      if (!distinct || !allLeq8) continue; // does not qualify
+      if (!distinct || !allLeq8) continue; // 不合格
       if (best === null || compareLow(v, best) < 0) {
         best = v;
         bestCards = combo;

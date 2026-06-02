@@ -1,11 +1,11 @@
 /**
- * Game-module FSM framework — core §7.1, REQ-FSM-001. A game module is a pure function of
- * its inputs: no I/O, no networking, no time reads, no randomness (P2 / REQ-ARCH-002).
- * Every actionable state enumerates its successors including the timeout-default (P4).
+ * 游戏模块状态机框架 —— core §7.1, REQ-FSM-001。一个游戏模块是其输入的纯函数：
+ * 无 I/O、无网络、不读取时间、无随机性（P2 / REQ-ARCH-002）。
+ * 每个可行动状态都会枚举其后继状态，包括超时默认动作（P4）。
  *
- * Note on the contract: core §7.1/§15.2 type getLegalActions as `Action[]`; this engine
- * returns the richer `LegalActions` descriptor (the canonical superset) and exposes
- * `enumerateActions` to produce the literal `Action[]` — a refinement, not a contradiction.
+ * 关于该契约的说明：core §7.1/§15.2 将 getLegalActions 类型定为 `Action[]`；本引擎
+ * 返回更丰富的 `LegalActions` 描述符（规范的超集），并暴露 `enumerateActions`
+ * 以生成字面的 `Action[]` —— 这是一种细化，而非矛盾。
  */
 
 import type {
@@ -17,7 +17,7 @@ import type {
   Variant,
 } from '@bsv-poker/protocol-types';
 
-/** What a decision/recovery timeout resolves to (core §6.4): the safe default move. */
+/** 决策/恢复超时所解析到的结果（core §6.4）：安全的默认动作。 */
 export interface TimeoutResolution {
   readonly seat: number;
   readonly defaultAction: Action;
@@ -28,7 +28,7 @@ export interface GameModule<S extends GameState = GameState> {
   init(ruleset: Ruleset, seats: SeatInit[]): S;
   getLegalActions(state: S, seat: number): LegalActions;
   apply(state: S, action: Action): S;
-  /** Timeout-eligibility for the seat on the clock; null if none is eligible at `now`. */
+  /** 处于计时中座位的超时资格；若在 `now` 时刻没有符合条件者则为 null。 */
   isTimeoutEligible(state: S, now: number): TimeoutResolution | null;
   isHandComplete(state: S): boolean;
   settle(state: S): Payouts;
@@ -40,7 +40,7 @@ export interface SeatInit {
   readonly stack: number;
 }
 
-/** Enumerate concrete legal actions for a seat (the literal core §7.1 `Action[]` contract). */
+/** 为某座位枚举具体的合法动作（字面的 core §7.1 `Action[]` 契约）。 */
 export function enumerateActions(legal: LegalActions, seat: number): Action[] {
   const out: Action[] = [];
   if (legal.fold) out.push({ kind: 'fold', seat, amount: 0 });
@@ -51,7 +51,7 @@ export function enumerateActions(legal: LegalActions, seat: number): Action[] {
   return out;
 }
 
-/** Replay an ordered action list from a fresh hand — the deterministic-core driver (P2). */
+/** 从一手新牌开始重放有序动作列表 —— 确定性内核驱动器（P2）。 */
 export function replay<S extends GameState>(
   module: GameModule<S>,
   ruleset: Ruleset,
