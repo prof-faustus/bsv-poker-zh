@@ -10,10 +10,10 @@ REQ-BUILD-004: planned (later phase)
 REQ-CRYPTO-001: traced -> [packages/crypto-mentalpoker/src/realct.ts] tests [packages/crypto-mentalpoker/test/realct.test.ts]
 REQ-CRYPTO-002: traced -> [packages/crypto-mentalpoker/src/realct.ts] tests [packages/adapters/test/conformance.test.ts]
 REQ-CRYPTO-003: traced -> [packages/crypto-mentalpoker/src/realct.ts] tests [packages/crypto-mentalpoker/test/realct.test.ts]
-REQ-CRYPTO-004: planned (later phase)
+REQ-CRYPTO-004: traced -> [packages/crypto-mentalpoker/src/realct.ts] tests [packages/crypto-mentalpoker/test/realct.test.ts]
 REQ-CRYPTO-005: traced -> [packages/script-templates-ts/src/templates.ts] tests [packages/sdk/test/adversarial.test.ts]
 REQ-CRYPTO-006: traced -> [packages/script-templates-ts/src/templates.ts] tests [packages/script-templates-ts/test/templates.test.ts]
-REQ-CRYPTO-007: planned (later phase)
+REQ-CRYPTO-007: traced -> [packages/script-templates-ts/src/templates.ts] tests [packages/script-templates-ts/test/shuffle-key.test.ts]
 REQ-CRYPTO-008: traced -> [packages/wallet-custody/src/custody.ts] tests [packages/wallet-custody/test/custody.test.ts]
 REQ-CRYPTO-009: traced -> [packages/script-templates-ts/src/templates.ts] tests [packages/script-templates-ts/test/templates.test.ts]
 REQ-CRYPTO-010: traced -> [packages/crypto-mentalpoker/src/realct.ts, packages/app-services/src/mp-shuffle.ts] tests [packages/crypto-mentalpoker/test/realct.test.ts]
@@ -84,7 +84,7 @@ REQ-TEST-003: traced -> [packages/script-templates-ts/src/interpreter.ts] tests 
 REQ-TEST-004: traced -> [packages/sdk/src/table.ts] tests [packages/sdk/test/table.test.ts, packages/sdk/test/adversarial.test.ts]
 REQ-TEST-005: traced -> [tools/reproduce.ts] tests [tools/reproduce.ts]
 REQ-TEST-006: traced -> [packages/sdk/test/adversarial.test.ts] tests [packages/sdk/test/adversarial.test.ts]
-REQ-TEST-007: planned (later phase)
+REQ-TEST-007: traced -> [tools/ci.ts, tools/traceability.ts] tests [tools/traceability.ts]
 REQ-TX-001: traced -> [packages/script-templates-ts/src/interpreter.ts] tests [packages/script-templates-ts/test/templates.test.ts]
 REQ-TX-002: traced -> [packages/tx-builder/src/txbuilder.ts] tests [packages/tx-builder/test/txbuilder.test.ts]
 REQ-TX-003: traced -> [packages/tx-builder/src/fallback.ts] tests [packages/tx-builder/test/fallback.test.ts]
@@ -106,7 +106,7 @@ REQ-UI-006: traced -> [packages/ui-core/src/view-models/signing.ts] tests [packa
 REQ-VM-001: traced -> [tools/selftest.ts] tests [tools/selftest.ts]
 REQ-VM-002: traced -> [packages/adapters/src/real-node.ts, tools/node-e2e.ts] tests [tools/node-e2e.ts]
 REQ-VM-003: planned (later phase)
-REQ-VM-004: planned (later phase)
+REQ-VM-004: traced -> [apps/client-desktop/src-tauri/src/main.rs, apps/client-desktop/src-tauri/tauri.conf.json] tests [apps/client-desktop/src-tauri/src/main.rs]
 REQ-VM-005: planned (later phase)
 REQ-VM-006: planned (later phase)
 REQ-VM-007: traced -> [packages/app-services/src/network-gate.ts] tests [packages/app-services/test/network-gate.test.ts]
