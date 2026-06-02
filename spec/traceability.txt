@@ -172,11 +172,11 @@ REQ-APP-111: traced -> [packages/engine/src/fsm.ts] tests [packages/sdk/test/adv
 REQ-APP-112: traced -> [packages/app-services/src/network-gate.ts] tests [packages/app-services/test/network-gate.test.ts]
 REQ-APP-113: planned (later phase)
 REQ-APP-114: planned (later phase)
-REQ-APP-120: planned (later phase)
+REQ-APP-120: traced -> [packages/app-services/src/observability.ts] tests [packages/app-services/test/observability.test.ts]
 REQ-APP-121: planned (later phase)
 REQ-APP-122: planned (later phase)
 REQ-APP-123: planned (later phase)
-REQ-APP-124: planned (later phase)
+REQ-APP-124: traced -> [packages/app-services/src/observability.ts] tests [packages/app-services/test/observability.test.ts]
 REQ-APP-130: planned (later phase)
 REQ-APP-131: planned (later phase)
 REQ-APP-132: planned (later phase)

@@ -51,13 +51,8 @@ export class Logger {
 
   log(level: LogLevel, msg: string, fields?: Record<string, unknown>): void {
     if (LEVEL_ORDER[level] < LEVEL_ORDER[this.min]) return;
-    this.sink.write({
-      ts: Date.now(),
-      level,
-      component: this.component,
-      msg,
-      fields: fields ? (redact(fields) as Record<string, unknown>) : undefined,
-    });
+    const base = { ts: Date.now(), level, component: this.component, msg };
+    this.sink.write(fields ? { ...base, fields: redact(fields) as Record<string, unknown> } : base);
   }
 
   debug(msg: string, fields?: Record<string, unknown>): void { this.log('debug', msg, fields); }
