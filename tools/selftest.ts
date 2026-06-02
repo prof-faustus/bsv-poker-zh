@@ -22,16 +22,15 @@ import assert from 'node:assert/strict';
 const ROOT = process.cwd();
 const children: ChildProcess[] = [];
 
-function goBuild(dir: string): void {
-  const r = spawnSync('go', ['build', './...'], { cwd: join(ROOT, dir), stdio: 'inherit' });
-  if (r.status !== 0) throw new Error(`go build failed in ${dir}`);
-}
+const isWin = process.platform === 'win32';
 
-function startService(dir: string, addr: string): ChildProcess {
-  const child = spawn('go', ['run', '.', '-addr', addr], {
-    cwd: join(ROOT, dir),
-    stdio: 'ignore',
-  });
+/** Build a standalone binary and run IT directly, so killing the child stops the server (no
+ *  orphaned `go run` server process / zombie — important per the host's no-zombie discipline). */
+function startService(dir: string, addr: string, bin: string): ChildProcess {
+  const exe = isWin ? `${bin}.exe` : bin;
+  const b = spawnSync('go', ['build', '-o', exe, '.'], { cwd: join(ROOT, dir), stdio: 'inherit' });
+  if (b.status !== 0) throw new Error(`go build -o failed in ${dir}`);
+  const child = spawn(join(ROOT, dir, exe), ['-addr', addr], { stdio: 'ignore' });
   children.push(child);
   return child;
 }
@@ -107,8 +106,8 @@ async function exerciseNetwork(): Promise<void> {
   const presence = await relay.listPresence();
   assert.ok(presence.length >= 2, 'both players present');
 
-  // Create a table; both will publish/ingest to it.
-  const tableId = 'selftest-table';
+  // Create a table; both will publish/ingest to it. Unique id per run (no cross-run collision).
+  const tableId = `selftest-table-${Date.now()}`;
   await relay.createTable(tableId, 'Self-test HU');
   assert.ok((await relay.listTables()).some((t) => t.id === tableId), 'table discoverable');
 
@@ -141,13 +140,9 @@ function cleanup(): void {
 
 async function main(): Promise<void> {
   try {
-    console.log('[selftest] building Go services…');
-    goBuild('apps/relay-go');
-    goBuild('apps/indexer-go');
-
-    console.log('[selftest] starting relay (:8091) and indexer (:8092)…');
-    startService('apps/relay-go', '127.0.0.1:8091');
-    startService('apps/indexer-go', '127.0.0.1:8092');
+    console.log('[selftest] building + starting Go services (relay :8091, indexer :8092)…');
+    startService('apps/relay-go', '127.0.0.1:8091', 'relay-go');
+    startService('apps/indexer-go', '127.0.0.1:8092', 'indexer-go');
     await waitHealthy('http://127.0.0.1:8091/healthz', 30000);
     await waitHealthy('http://127.0.0.1:8092/healthz', 30000);
     console.log('[selftest] relay + indexer healthy.');

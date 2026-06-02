@@ -7,7 +7,7 @@
  * client-reconstructed tx set (P2/P3).
  */
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import type { Action, LegalActions, Ruleset } from '@bsv-poker/protocol-types';
@@ -15,9 +15,14 @@ import { RelayClient, NetworkedTableClient } from '@bsv-poker/app-services';
 
 const ROOT = process.cwd();
 const children: ChildProcess[] = [];
+const isWin = process.platform === 'win32';
 
-function startService(dir: string, addr: string): void {
-  children.push(spawn('go', ['run', '.', '-addr', addr], { cwd: join(ROOT, dir), stdio: 'ignore' }));
+// Build a standalone binary and run IT directly so kill() stops the server (no orphaned zombie).
+function startService(dir: string, addr: string, bin: string): void {
+  const exe = isWin ? `${bin}.exe` : bin;
+  const b = spawnSync('go', ['build', '-o', exe, '.'], { cwd: join(ROOT, dir), stdio: 'inherit' });
+  if (b.status !== 0) throw new Error(`go build -o failed in ${dir}`);
+  children.push(spawn(join(ROOT, dir, exe), ['-addr', addr], { stdio: 'ignore' }));
 }
 async function waitHealthy(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -56,14 +61,14 @@ const passive = (legal: LegalActions, seat: number): Action => {
 
 async function main(): Promise<void> {
   console.log('[mp-e2e] starting relay (:8091) + indexer (:8092)…');
-  startService('apps/relay-go', '127.0.0.1:8091');
-  startService('apps/indexer-go', '127.0.0.1:8092');
+  startService('apps/relay-go', '127.0.0.1:8091', 'relay-go');
+  startService('apps/indexer-go', '127.0.0.1:8092', 'indexer-go');
   await waitHealthy('http://127.0.0.1:8091/healthz', 30000);
   await waitHealthy('http://127.0.0.1:8092/healthz', 30000);
 
   const relayA = new RelayClient('http://127.0.0.1:8091');
   const relayB = new RelayClient('http://127.0.0.1:8091');
-  const tableId = 'mp-table-1';
+  const tableId = `mp-table-${Date.now()}`;
   await relayA.createTable(tableId, 'Multiplayer HU');
   const seats = [
     { seat: 0, stack: 100 },
